@@ -1,0 +1,108 @@
+{
+  "frame": {
+    "w": 96,
+    "h": 128
+  },
+  "anchor": {
+    "x": 48,
+    "y": 120
+  },
+  "displayScale": 1,
+  "frames": [
+    "front",
+    "front_b",
+    "side",
+    "walk0",
+    "walk1",
+    "walk2",
+    "walk3",
+    "back"
+  ],
+  "yawDeg": {
+    "front": 25,
+    "front_b": 25,
+    "side": 62,
+    "walk0": 62,
+    "walk1": 62,
+    "walk2": 62,
+    "walk3": 62,
+    "back": 160
+  },
+  "pitchDeg": 15,
+  "unitPx": 2.1,
+  "animations": {
+    "idle": {
+      "frames": [
+        0,
+        1
+      ],
+      "ms": 600
+    },
+    "walk": {
+      "frames": [
+        3,
+        4,
+        5,
+        6
+      ],
+      "ms": 150
+    }
+  },
+  "layerOrder": [
+    "hair_back",
+    "skin",
+    "face",
+    "bottom",
+    "shoes",
+    "shade_top",
+    "top",
+    "shade_hair",
+    "hair_front"
+  ],
+  "blend": {
+    "hair_back": "source-over",
+    "skin": "source-over",
+    "face": "source-over",
+    "bottom": "source-over",
+    "shoes": "source-over",
+    "shade_top": "source-atop",
+    "top": "source-over",
+    "shade_hair": "source-atop",
+    "hair_front": "source-over"
+  },
+  "parts": {
+    "bottom": [
+      "pants-black"
+    ],
+    "face": [
+      "basic"
+    ],
+    "hair_back": [
+      "black-curly",
+      "brown-wavy"
+    ],
+    "hair_front": [
+      "black-curly",
+      "brown-wavy"
+    ],
+    "shade_hair": [
+      "black-curly",
+      "brown-wavy"
+    ],
+    "shade_top": [
+      "hoodie-white",
+      "tee-yellow"
+    ],
+    "shoes": [
+      "sneakers-white"
+    ],
+    "skin": [
+      "light"
+    ],
+    "top": [
+      "hoodie-white",
+      "tee-yellow"
+    ]
+  },
+  "sample": true
+}

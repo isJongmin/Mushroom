@@ -11,9 +11,9 @@ export function mount(root, app, opts = {}) {
   let busy = false;
 
   // --- 요소 ---------------------------------------------------------------
-  const tabLogin = h('button', { type: 'button', class: 'tab', role: 'tab', id: 'tab-login', testid: 'toggle-login', 'aria-controls': 'auth-form' }, '로그인');
-  const tabSignup = h('button', { type: 'button', class: 'tab', role: 'tab', id: 'tab-signup', testid: 'toggle-signup', 'aria-controls': 'auth-form' }, '회원가입');
-  const banner = h('div', { class: 'banner banner-error', role: 'alert', testid: 'error-message', hidden: true });
+  const tabLogin = h('button', { type: 'button', class: 'btn btn-tab', role: 'tab', id: 'tab-login', testid: 'toggle-login', 'aria-controls': 'auth-form' }, '로그인');
+  const tabSignup = h('button', { type: 'button', class: 'btn btn-tab', role: 'tab', id: 'tab-signup', testid: 'toggle-signup', 'aria-controls': 'auth-form' }, '회원가입');
+  const banner = h('div', { class: 'err-banner', role: 'alert', testid: 'error-message', hidden: true });
 
   const idInput = h('input', {
     id: 'login-id', type: 'text', class: 'input', testid: 'login-id', autocomplete: 'username', autocapitalize: 'none',
@@ -39,8 +39,8 @@ export function mount(root, app, opts = {}) {
     h('label', { for: 'login-pw2', class: 'label' }, '비밀번호 확인'), pw2Input, pw2Error);
 
   const submitLabel = h('span', {}, '로그인');
-  const spinner = h('span', { class: 'spinner', 'aria-hidden': 'true', hidden: true });
-  const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-block', testid: 'login-submit' }, spinner, submitLabel);
+  const spinner = h('span', { class: 'dots', 'aria-hidden': 'true', hidden: true }, h('i'), h('i'), h('i'));
+  const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-block btn-lg', testid: 'login-submit' }, spinner, submitLabel);
 
   const form = h('form', { id: 'auth-form', class: 'auth-form', novalidate: true, role: 'tabpanel' },
     h('div', { class: 'field' }, h('label', { for: 'login-id', class: 'label' }, '아이디'), idInput, idHelp, idError),
@@ -52,14 +52,23 @@ export function mount(root, app, opts = {}) {
     submit,
   );
 
-  const card = h('main', { class: 'card login-card' },
-    h('h1', { class: 'logo' }, '버섯마을'),
+  const modeSlot = h('span', { class: 'mode-slot' });
+  const modeRow = app.mode === 'local'
+    ? h('div', { class: 'mode-row' }, modeSlot, h('span', { class: 'mode-note' }, '이 브라우저에만 저장됩니다'))
+    : null;
+  const panel = h('section', { class: 'px-panel login-panel' },
     h('p', { class: 'subtitle' }, '친구들과 함께 노는 작은 마을'),
     h('div', { class: 'tabs', role: 'tablist', 'aria-label': '로그인 또는 회원가입' }, tabLogin, tabSignup),
     banner,
     form,
+    modeRow,
   );
-  root.append(h('div', { class: 'login-ground', 'aria-hidden': 'true' }), card);
+  const card = h('main', { class: 'login-wrap' },
+    h('h1', { class: 'logo' }, h('span', { class: 'logo-icon', 'aria-hidden': 'true' }), h('span', {}, '버섯마을')),
+    panel,
+  );
+  root.append(card);
+  if (modeRow) app.placeModeBadge(modeSlot);
 
   // --- 상태 표시 ----------------------------------------------------------
   const fields = {
@@ -152,7 +161,7 @@ export function mount(root, app, opts = {}) {
       return;
     }
     const signup = mode === 'signup';
-    setBusy(true, signup ? '가입 중...' : '로그인 중...');
+    setBusy(true, signup ? '가입 중' : '로그인 중');
     try {
       const session = signup
         ? await app.backend.signUp(idInput.value, pwInput.value)

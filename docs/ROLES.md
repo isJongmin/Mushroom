@@ -5,8 +5,8 @@
 | 메인 | 세션 모델 | - | docs/PROJECT.md, ARCHITECTURE.md, ROLES.md, STATUS.md |
 | 프런트 | opus | .claude/agents/frontend.md | index.html, src/client/ |
 | 백엔드 | opus | .claude/agents/backend.md | supabase/ |
-| 아트 | haiku | .claude/agents/art.md | assets/ |
-| 디자인 | haiku | .claude/agents/design.md | docs/design/ |
+| 아트 | opus | .claude/agents/art.md | assets/ |
+| 디자인 | opus | .claude/agents/design.md | docs/design/ |
 | QA | haiku | .claude/agents/qa.md | tests/, docs/qa/ |
 
 ## 운영 규칙

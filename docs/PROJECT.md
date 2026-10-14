@@ -15,8 +15,8 @@
 ## 기술 스택
 - 호스팅: GitHub Pages (정적)
 - 백엔드: Supabase (DB, 인증, Realtime)
-- 프런트: TBD (docs/ARCHITECTURE.md의 미결 사항 참고)
-- 아트: SVG 기본
+- 프런트: 바닐라 JS + Canvas 2D, 빌드 도구 없음 (docs/ARCHITECTURE.md)
+- 아트: 메이플풍 픽셀아트 PNG (원본은 assets/_src/ 생성 스크립트)
 
 ## 공통 규칙
 - 비밀 키(service_role 등)는 저장소와 프런트 코드에 넣지 않는다.

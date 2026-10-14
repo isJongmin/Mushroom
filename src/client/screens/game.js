@@ -1,18 +1,20 @@
 // 인게임 화면 (docs/design/screens/game.md, style-guide 4~7장)
 import { h, setText, wait } from '../dom.js';
 import {
-  WORLD, AVATAR, BUBBLE, VIEW_DESKTOP, VIEW_MOBILE, MOBILE_MAX_WIDTH, CANVAS_MAX, COLORS, NICK_RE,
-  CHAT_MAX, CHAT_COOLDOWN_MS, MOVE_INTERVAL_MS, RECONNECT_DELAYS_MS,
+  WORLD, ART, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, DESKTOP_RESERVED_H, NICK_RE,
+  CHAT_MAX, CHAT_COOLDOWN_MS, MOVE_INTERVAL_MS, RECONNECT_DELAYS_MS, pixelScale,
 } from '../constants.js';
 import { GAME_MESSAGES as M } from '../errors.js';
-import { createAvatarRenderer } from '../avatar.js';
-import { createWorldRenderer } from '../game/world.js';
+import { createAvatarRenderer, makeCanvas, idleOffset } from '../avatar.js';
+import { drawMap, drawFootShadow, cameraFor } from '../game/world.js';
 import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overlay.js';
 import { createMoveInput, KEY_DIR } from '../game/input.js';
 
 const JOIN_TIMEOUT_MS = 12000;
-const REMOTE_SNAP_DIST = 400;
-const REMOTE_FOLLOW = 12; // 보간 계수(1/s)
+const REMOTE_SNAP_DIST = 400; // 이보다 멀면 순간 이동
+const REMOTE_CATCHUP = 32; // 뒤처진 거리(월드 단위)마다 속도를 1배씩 더한다
+const WALK_HOLD_MS = 150; // 원격 아바타: 마지막으로 움직인 뒤 이 시간 안이면 walk (패킷 간격 100ms 흡수)
+const toArt = (wx) => Math.round(wx / 2);
 
 const clampX = (x) => Math.min(WORLD.maxX, Math.max(WORLD.minX, x));
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -27,8 +29,9 @@ export function mount(root, app) {
   const character = app.character;
   let assets = null;
   let avatarR = null;
-  let worldR = null;
-  let map = null; // { sendMove, sendChat, leave }
+  let map = null; // loadMapAssets() 결과
+  let ui = null; // loadUiAssets() 결과
+  let link = null; // { sendMove, sendChat, leave }
   let joinGen = 0;
   let connection = 'joining'; // joining | connected | disconnected | failed | fatal
   let reconnecting = false;
@@ -43,8 +46,10 @@ export function mount(root, app) {
   const players = new Map();
   let me = null;
 
-  // 레이아웃
-  let layout = { mobile: false, cssW: 0, cssH: 0, viewW: VIEW_DESKTOP.w, viewH: VIEW_DESKTOP.h, camY: 0, s: 1, dpr: 1 };
+  // 레이아웃 (style-guide 4.2): P = 정수 픽셀 배율, view = 아트 px 시야
+  let layout = { mobile: false, cssW: 2, cssH: 2, viewW: 1, viewH: 1, P: 2, dpr: 1 };
+  let off = makeCanvas(1, 1); // 아트 해상도 오프스크린
+  let offCtx = off.getContext('2d');
 
   // 네트워크 송신 상태
   let lastMoveSentAt = 0;
@@ -54,12 +59,15 @@ export function mount(root, app) {
 
   // --- DOM ----------------------------------------------------------------
   const countText = h('span', { testid: 'player-count' }, '접속 중 1명');
-  const countDot = h('span', { class: 'count-dot', title: '연결 끊김', hidden: true }, '•');
-  const countBadge = h('div', { class: 'hud-badge count-badge', 'aria-live': 'off' }, countText, countDot);
-  const hint = h('div', { class: 'hud-hint' }, '← → 또는 A D 이동 · Enter 채팅 · Esc 입력 해제');
-  const logoutBtn = h('button', { type: 'button', class: 'hud-btn', testid: 'logout' }, '로그아웃');
-  const topLeft = h('div', { class: 'topbar-left' }, countBadge);
-  const topbar = h('div', { class: 'game-topbar' }, topLeft, h('div', { class: 'topbar-right' }, hint, logoutBtn));
+  const countDot = h('span', { class: 'count-dot', title: '연결 끊김', hidden: true });
+  const countBadge = h('div', { class: 'chip count-badge', 'aria-live': 'off' },
+    h('span', { class: 'chip-icon', 'aria-hidden': 'true' }), countText, countDot);
+  const modeSlot = h('span', { class: 'mode-slot' });
+  const hint = h('div', { class: 'chip hud-hint' }, '← → 또는 A D 이동 · Enter 채팅 · Esc 입력 해제');
+  const logoutBtn = h('button', { type: 'button', class: 'btn btn-secondary btn-sm hud-logout', testid: 'logout' }, '로그아웃');
+  const hud = h('div', { class: 'hud' },
+    h('div', { class: 'hud-left' }, countBadge, modeSlot),
+    h('div', { class: 'hud-right' }, hint, logoutBtn));
 
   const bannerText = h('span', {});
   const bannerBtn = h('button', { type: 'button', class: 'btn btn-primary btn-sm', testid: 'reconnect-button', hidden: true });
@@ -69,58 +77,76 @@ export function mount(root, app) {
     class: 'game-canvas', testid: 'game-canvas', tabindex: '0',
     'aria-label': '버섯마을 맵. 좌우 방향키로 이동, Enter로 채팅',
   });
-  const loadingSpinner = h('div', { class: 'canvas-spinner', 'aria-hidden': 'true' });
-  const canvasWrap = h('div', { class: 'canvas-wrap' }, canvas, loadingSpinner);
+  const loadingDots = h('span', { class: 'dots dots-light canvas-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
+  const canvasWrap = h('div', { class: 'canvas-wrap' }, canvas, hud, banner, loadingDots);
 
-  const leftBtn = h('button', { type: 'button', class: 'touch-btn', testid: 'move-left', 'aria-label': '왼쪽으로 이동' }, '◀ 왼쪽');
-  const rightBtn = h('button', { type: 'button', class: 'touch-btn', testid: 'move-right', 'aria-label': '오른쪽으로 이동' }, '오른쪽 ▶');
+  const arrowL = h('span', { class: 'arrow arrow-left', 'aria-hidden': 'true' }, '◀');
+  const arrowR = h('span', { class: 'arrow', 'aria-hidden': 'true' }, '▶');
+  const leftBtn = h('button', { type: 'button', class: 'btn btn-secondary touch-btn', testid: 'move-left', 'aria-label': '왼쪽으로 이동' }, arrowL, '왼쪽');
+  const rightBtn = h('button', { type: 'button', class: 'btn btn-secondary touch-btn', testid: 'move-right', 'aria-label': '오른쪽으로 이동' }, '오른쪽', arrowR);
   const touchRow = h('div', { class: 'touch-row' }, leftBtn, rightBtn);
 
   const chatInput = h('input', {
-    type: 'text', class: 'chat-input', testid: 'chat-input', maxlength: String(CHAT_MAX), placeholder: '메시지를 입력하세요',
+    type: 'text', class: 'input chat-input', testid: 'chat-input', maxlength: String(CHAT_MAX), placeholder: '메시지를 입력하세요',
     autocomplete: 'off', 'aria-label': '채팅 메시지',
   });
   const counter = h('span', { class: 'chat-counter', testid: 'chat-counter', hidden: true, 'aria-hidden': 'true' });
   const sendBtn = h('button', { type: 'button', class: 'btn btn-primary chat-send', testid: 'chat-send', disabled: true }, '보내기');
-  const chatHint = h('div', { class: 'chat-hint', testid: 'chat-hint', hidden: true }, M.COOLDOWN);
-  const chatError = h('div', { class: 'chat-error', testid: 'chat-error', role: 'alert', hidden: true });
+  const chatHint = h('div', { class: 'chip chat-hint', testid: 'chat-hint', hidden: true }, M.COOLDOWN);
+  const chatError = h('div', { class: 'err-banner chat-error', testid: 'chat-error', role: 'alert', hidden: true });
   const chatBar = h('div', { class: 'chat-bar' }, h('div', { class: 'chat-field' }, chatInput, counter), sendBtn);
-  const chatRow = h('div', { class: 'chat-row' }, chatHint, chatBar, chatError);
+  const chatRow = h('div', { class: 'chat-row' }, chatHint, chatError, chatBar);
 
-  const col = h('div', { class: 'game-col' }, topbar, canvasWrap, touchRow, chatRow, banner);
+  const col = h('div', { class: 'game-col' }, canvasWrap, touchRow, chatRow);
   root.append(col);
-  topLeft.appendChild(app.modeBadge);
+  app.placeModeBadge(modeSlot);
 
   // --- 레이아웃 -----------------------------------------------------------
   function computeLayout() {
     // innerWidth는 모바일에서 내용이 넘치면 커진다. 레이아웃 뷰포트(clientWidth)를 기준으로 한다.
     const vw = document.documentElement.clientWidth || window.innerWidth;
-    const vh = document.documentElement.clientHeight || window.innerHeight;
+    const vv = window.visualViewport;
+    const vh = Math.floor(vv && vv.height ? Math.min(vv.height, window.innerHeight || vv.height) : window.innerHeight);
     const mobile = vw < MOBILE_MAX_WIDTH;
+    let P;
     let cssW;
     let cssH;
     if (mobile) {
-      cssW = Math.max(160, Math.floor(vw - 32));
-      cssH = Math.round((cssW * 9) / 16);
+      P = 2;
+      cssW = Math.floor(vw / P) * P;
+      cssH = Math.floor((vh - MOBILE_CONTROLS_H) / P) * P;
     } else {
-      cssW = Math.floor(Math.min(vw, CANVAS_MAX.w, (vh * 16) / 9));
-      cssH = Math.round((cssW * 9) / 16);
+      P = pixelScale(vw, vh);
+      cssW = Math.min(Math.floor(vw / P) * P, 640 * P); // 1280 (P=2), 1920 (P=3)
+      cssH = Math.min(ART.height * P, Math.floor((vh - DESKTOP_RESERVED_H) / P) * P);
     }
-    const view = mobile ? VIEW_MOBILE : VIEW_DESKTOP;
+    let viewW = Math.max(1, cssW / P);
+    let viewH = cssH / P;
+    if (viewH < ART.minViewH) { viewH = ART.minViewH; cssH = viewH * P; }
+    viewW = Math.max(1, Math.floor(viewW));
+    cssW = viewW * P;
     const dpr = Math.min(3, window.devicePixelRatio || 1);
-    layout = { mobile, cssW, cssH, viewW: view.w, viewH: view.h, camY: view.camY, s: Math.min(cssW / view.w, cssH / view.h), dpr };
+    layout = { mobile, cssW, cssH, viewW, viewH, P, dpr };
     root.dataset.layout = mobile ? 'mobile' : 'desktop';
+    root.style.setProperty('--canvas-w', `${cssW}px`);
+    canvasWrap.style.width = `${cssW}px`;
+    canvasWrap.style.height = `${cssH}px`;
     canvas.style.width = `${cssW}px`;
     canvas.style.height = `${cssH}px`;
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
-    if (mobile) {
-      col.style.width = '';
-      col.style.height = '';
-    } else {
-      col.style.width = `${cssW}px`;
-      col.style.height = `${cssH}px`;
+    if (off.width !== viewW || off.height !== viewH) {
+      off = makeCanvas(viewW, viewH);
+      offCtx = off.getContext('2d');
     }
+    offCtx.imageSmoothingEnabled = false;
+    hint.classList.toggle('narrow', cssW < 900);
+    // 데스크톱 바깥 배경 경계: 캔버스 아래 끝 (하늘 / 흙)
+    if (!mobile) {
+      const r = canvasWrap.getBoundingClientRect();
+      const top = root.getBoundingClientRect().top;
+      root.style.setProperty('--ground-y', `${Math.round(r.bottom - top)}px`);
+    } else root.style.removeProperty('--ground-y');
     if (connection === 'joining' || connection === 'fatal') paintLetterbox();
     else render(performance.now());
   }
@@ -128,7 +154,7 @@ export function mount(root, app) {
   function paintLetterbox() {
     const c = canvas.getContext('2d');
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.fillStyle = COLORS.letterbox;
+    c.fillStyle = PAL.ink;
     c.fillRect(0, 0, canvas.width, canvas.height);
   }
 
@@ -151,10 +177,13 @@ export function mount(root, app) {
     connection = next;
     root.dataset.connection = next;
     const hudVisible = next !== 'joining' && next !== 'fatal';
-    topbar.hidden = !hudVisible;
-    chatRow.hidden = !hudVisible;
-    touchRow.hidden = !hudVisible;
-    loadingSpinner.hidden = next !== 'joining';
+    hud.hidden = !hudVisible && next !== 'fatal';
+    countBadge.hidden = !hudVisible;
+    hint.hidden = !hudVisible;
+    modeSlot.hidden = !hudVisible;
+    chatRow.classList.toggle('is-hidden', !hudVisible);
+    touchRow.classList.toggle('is-hidden', !hudVisible);
+    loadingDots.hidden = next !== 'joining';
     countDot.hidden = !(next === 'disconnected' || next === 'failed');
     const interactive = next === 'connected' || next === 'disconnected';
     chatInput.disabled = next !== 'connected';
@@ -198,7 +227,8 @@ export function mount(root, app) {
   function makePlayer(uid, nickname, avatar, x, isSelf) {
     return {
       user_id: uid, nickname, avatar, x, targetX: x, y: WORLD.groundY, dir: 1,
-      moving: false, lastMoveAt: 0, bubble: null, lastChat: null, isSelf, phase: Math.random(),
+      moving: false, lastMoveAt: 0, lastMovedAt: -Infinity, anim: 'idle', animSince: performance.now(),
+      idleOffset: idleOffset(uid), bubble: null, lastChat: null, isSelf,
     };
   }
 
@@ -269,14 +299,14 @@ export function mount(root, app) {
       try { await joined.leave(); } catch { /* 무시 */ }
       throw new Error('stale');
     }
-    map = joined;
+    link = joined;
     sentX = Math.round(me.x);
     sentDir = me.dir;
   }
 
   async function leaveMap() {
-    const m = map;
-    map = null;
+    const m = link;
+    link = null;
     joinGen++;
     if (m) {
       try { await m.leave(); } catch { /* 무시 */ }
@@ -334,56 +364,80 @@ export function mount(root, app) {
       }
       // move 송신: 최대 10회/초, 위치(또는 방향)가 바뀌었을 때만. 정지 후 마지막 좌표도 이 규칙으로 1회 나간다.
       const rx = Math.round(me.x);
-      if (map && now - lastMoveSentAt >= MOVE_INTERVAL_MS && (rx !== sentX || me.dir !== sentDir)) {
+      if (link && now - lastMoveSentAt >= MOVE_INTERVAL_MS && (rx !== sentX || me.dir !== sentDir)) {
         lastMoveSentAt = now;
         sentX = rx;
         sentDir = me.dir;
-        map.sendMove({ x: rx, y: WORLD.groundY, dir: me.dir < 0 ? 'left' : 'right' }).catch(() => {});
+        link.sendMove({ x: rx, y: WORLD.groundY, dir: me.dir < 0 ? 'left' : 'right' }).catch(() => {});
       }
     } else if (me) {
       me.moving = false;
     }
     for (const p of players.values()) {
       if (p.isSelf) continue;
+      // 원격 보간: 등속(160/초) 추적 + 뒤처진 만큼 가속, 너무 멀면 순간 이동
       const diff = p.targetX - p.x;
-      if (Math.abs(diff) > REMOTE_SNAP_DIST) p.x = p.targetX;
-      else if (Math.abs(diff) < 0.3) p.x = p.targetX;
-      else p.x += diff * Math.min(1, dt * REMOTE_FOLLOW);
-      p.moving = Math.abs(p.targetX - p.x) > 0.5 || now - p.lastMoveAt < 150;
+      const dist = Math.abs(diff);
+      if (dist > REMOTE_SNAP_DIST) {
+        p.x = p.targetX;
+      } else if (dist > 0) {
+        const v = WORLD.speed * (1 + Math.max(0, dist - 16) / REMOTE_CATCHUP);
+        const step = Math.min(dist, v * dt);
+        p.x += Math.sign(diff) * step;
+        if (step > 0.01) p.lastMovedAt = now;
+      }
+      // style-guide 5.11: 마지막 move 이후 위치가 바뀌고 있으면 walk
+      p.moving = now - p.lastMovedAt < WALK_HOLD_MS;
       if (p.bubble && now - p.bubble.at >= BUBBLE.showMs) p.bubble = null;
     }
     if (me && me.bubble && now - me.bubble.at >= BUBBLE.showMs) me.bubble = null;
+    for (const p of players.values()) {
+      const next = p.moving ? 'walk' : 'idle';
+      if (next !== p.anim) { p.anim = next; p.animSince = now; } // 상태가 바뀌면 첫 프레임부터
+    }
   }
 
-  function render(now) {
-    if (!me || !worldR) return;
-    if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
-    const { cssW, cssH, viewW, viewH, camY, s, dpr } = layout;
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    ctx.clearRect(0, 0, cssW, cssH);
-    const camX = Math.min(Math.max(me.x - viewW / 2, 0), WORLD.width - viewW);
-    worldR.draw(ctx, camX, camY, viewW, viewH, s, dpr);
+  function frameOf(p, now) {
+    const t = now - p.animSince;
+    return p.anim === 'walk' ? avatarR.frameAt('walk', t) : avatarR.frameAt('idle', t + p.idleOffset);
+  }
 
-    const footY = (WORLD.groundY - camY) * s;
-    const t = now / 1000;
+  // style-guide 4.4 파이프라인: 아트 해상도 오프스크린 → 정수 배율 확대(스무딩 끔) → 화면 해상도 글자
+  function render(now) {
+    if (!me || !avatarR) return;
+    if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
+    const { cssW, viewW, viewH, P, dpr } = layout;
+    const { camX, camY } = cameraFor(toArt(me.x), viewW, viewH);
+    const c = offCtx;
+    c.imageSmoothingEnabled = false;
+    drawMap(c, map, camX, camY, viewW, viewH);
+
+    const groundY = ART.groundY - camY;
     const order = [];
     for (const p of players.values()) if (!p.isSelf) order.push(p);
+    order.sort((a, b) => a.x - b.x);
     order.push(me); // 내 캐릭터는 마지막
     const visible = [];
     for (const p of order) {
-      const sx = (p.x - camX) * s;
-      if (sx < -120 || sx > cssW + 120) continue;
-      visible.push([p, sx]);
-      const bob = p.moving ? -WORLD.bobAmp * 0.5 * (1 - Math.cos((2 * Math.PI * (t + p.phase)) / WORLD.bobPeriod)) : 0;
-      avatarR.draw(ctx, p.avatar, sx, footY + bob * s, s, dpr, p.dir < 0);
+      const ax = toArt(p.x) - camX;
+      if (ax < -avatarR.frameW || ax > viewW + avatarR.frameW) continue;
+      visible.push([p, ax]);
     }
-    for (const [p, sx] of visible) drawLabel(ctx, p.nickname, sx, footY, p.isSelf);
-    const headTop = footY - (AVATAR.anchorY - AVATAR.headTopY) * s;
-    for (const [p, sx] of visible) {
+    for (const [, ax] of visible) drawFootShadow(c, ax, groundY);
+    for (const [p, ax] of visible) avatarR.draw(c, p.avatar, ax, groundY, frameOf(p, now), p.dir < 0);
+
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(off, 0, 0, viewW, viewH, 0, 0, canvas.width, canvas.height);
+
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    const footY = groundY * P;
+    for (const [p, ax] of visible) drawLabel(ctx, ui, p.nickname, ax * P, footY, p.isSelf, cssW);
+    const headY = (ART.headLineY - camY) * P;
+    for (const [p, ax] of visible) {
       if (!p.bubble) continue;
-      const a = bubbleAlpha(now - p.bubble.at);
-      drawBubble(ctx, p.bubble.layout, sx, headTop - BUBBLE.tailGap, cssW, a);
+      drawBubble(ctx, ui, p.bubble.layout, ax * P, headY, cssW, bubbleAlpha(now - p.bubble.at));
     }
   }
 
@@ -429,7 +483,7 @@ export function mount(root, app) {
   }
 
   function trySend() {
-    if (connection !== 'connected' || !map) return;
+    if (connection !== 'connected' || !link) return;
     const raw = chatInput.value;
     const text = cleanText(raw).slice(0, CHAT_MAX);
     if (!text) return;
@@ -440,7 +494,7 @@ export function mount(root, app) {
     updateCounter();
     cancel(cooldownTimer);
     cooldownTimer = later(updateSendBtn, CHAT_COOLDOWN_MS + 10);
-    const m = map;
+    const m = link;
     m.sendChat(text).catch(() => {
       if (!alive) return;
       if (!chatInput.value) { chatInput.value = raw; updateCounter(); }
@@ -490,6 +544,12 @@ export function mount(root, app) {
   on(chatInput, 'input', updateCounter);
   on(sendBtn, 'click', () => { trySend(); });
   on(canvas, 'pointerdown', () => canvas.focus({ preventScroll: true }));
+  // 포커스 테두리는 Tab 키로 캔버스에 들어왔을 때만 (자동/마우스 포커스는 표시 안 함)
+  let tabNav = false;
+  on(window, 'keydown', (e) => { tabNav = e.key === 'Tab'; }, { capture: true });
+  on(window, 'pointerdown', () => { tabNav = false; canvas.classList.remove('kbd-focus'); }, { capture: true });
+  on(canvas, 'focus', () => canvas.classList.toggle('kbd-focus', tabNav));
+  on(canvas, 'blur', () => canvas.classList.remove('kbd-focus'));
 
   for (const [btn, dir, id] of [[leftBtn, -1, 'touch:left'], [rightBtn, 1, 'touch:right']]) {
     const release = () => { input.release(id); btn.classList.remove('pressed'); };
@@ -532,17 +592,22 @@ export function mount(root, app) {
   });
 
   let resizeQueued = false;
-  on(window, 'resize', () => {
+  const onResize = () => {
     if (resizeQueued) return;
     resizeQueued = true;
     requestAnimationFrame(() => { resizeQueued = false; if (alive) computeLayout(); });
-  });
+  };
+  on(window, 'resize', onResize);
+  if (window.visualViewport) on(window.visualViewport, 'resize', onResize);
 
   // --- 테스트 훅 상태 공급 -----------------------------------------------------
-  const snap = (p) => ({ user_id: p.user_id, nickname: p.nickname, x: Math.round(p.x * 10) / 10, y: p.y, lastChat: p.lastChat });
+  const snap = (p) => ({ user_id: p.user_id, nickname: p.nickname, x: Math.round(p.x * 10) / 10, y: p.y, lastChat: p.lastChat, anim: p.anim });
   app.gameStateProvider = () => ({
     connection,
-    assets: assets ? { source: assets.source, images: assets.imageCount, background: !!assets.background } : null,
+    assets: assets ? {
+      source: assets.source, images: assets.imageCount, background: !!(map && map.layerCount),
+      mapLayers: map ? map.layerCount : 0, ui: ui ? ui.source : null,
+    } : null,
     me: me ? { ...snap(me), avatar: { ...me.avatar }, dir: me.dir < 0 ? 'left' : 'right' } : null,
     players: [...players.values()].map(snap),
   });
@@ -560,10 +625,9 @@ export function mount(root, app) {
     input.clear();
     if (app.gameStateProvider) app.gameStateProvider = null;
     avatarR?.clear();
-    worldR?.reset();
     cleaned = (async () => {
-      const m = map;
-      map = null;
+      const m = link;
+      link = null;
       joinGen++;
       if (m) { try { await m.leave(); } catch { /* 무시 */ } }
     })();
@@ -583,8 +647,9 @@ export function mount(root, app) {
     }
     if (!alive) return;
     if (!character) { app.forceLogout(); return; }
+    [map, ui] = await Promise.all([app.mapAssets.catch(() => null), app.uiAssets.catch(() => null)]);
+    if (!alive) return;
     avatarR = createAvatarRenderer(assets);
-    worldR = createWorldRenderer(assets);
     const startX = clampX(300 + Math.floor(Math.random() * 600));
     me = makePlayer(character.user_id, character.nickname, assets.sanitizeAvatar(character.avatar), startX, true);
     players.set(me.user_id, me);

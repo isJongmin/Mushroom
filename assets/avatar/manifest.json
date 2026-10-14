@@ -1,12 +1,13 @@
 {
-  "canvas": {
-    "w": 64,
-    "h": 96
+  "frame": {
+    "w": 32,
+    "h": 48
   },
   "anchor": {
-    "x": 32,
-    "y": 92
+    "x": 16,
+    "y": 46
   },
+  "scale": 2,
   "layerOrder": [
     "skin",
     "bottom",
@@ -14,6 +15,32 @@
     "eyes",
     "hair"
   ],
+  "frameOrder": [
+    "idle0",
+    "idle1",
+    "walk0",
+    "walk1",
+    "walk2",
+    "walk3"
+  ],
+  "animations": {
+    "idle": {
+      "frames": [
+        0,
+        1
+      ],
+      "ms": 500
+    },
+    "walk": {
+      "frames": [
+        2,
+        3,
+        4,
+        5
+      ],
+      "ms": 120
+    }
+  },
   "parts": {
     "skin": [
       {
@@ -32,33 +59,49 @@
     "hair": [
       {
         "id": "hair-round-black",
-        "label": "둥근 단발 · 흑발"
+        "label": "단발 · 흑발"
       },
       {
         "id": "hair-round-chestnut",
-        "label": "둥근 단발 · 밤색"
+        "label": "단발 · 밤색"
       },
       {
         "id": "hair-spiky-black",
-        "label": "뾰족 머리 · 흑발"
+        "label": "뾰족 · 흑발"
       },
       {
         "id": "hair-spiky-chestnut",
-        "label": "뾰족 머리 · 밤색"
+        "label": "뾰족 · 밤색"
+      },
+      {
+        "id": "hair-spiky-mint",
+        "label": "뾰족 · 민트"
+      },
+      {
+        "id": "hair-long-pink",
+        "label": "긴머리 · 분홍"
+      },
+      {
+        "id": "hair-long-blonde",
+        "label": "긴머리 · 금발"
       }
     ],
     "eyes": [
       {
         "id": "eyes-dot",
-        "label": "점 눈"
-      },
-      {
-        "id": "eyes-round",
-        "label": "큰 눈"
+        "label": "기본 눈"
       },
       {
         "id": "eyes-happy",
         "label": "웃는 눈"
+      },
+      {
+        "id": "eyes-sleepy",
+        "label": "졸린 눈"
+      },
+      {
+        "id": "eyes-sparkle",
+        "label": "반짝 눈"
       }
     ],
     "top": [
@@ -71,8 +114,12 @@
         "label": "파란 후드티"
       },
       {
-        "id": "top-vest-green",
-        "label": "초록 조끼"
+        "id": "top-overalls-blue",
+        "label": "파란 멜빵"
+      },
+      {
+        "id": "top-cape-mushroom",
+        "label": "버섯 망토"
       }
     ],
     "bottom": [
@@ -87,7 +134,15 @@
       {
         "id": "bottom-skirt-pink",
         "label": "분홍 치마"
+      },
+      {
+        "id": "bottom-pumpkin-green",
+        "label": "초록 호박바지"
       }
     ]
+  },
+  "aliases": {
+    "eyes-round": "eyes-sparkle",
+    "top-vest-green": "top-overalls-blue"
   }
 }

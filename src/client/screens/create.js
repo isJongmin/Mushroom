@@ -1,8 +1,12 @@
 // 캐릭터 생성 화면 (docs/design/screens/character-create.md)
 import { h, setText } from '../dom.js';
-import { COLORS, NICK_RE, NICK_DEBOUNCE_MS, PART_KEYS, PART_LABELS, PART_ARIA, MOBILE_MAX_WIDTH } from '../constants.js';
+import { PAL, NICK_RE, NICK_DEBOUNCE_MS, PART_KEYS, PART_LABELS, PART_ARIA } from '../constants.js';
 import { CREATE_MESSAGES as M, toAppError } from '../errors.js';
 import { createAvatarRenderer } from '../avatar.js';
+import { drawFootShadow } from '../game/world.js';
+
+// 미리보기 (character-create.md 3장): 아트 48x60을 4배로, 기준점 (24, 52)
+const PV = Object.freeze({ w: 48, h: 60, ax: 24, ay: 52 });
 
 const ROW_ORDER = ['skin', 'hair', 'eyes', 'top', 'bottom'];
 
@@ -22,10 +26,12 @@ export function mount(root, app) {
   const nick = { value: '', status: 'empty', checkedValue: null };
 
   // --- 요소 ---------------------------------------------------------------
-  const logoutBtn = h('button', { type: 'button', class: 'link-btn', testid: 'logout' }, '로그아웃');
-  const banner = h('div', { class: 'banner banner-error', role: 'alert', testid: 'error-message', hidden: true });
-  const previewCanvas = h('canvas', { class: 'preview-canvas', 'aria-hidden': 'true' });
-  const preview = h('div', { class: 'preview', 'aria-hidden': 'true', testid: 'avatar-preview' }, previewCanvas);
+  const logoutBtn = h('button', { type: 'button', class: 'btn btn-secondary btn-sm', testid: 'logout' }, '로그아웃');
+  const banner = h('div', { class: 'err-banner', role: 'alert', testid: 'error-message', hidden: true });
+  const previewCanvas = h('canvas', { class: 'preview-canvas', width: String(PV.w), height: String(PV.h), 'aria-hidden': 'true' });
+  const previewDots = h('span', { class: 'dots preview-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
+  const flipBtn = h('button', { type: 'button', class: 'btn btn-secondary btn-flip', 'aria-label': '미리보기 방향 바꾸기', 'aria-pressed': 'false' }, '↔');
+  const preview = h('div', { class: 'preview', testid: 'avatar-preview' }, previewCanvas, previewDots, flipBtn);
 
   const nickInput = h('input', {
     id: 'nickname', class: 'input', type: 'text', testid: 'nickname-input', maxlength: '12', autocomplete: 'off',
@@ -36,18 +42,20 @@ export function mount(root, app) {
   const status = h('p', { id: 'nickname-status', class: 'nick-status', testid: 'nickname-status', 'aria-live': 'polite' }, statusIcon, statusText);
 
   const submitLabel = h('span', {}, '캐릭터 만들기');
-  const spinner = h('span', { class: 'spinner', 'aria-hidden': 'true', hidden: true });
-  const submit = h('button', { type: 'button', class: 'btn btn-primary create-submit', testid: 'create-submit', disabled: true }, spinner, submitLabel);
+  const spinner = h('span', { class: 'dots', 'aria-hidden': 'true', hidden: true }, h('i'), h('i'), h('i'));
+  const submit = h('button', { type: 'button', class: 'btn btn-primary btn-lg create-submit', testid: 'create-submit', disabled: true }, spinner, submitLabel);
   const live = h('div', { class: 'sr-only', 'aria-live': 'polite' });
 
   const rows = {};
   const rowEls = ROW_ORDER.map((part) => {
     const labelId = `part-label-${part}`;
-    const prev = h('button', { type: 'button', class: 'icon-btn', testid: `part-prev-${part}`, 'aria-label': `이전 ${PART_ARIA[part]}` }, '◀');
-    const next = h('button', { type: 'button', class: 'icon-btn', testid: `part-next-${part}`, 'aria-label': `다음 ${PART_ARIA[part]}` }, '▶');
+    const prev = h('button', { type: 'button', class: 'btn btn-secondary btn-icon', testid: `part-prev-${part}`, 'aria-label': `이전 ${PART_ARIA[part]}` },
+      h('span', { class: 'arrow arrow-left', 'aria-hidden': 'true' }, '◀'));
+    const next = h('button', { type: 'button', class: 'btn btn-secondary btn-icon', testid: `part-next-${part}`, 'aria-label': `다음 ${PART_ARIA[part]}` },
+      h('span', { class: 'arrow', 'aria-hidden': 'true' }, '▶'));
     const value = h('span', { class: 'part-value-text', testid: `part-value-${part}` });
     const index = h('span', { class: 'part-index' });
-    const row = h('div', { class: 'part-row', role: 'group', 'aria-labelledby': labelId, testid: `part-row-${part}` },
+    const row = h('div', { class: 'part-row', role: 'group', tabindex: '0', 'aria-labelledby': labelId, testid: `part-row-${part}` },
       h('span', { class: 'part-label', id: labelId }, PART_LABELS[part]),
       prev,
       h('div', { class: 'part-value' }, value, index),
@@ -56,7 +64,11 @@ export function mount(root, app) {
     return row;
   });
 
-  const card = h('main', { class: 'card create-card' },
+  const modeSlot = h('span', { class: 'mode-slot' });
+  const modeRow = app.mode === 'local'
+    ? h('div', { class: 'mode-row' }, modeSlot, h('span', { class: 'mode-note' }, '이 브라우저에만 저장됩니다'))
+    : null;
+  const card = h('main', { class: 'px-panel create-card' },
     h('div', { class: 'create-header' }, h('h1', { class: 'title' }, '캐릭터 만들기'), logoutBtn),
     banner,
     h('div', { class: 'create-grid' },
@@ -67,36 +79,58 @@ export function mount(root, app) {
         status),
       h('div', { class: 'area-parts' }, rowEls),
       h('div', { class: 'area-submit' }, submit)),
+    modeRow,
     live);
   root.append(card);
+  if (modeRow) app.placeModeBadge(modeSlot);
 
-  // --- 미리보기 -------------------------------------------------------------
-  function drawPreview() {
-    if (!renderer || !avatar) return;
-    const rect = preview.getBoundingClientRect();
-    const w = Math.max(1, Math.round(rect.width));
-    const hh = Math.max(1, Math.round(rect.height));
-    const dpr = window.devicePixelRatio || 1;
-    if (previewCanvas.width !== Math.round(w * dpr) || previewCanvas.height !== Math.round(hh * dpr)) {
-      previewCanvas.width = Math.round(w * dpr);
-      previewCanvas.height = Math.round(hh * dpr);
+  // --- 미리보기 (아트 48x60, CSS 4배, 스무딩 끔) ----------------------------------
+  let map = null;
+  let raf = 0;
+  let walkStart = 0;
+  let facingLeft = false;
+  const reduceMq = window.matchMedia ? window.matchMedia('(prefers-reduced-motion: reduce)') : null;
+  const pctx = previewCanvas.getContext('2d');
+  pctx.imageSmoothingEnabled = false;
+
+  function drawPreviewBg() {
+    const c = pctx;
+    c.fillStyle = PAL.k3; c.fillRect(0, 0, PV.w, 20);
+    c.fillStyle = PAL.k4; c.fillRect(0, 20, PV.w, 14);
+    c.fillStyle = PAL.k5; c.fillRect(0, 34, PV.w, 14);
+    if (map && map.groundImg) {
+      // ground.png의 x 0–47, 행 0–11 → y 48–59 (풀잎 48–51, 잔디 윗면 52)
+      c.fillStyle = PAL.k5; c.fillRect(0, 48, PV.w, 4);
+      c.drawImage(map.groundImg, 0, 0, PV.w, 12, 0, 48, PV.w, 12);
+    } else {
+      c.fillStyle = PAL.g1; c.fillRect(0, 52, PV.w, 1);
+      c.fillStyle = PAL.g2; c.fillRect(0, 53, PV.w, 5);
+      c.fillStyle = PAL.g3; c.fillRect(0, 58, PV.w, 2);
+      c.fillStyle = PAL.k5; c.fillRect(0, 48, PV.w, 4);
     }
-    const c = previewCanvas.getContext('2d');
-    c.setTransform(dpr, 0, 0, dpr, 0, 0);
-    c.clearRect(0, 0, w, hh);
-    const g = c.createLinearGradient(0, 0, 0, hh);
-    g.addColorStop(0, COLORS.skyTop);
-    g.addColorStop(1, COLORS.skyBottom);
-    c.fillStyle = g;
-    c.fillRect(0, 0, w, hh);
-    c.fillStyle = COLORS.grass;
-    c.fillRect(0, hh - 40, w, 40);
-    c.fillStyle = COLORS.grassLight;
-    c.fillRect(0, hh - 40, w, 1);
-    const mobile = (document.documentElement.clientWidth || window.innerWidth) < MOBILE_MAX_WIDTH;
-    const scale = mobile ? 2.5 : 3;
-    const footY = hh - (mobile ? 20 : 24);
-    renderer.draw(c, avatar, w / 2, footY, scale, dpr, false);
+  }
+
+  function drawPreview(now) {
+    if (!renderer || !avatar) {
+      pctx.fillStyle = PAL.k4;
+      pctx.fillRect(0, 0, PV.w, PV.h);
+      return;
+    }
+    drawPreviewBg();
+    drawFootShadow(pctx, PV.ax, PV.ay);
+    const still = !!(reduceMq && reduceMq.matches);
+    const frame = still ? renderer.frameAt('idle', 0) : renderer.frameAt('walk', (now || performance.now()) - walkStart);
+    renderer.draw(pctx, avatar, PV.ax, PV.ay, frame, facingLeft);
+  }
+
+  function loop(now) {
+    raf = 0;
+    if (!alive) return;
+    drawPreview(now);
+    if (!(reduceMq && reduceMq.matches)) raf = requestAnimationFrame(loop);
+  }
+  function startLoop() {
+    if (!raf && alive) raf = requestAnimationFrame(loop);
   }
 
   function renderRows() {
@@ -137,8 +171,10 @@ export function mount(root, app) {
     status.className = `nick-status ${d.cls}`;
     status.dataset.state = s;
     setText(statusText, d.text);
-    statusIcon.className = d.spin ? 'status-icon spinner spinner-sm' : 'status-icon';
-    setText(statusIcon, d.icon || '');
+    statusIcon.className = d.spin ? 'status-icon dots dots-sm' : 'status-icon';
+    statusIcon.replaceChildren();
+    if (d.spin) statusIcon.append(h('i'), h('i'), h('i'));
+    else setText(statusIcon, d.icon || '');
     statusIcon.hidden = !d.spin && !d.icon;
     const invalid = s === 'format' || s === 'taken';
     nickInput.classList.toggle('is-invalid', invalid);
@@ -192,8 +228,9 @@ export function mount(root, app) {
     nickInput.disabled = b;
     logoutBtn.disabled = b;
     for (const part of ROW_ORDER) { rows[part].prev.disabled = b; rows[part].next.disabled = b; }
+    flipBtn.disabled = b;
     spinner.hidden = !b;
-    setText(submitLabel, b ? '만드는 중...' : '캐릭터 만들기');
+    setText(submitLabel, b ? '만드는 중' : '캐릭터 만들기');
     updateSubmit();
   }
 
@@ -274,21 +311,30 @@ export function mount(root, app) {
     });
   }
   on(submit, 'click', () => doCreate());
+  on(flipBtn, 'click', () => {
+    facingLeft = !facingLeft;
+    flipBtn.setAttribute('aria-pressed', String(facingLeft));
+    drawPreview();
+  });
+  if (reduceMq && reduceMq.addEventListener) reduceMq.addEventListener('change', () => { drawPreview(); startLoop(); }, { signal: ac.signal });
   on(logoutBtn, 'click', () => { if (!creating) app.forceLogout(); });
-  const ro = new ResizeObserver(() => drawPreview());
-  ro.observe(preview);
 
   setStatus('empty');
   for (const part of ROW_ORDER) { rows[part].prev.disabled = true; rows[part].next.disabled = true; }
 
-  app.assets.then((a) => {
+  drawPreview();
+  Promise.all([app.assets, app.mapAssets.catch(() => null)]).then(([a, m]) => {
     if (!alive) return;
     assets = a;
+    map = m;
     renderer = createAvatarRenderer(a);
     avatar = { ...a.defaultAvatar };
     for (const part of PART_KEYS) { rows[part].prev.disabled = false; rows[part].next.disabled = false; }
+    previewDots.hidden = true;
     renderRows();
+    walkStart = performance.now();
     drawPreview();
+    startLoop();
     updateSubmit();
   }, () => {
     if (alive) showBanner('SERVER');
@@ -299,7 +345,8 @@ export function mount(root, app) {
     unmount() {
       alive = false;
       clearTimeout(debounceTimer);
-      ro.disconnect();
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
       ac.abort();
       renderer?.clear();
     },

@@ -12,10 +12,14 @@
 - 항목별 결과: PASS / FAIL / UNVERIFIED. 실행하지 않은 항목은 PASS로 내지 않는다.
 """
 import argparse
+import math
+import os
 import secrets
+import shutil
 import socket
 import subprocess
 import sys
+import tempfile
 import time
 import traceback
 from pathlib import Path
@@ -563,8 +567,11 @@ def t11(browser, col):
         create_char(page, new_nick())
         checks.append(("게임 화면 가로 스크롤 없음", no_hscroll(page)))
         canvas_box = page.get_by_test_id("game-canvas").bounding_box()
-        checks.append((f"캔버스 328px 폭 (실제 {canvas_box['width']:.0f}x{canvas_box['height']:.0f})",
-                       abs(canvas_box["width"] - 328) <= 1))
+        # style-guide v2.0 4.2: 모바일 캔버스 = 화면 폭 전체(floor(W/2)*2), 세로 = 아래 조작 영역 124px을 뺀 나머지(floor((H-124)/2)*2)
+        exp_w = math.floor(360 / 2) * 2
+        exp_h = math.floor((640 - 124) / 2) * 2
+        checks.append((f"캔버스 {exp_w}x{exp_h} (v2.0: 화면 폭 전체, 세로 innerHeight-124) (실제 {canvas_box['width']:.0f}x{canvas_box['height']:.0f})",
+                       abs(canvas_box["width"] - exp_w) <= 1 and abs(canvas_box["height"] - exp_h) <= 1))
         for tid in ("move-left", "move-right"):
             bb = page.get_by_test_id(tid).bounding_box()
             checks.append((f"{tid} 높이 44px 이상 (실제 {bb['height']:.0f})", bb["height"] >= 44))
@@ -653,6 +660,350 @@ def t12(browser, col):
     if result[0] == "PASS":
         result = ("PASS", result[1] + " / 미측정: 리스너 개수, JS 힙(브라우저 DevTools 필요)")
     return result
+
+
+# ---------------------------------------------------------------------------
+# 사이클 2 항목 (픽셀아트 v2: ARCHITECTURE "픽셀아트 계약", style-guide v2.0)
+# ---------------------------------------------------------------------------
+# 캔버스 글자(닉네임 라벨, 말풍선)는 fillText로 그린다. 위치와 크기를 읽으려고 호출을 가로챈다.
+# 그리기 동작은 바꾸지 않는다. 기록은 window.__qaFill[글자] = {x, y, w} (CSS px, 캔버스 기준).
+FILLTEXT_HOOK = """
+(() => {
+  window.__qaFill = {};
+  const orig = CanvasRenderingContext2D.prototype.fillText;
+  CanvasRenderingContext2D.prototype.fillText = function (text, x, y, ...rest) {
+    try {
+      window.__qaFill[String(text)] = { x: x, y: y, w: this.measureText(String(text)).width };
+    } catch (e) { /* 기록 실패가 그리기를 막으면 안 된다 */ }
+    return orig.call(this, text, x, y, ...rest);
+  };
+})();
+"""
+
+# LOCAL MODE 배지와 겹치는 "잎" 요소(자식 없음, 캔버스, 버튼, 입력) 찾기. 배지의 조상/자손은 제외한다.
+BADGE_JS = """
+() => {
+  const badge = document.querySelector('[data-testid="mode-badge"]');
+  if (!badge) return { missing: true, hits: [] };
+  const vis = (el) => {
+    const r = el.getBoundingClientRect();
+    if (r.width <= 0 || r.height <= 0) return false;
+    const cs = getComputedStyle(el);
+    return cs.visibility !== 'hidden' && cs.display !== 'none' && parseFloat(cs.opacity) > 0;
+  };
+  const br = badge.getBoundingClientRect();
+  const hits = [];
+  for (const el of document.body.querySelectorAll('*')) {
+    if (el === badge || el.contains(badge) || badge.contains(el)) continue;
+    if (el.children.length > 0 && el.tagName !== 'CANVAS') continue;
+    if (!vis(el)) continue;
+    const r = el.getBoundingClientRect();
+    const ix = Math.min(r.right, br.right) - Math.max(r.left, br.left);
+    const iy = Math.min(r.bottom, br.bottom) - Math.max(r.top, br.top);
+    if (ix > 0.5 && iy > 0.5) {
+      const name = el.getAttribute('data-testid') || el.tagName.toLowerCase();
+      hits.push(name + ' "' + (el.textContent || '').trim().slice(0, 16) + '"');
+    }
+  }
+  return { missing: false, badge: [br.x, br.y, br.width, br.height], hits };
+}
+"""
+
+PALETTE_COLORS = 42  # style-guide 1.1: 아트는 팔레트 42색만 쓴다
+
+
+def canvas_layout(pg):
+    return pg.evaluate("""() => {
+      const c = document.querySelector('[data-testid="game-canvas"]');
+      if (!c) return null;
+      const r = c.getBoundingClientRect();
+      return { cssW: r.width, cssH: r.height, bufW: c.width, bufH: c.height, dpr: window.devicePixelRatio };
+    }""")
+
+
+def canvas_text_boxes(pg):
+    """캔버스에 그린 글자의 CSS px 사각형 (라벨 배경 여유 포함). 픽셀 블록 검사에서 제외한다."""
+    recs = pg.evaluate("window.__qaFill || {}")
+    boxes = []
+    for text, v in recs.items():
+        half = v["w"] / 2 + 8
+        boxes.append((v["x"] - half, v["y"] - 12, v["x"] + half, v["y"] + 12, text))
+    return boxes
+
+
+def pixel_check(png, k, boxes_css, dsf, band_frac=0.35):
+    """캔버스 스크린샷(PNG bytes)에서 아트 블록(k x k 디바이스 px) 균일성과 전환 위치를 검사한다.
+    글자 영역(boxes_css)은 계약상 화면 해상도이므로 제외한다. 상단 band_frac 밴드는 글자가 없는 하늘/산 영역."""
+    import io
+    import numpy as np
+    from PIL import Image
+
+    arr = np.asarray(Image.open(io.BytesIO(png)).convert("RGB"))
+    H, W, _ = arr.shape
+    if H % k or W % k:
+        return {"error": f"스크린샷 {W}x{H}가 블록 {k}의 배수가 아님"}
+    mask = np.zeros((H, W), dtype=bool)
+    for l, t, r, b, _ in boxes_css:
+        mask[max(0, int(t * dsf)):min(H, int(b * dsf) + 1), max(0, int(l * dsf)):min(W, int(r * dsf) + 1)] = True
+    bh, bw = H // k, W // k
+    blocks = arr.reshape(bh, k, bw, k, 3)
+    uniform = (blocks == blocks[:, :1, :, :1, :]).all(axis=(1, 3, 4))
+    bmask = mask.reshape(bh, k, bw, k).any(axis=(1, 3))
+    band_rows = max(1, int(bh * band_frac))
+    h_px = band_rows * k
+    band = arr[:h_px]
+    m = mask[:h_px]
+    # 색이 바뀌는 경계가 k의 배수 위치에만 있어야 블록이 정사각형이고 흐림(보간)이 없다
+    cx = (band[:, 1:] != band[:, :-1]).any(axis=2) & ~(m[:, 1:] | m[:, :-1])
+    cy = (band[1:] != band[:-1]).any(axis=2) & ~(m[1:] | m[:-1])
+    mis_x = int(cx[:, np.arange(1, W) % k != 0].sum())
+    mis_y = int(cy[np.arange(1, h_px) % k != 0, :].sum())
+    return {
+        "size": (W, H),
+        "blocks": int(uniform.size),
+        "bad_outside": int(np.count_nonzero(~uniform & ~bmask)),
+        "band_bad": int(np.count_nonzero(~uniform[:band_rows] & ~bmask[:band_rows])),
+        "mis_x": mis_x,
+        "mis_y": mis_y,
+        "band_colors": int(len(np.unique(band[~m].reshape(-1, 3), axis=0))),
+    }
+
+
+@case(13, "픽셀 선명도: 캔버스 스크린샷에서 아트 픽셀이 배율 P의 균일 정사각 블록 (흐림/비정렬 없음)")
+def t13(browser, col):
+    try:
+        import numpy  # noqa: F401
+        import PIL  # noqa: F401
+    except ImportError as e:
+        return ("UNVERIFIED", f"numpy/Pillow가 없어 픽셀 검사를 하지 못함: {e}")
+    # (이름, 뷰포트 W, H, devicePixelRatio, 모바일 여부, 기대 P). P는 style-guide 4.2 (1600x900 이상이면 3)
+    configs = [
+        ("데스크톱 1280x720 dpr1", 1280, 720, 1, False, 2),
+        ("큰 데스크톱 1920x1080 dpr1", 1920, 1080, 1, False, 3),
+        ("모바일 360x640 dpr2", 360, 640, 2, True, 2),
+    ]
+    checks = []
+    for label, vw, vh, dsf, mob, P in configs:
+        ctx = browser.new_context(viewport={"width": vw, "height": vh}, device_scale_factor=dsf,
+                                  is_mobile=mob, has_touch=mob)
+        ctx.add_init_script(FILLTEXT_HOOK)
+        try:
+            page = open_page(ctx, col, label)
+            signup(page, new_id())
+            create_char(page, new_nick())
+            time.sleep(0.6)
+            lay = canvas_layout(page)
+            png = page.get_by_test_id("game-canvas").screenshot()
+            boxes = canvas_text_boxes(page)
+            res = pixel_check(png, P * dsf, boxes, dsf)
+        finally:
+            ctx.close()
+        k = P * dsf
+        if "error" in res:
+            checks.append((f"{label}: {res['error']}", False))
+            continue
+        checks += [
+            (f"{label}: 스크린샷 {res['size'][0]}x{res['size'][1]} = 캔버스 버퍼 {lay['bufW']}x{lay['bufH']}",
+             tuple(res["size"]) == (lay["bufW"], lay["bufH"])),
+            (f"{label}: 블록 {k}px(P={P} x dpr {dsf}) 격자 위에서만 색 전환 (비정렬 {res['mis_x'] + res['mis_y']}건)",
+             res["mis_x"] == 0 and res["mis_y"] == 0),
+            (f"{label}: 글자 영역 밖 블록 전부 균일 (불균일 {res['bad_outside']}/{res['blocks']})",
+             res["bad_outside"] == 0),
+            (f"{label}: 상단 35% 밴드 블록 균일 (불균일 {res['band_bad']})", res["band_bad"] == 0),
+            (f"{label}: 상단 밴드 색 {res['band_colors']}가지 (팔레트 {PALETTE_COLORS}색 이내, 흐림이면 급증)",
+             res["band_colors"] <= PALETTE_COLORS),
+        ]
+    return verdict(checks)
+
+
+@case(14, "애니메이션: 이동 중 anim=walk, 정지 후 idle (로컬과 원격 탭 모두)")
+def t14(browser, col):
+    ctx, a, b = make_pair(browser, col)
+    checks = []
+    try:
+        a_nick, b_nick = new_nick(), new_nick()
+        signup(a, new_id())
+        create_char(a, a_nick)
+        signup(b, new_id())
+        create_char(b, b_nick)
+        wait_until(lambda: find_player(b, a_nick) and find_player(a, b_nick), 6)
+        time.sleep(0.6)
+        checks.append(("정지 상태 로컬 anim=idle", state(a)["me"].get("anim") == "idle"))
+        rp = find_player(b, a_nick)
+        checks.append(("정지 상태 원격 anim 필드 있음, idle", rp is not None and rp.get("anim") == "idle"))
+
+        loc, rem = [], []
+        a.keyboard.down("ArrowRight")
+        t0 = time.time()
+        while time.time() - t0 < 0.9:
+            t = time.time() - t0
+            loc.append((t, state(a)["me"].get("anim")))
+            p = find_player(b, a_nick)
+            rem.append((t, p.get("anim") if p else None))
+            time.sleep(0.03)
+        a.keyboard.up("ArrowRight")
+        t_up = time.time()
+        loc_idle = rem_idle = None
+        while time.time() - t_up < 1.5 and (loc_idle is None or rem_idle is None):
+            if loc_idle is None and state(a)["me"].get("anim") == "idle":
+                loc_idle = time.time() - t_up
+            p = find_player(b, a_nick)
+            if rem_idle is None and p and p.get("anim") == "idle":
+                rem_idle = time.time() - t_up
+            time.sleep(0.02)
+
+        late_l = [s for t, s in loc if t >= 0.15]
+        frac_l = sum(s == "walk" for s in late_l) / max(1, len(late_l))
+        late_r = [s for t, s in rem if t >= 0.3]
+        has_key = all(s is not None for s in late_r)
+        frac_r = sum(s == "walk" for s in late_r) / max(1, len(late_r))
+        checks.append((f"이동 중 로컬 anim=walk 비율 {frac_l:.2f} (0.15s 이후, 기준 0.95 이상)", frac_l >= 0.95))
+        checks.append((f"이동 중 원격 anim 필드 존재 {has_key}, walk 비율 {frac_r:.2f} (0.3s 이후, 기준 0.85 이상)",
+                       has_key and frac_r >= 0.85))
+        checks.append((f"정지 후 로컬 idle 전환 {loc_idle if loc_idle is None else round(loc_idle, 3)}s (기준 0.3s 이내)",
+                       loc_idle is not None and loc_idle <= 0.3))
+        checks.append((f"정지 후 원격 idle 전환 {rem_idle if rem_idle is None else round(rem_idle, 3)}s (기준 0.5s 이내)",
+                       rem_idle is not None and rem_idle <= 0.5))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(15, "에셋 로드: assets 404/실패 없음, manifest 3종 200, 로드 결과 (아바타 22, 맵 7, UI manifest)")
+def t15(browser, col):
+    ctx = browser.new_context()
+    page = ctx.new_page()
+    col.attach(page, "AS")
+    ev = {"resp": [], "failed": [], "warn": []}
+    page.on("response", lambda r: ev["resp"].append((r.status, r.url)) if "/assets/" in r.url else None)
+    page.on("requestfailed", lambda r: ev["failed"].append(r.url) if "/assets/" in r.url else None)
+    page.on("console", lambda m: ev["warn"].append(m.text) if m.type == "warning" else None)
+    checks = []
+    try:
+        page.goto(BASE)
+        wait_until(lambda: screen(page) in (SCREEN_LOGIN, SCREEN_CREATE, SCREEN_GAME), 10)
+        signup(page, new_id())
+        create_char(page, new_nick())
+        time.sleep(1.0)
+        st = state(page)
+        bad = [(s, u) for s, u in ev["resp"] if s >= 400]
+        pngs_ok = sum(1 for s, u in ev["resp"] if s == 200 and u.endswith(".png"))
+        checks.append((f"assets 응답 4xx/5xx 0건 (전체 {len(ev['resp'])}건, 실패 {bad[:3]})", not bad))
+        checks.append((f"assets 요청 실패(requestfailed) 0건 (실제 {len(ev['failed'])})", not ev["failed"]))
+        for m in ("avatar/manifest.json", "map/manifest.json", "ui/manifest.json"):
+            checks.append((f"{m} 200 응답", any(s == 200 and u.endswith(m) for s, u in ev["resp"])))
+        a = st.get("assets") or {}
+        checks.append((f"아바타 로드: source=manifest, images=22 (실제 {a.get('source')}, {a.get('images')})",
+                       a.get("source") == "manifest" and a.get("images") == 22))
+        checks.append((f"맵 로드: mapLayers=7, background=True (실제 {a.get('mapLayers')}, {a.get('background')})",
+                       a.get("mapLayers") == 7 and a.get("background") is True))
+        checks.append((f"UI 스킨 로드: ui=manifest (실제 {a.get('ui')})", a.get("ui") == "manifest"))
+        checks.append((f"PNG 200 응답 {pngs_ok}건 (기대 48: 아바타 22 + 맵 7 + UI 19; 스프라이트 중복 요청 포함 가능)",
+                       pngs_ok >= 48))
+        checks.append((f"콘솔 경고 0건 (실제 {len(ev['warn'])}: {ev['warn'][:2]})", not ev["warn"]))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+def badge_check(pg, prefix):
+    res = pg.evaluate(BADGE_JS)
+    if res.get("missing"):
+        return [(f"{prefix}: LOCAL MODE 배지 존재", False)]
+    hits = res["hits"]
+    return [(f"{prefix}: LOCAL MODE 배지와 겹치는 요소 0개 (실제 {len(hits)}: {hits[:4]})", not hits)]
+
+
+def label_check(pg, nick, prefix):
+    lay = canvas_layout(pg)
+    rec = pg.evaluate("(n) => (window.__qaFill || {})[n] || null", nick)
+    if not rec:
+        return [(f"{prefix}: 닉네임 라벨 그리기 기록 없음", False)]
+    half = rec["w"] / 2 + 6  # 라벨 배경 = 글자 폭 + 좌우 6px 여백 (overlay.js drawLabel)
+    l, r = rec["x"] - half, rec["x"] + half
+    t, b = rec["y"] - 10, rec["y"] + 10  # 라벨 높이 20, 글자 중심 기준
+    ok = l >= 0 and r <= lay["cssW"] and t >= 0 and b <= lay["cssH"]
+    return [(f"{prefix}: 닉네임 라벨이 캔버스 안 (x {l:.0f}~{r:.0f}, y {t:.0f}~{b:.0f} / 캔버스 {lay['cssW']:.0f}x{lay['cssH']:.0f})", ok)]
+
+
+@case(16, "레이아웃: 1280x800 / 1920x1080 / 360x640에서 가로 스크롤 없음, LOCAL MODE 비겹침, 닉네임 라벨 캔버스 안, 모바일 하단 빈 공간 없음")
+def t16(browser, col):
+    checks = []
+    viewports = [("1280x800", 1280, 800, 1, False), ("1920x1080", 1920, 1080, 1, False), ("360x640", 360, 640, 2, True)]
+    for tag, vw, vh, dsf, mob in viewports:
+        ctx = browser.new_context(viewport={"width": vw, "height": vh}, device_scale_factor=dsf,
+                                  is_mobile=mob, has_touch=mob)
+        ctx.add_init_script(FILLTEXT_HOOK)
+        try:
+            page = open_page(ctx, col, tag)
+            checks.append((f"[{tag}] 로그인: 가로 스크롤 없음", page.evaluate(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth")))
+            checks += badge_check(page, f"[{tag}] 로그인")
+            signup(page, new_id())
+            checks.append((f"[{tag}] 생성: 가로 스크롤 없음", page.evaluate(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth")))
+            checks += badge_check(page, f"[{tag}] 생성")
+            nick = new_nick()
+            create_char(page, nick)
+            time.sleep(0.4)
+            checks.append((f"[{tag}] 게임: 가로 스크롤 없음", page.evaluate(
+                "document.documentElement.scrollWidth <= document.documentElement.clientWidth")))
+            checks += badge_check(page, f"[{tag}] 게임")
+            checks += label_check(page, nick, f"[{tag}] 게임")
+            if mob:
+                send = page.get_by_test_id("chat-send").bounding_box()
+                gap = vh - (send["y"] + send["height"])
+                checks.append((f"[{tag}] 하단 빈 공간 없음 (채팅 버튼 아래 여백 {gap:.0f}px, 기준 12px 이하)", gap <= 12))
+        finally:
+            ctx.close()
+    return verdict(checks)
+
+
+@case(17, "에셋 빌드 재현성: 저장소 사본에서 build.py 실행 -> 생성 PNG/manifest가 저장소와 바이트 단위 동일 (2회 결정성)")
+def t17(browser, col):
+    src = ROOT / "assets"
+    base_dir = os.environ.get("QA_SCRATCH")  # 스크래치 디렉터리 (없으면 시스템 임시 폴더)
+    if base_dir:
+        os.makedirs(base_dir, exist_ok=True)
+    repo_pngs = sorted(p.relative_to(src) for p in src.rglob("*.png"))
+    repo_mans = sorted(p.relative_to(src) for p in src.rglob("manifest.json"))
+    import hashlib
+
+    def tree_hash():
+        return {str(p.relative_to(ROOT)): hashlib.sha1(p.read_bytes()).hexdigest()
+                for p in sorted(src.rglob("*")) if p.is_file()}
+
+    before = tree_hash()
+
+    def build_in(tmp):
+        dst = Path(tmp) / "assets"
+        shutil.copytree(src, dst, ignore=shutil.ignore_patterns("__pycache__"))
+        for p in list(dst.rglob("*.png")) + list(dst.rglob("manifest.json")):
+            p.unlink()  # 사본의 산출물을 지워 전부 새로 만들게 한다
+        proc = subprocess.run([sys.executable, "-B", str(dst / "_src" / "build.py")], cwd=tmp,
+                              capture_output=True, text=True, timeout=300)
+        return dst, proc
+
+    checks = []
+    with tempfile.TemporaryDirectory(dir=base_dir) as t1, tempfile.TemporaryDirectory(dir=base_dir) as t2:
+        dst1, p1 = build_in(t1)
+        checks.append((f"build.py 종료 코드 0 ('{p1.stdout.strip().splitlines()[-1] if p1.stdout.strip() else p1.stderr.strip()[-120:]}')",
+                       p1.returncode == 0))
+        checks.append((f"생성 PNG 개수 = 저장소 PNG 개수 ({len(repo_pngs)}, 기대 48)",
+                       len(repo_pngs) == 48 and sorted(p.relative_to(dst1) for p in dst1.rglob("*.png")) == repo_pngs))
+        same = [str(r) for r in repo_pngs if (src / r).read_bytes() == (dst1 / r).read_bytes()]
+        diff = [str(r) for r in repo_pngs if str(r) not in same]
+        checks.append((f"PNG 바이트 동일 {len(same)}/{len(repo_pngs)} (불일치: {diff[:4]})", not diff))
+        same_m = [str(r) for r in repo_mans if (src / r).read_bytes() == (dst1 / r).read_bytes()]
+        checks.append((f"manifest.json 바이트 동일 {len(same_m)}/{len(repo_mans)}", len(same_m) == len(repo_mans) == 3))
+        dst2, p2 = build_in(t2)
+        check2 = p2.returncode == 0 and all(
+            (dst1 / r).read_bytes() == (dst2 / r).read_bytes() for r in repo_pngs + repo_mans)
+        checks.append(("두 번째 독립 빌드도 첫 번째와 바이트 동일 (결정적)", check2))
+    after = tree_hash()
+    changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
+    checks.append((f"저장소 assets/ 원본 해시 전후 동일 (빌드 전후 변경 {len(changed)}건: {changed[:3]})", not changed))
+    return verdict(checks)
 
 
 def verdict(checks):

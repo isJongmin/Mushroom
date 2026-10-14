@@ -1,0 +1,99 @@
+{
+  "scale": 2,
+  "nine": {
+    "panel": {
+      "src": "assets/ui/panel.png",
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ]
+    },
+    "button-primary": {
+      "states": {
+        "normal": "assets/ui/button-primary-normal.png",
+        "hover": "assets/ui/button-primary-hover.png",
+        "pressed": "assets/ui/button-primary-pressed.png",
+        "disabled": "assets/ui/button-primary-disabled.png"
+      },
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "pressedShift": 2
+    },
+    "button-secondary": {
+      "states": {
+        "normal": "assets/ui/button-secondary-normal.png",
+        "hover": "assets/ui/button-secondary-hover.png",
+        "pressed": "assets/ui/button-secondary-pressed.png",
+        "disabled": "assets/ui/button-primary-disabled.png"
+      },
+      "slice": [
+        8,
+        8,
+        8,
+        8
+      ],
+      "pressedShift": 2
+    },
+    "input": {
+      "states": {
+        "normal": "assets/ui/input-normal.png",
+        "focus": "assets/ui/input-focus.png",
+        "error": "assets/ui/input-error.png",
+        "disabled": "assets/ui/input-disabled.png"
+      },
+      "slice": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    "chip": {
+      "src": "assets/ui/chip.png",
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ]
+    },
+    "bubble": {
+      "src": "assets/ui/bubble.png",
+      "slice": [
+        4,
+        4,
+        4,
+        4
+      ]
+    },
+    "label-other": {
+      "src": "assets/ui/label-other.png",
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ]
+    },
+    "label-self": {
+      "src": "assets/ui/label-self.png",
+      "slice": [
+        3,
+        3,
+        3,
+        3
+      ]
+    }
+  },
+  "sprites": {
+    "bubble-tail": "assets/ui/bubble-tail.png",
+    "icon-mushroom": "assets/ui/icon-mushroom.png",
+    "icon-arrow": "assets/ui/icon-arrow.png"
+  }
+}

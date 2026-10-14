@@ -1,5 +1,6 @@
-// 맵 그리기 (style-guide 4.3~4.5, 6장). 모든 좌표는 아트 px 정수, 아트 해상도 캔버스(스무딩 끔)에 그린다.
-// assets/map/manifest.json 레이어가 있으면 패럴랙스로, 없으면 팔레트 단색 도형으로 그린다 (폴백).
+// 맵 그리기 (ARCHITECTURE 블록 아트 계약 "맵", style-guide v3 6장). 모든 좌표는 아트 px 정수,
+// 아트 해상도 캔버스(스무딩 끔)에 그린다. assets/map/manifest.json 레이어가 있으면 패럴랙스로
+// (배열 앞쪽이 뒤, ox = -floor(camX * parallax)), 없으면 팔레트 단색 도형으로 그린다 (폴백).
 import { PAL, ART } from '../constants.js';
 
 /** 레이어 하나를 그린다. ox = -floor(camX * parallax), repeatX면 시야 끝까지 반복. */
@@ -71,14 +72,13 @@ export function drawMap(ctx, map, camX, camY, viewW, viewH) {
   }
 }
 
-/** style-guide 4.5-3: 발 그림자 (기준점 아트 x, 지면 y) */
+/** style-guide 6.3-3: 발 그림자. 지면선(기준점 y) 한 줄, x ax-7 ~ ax+6, g3 */
 export function drawFootShadow(ctx, ax, groundY) {
   ctx.fillStyle = PAL.g3;
-  ctx.fillRect(ax - 6, groundY, 12, 1);
-  ctx.fillRect(ax - 5, groundY + 1, 10, 1);
+  ctx.fillRect(ax - 7, groundY, 14, 1);
 }
 
-/** style-guide 4.3 카메라 */
+/** style-guide 6.2 카메라: 화면 아래 끝 = 아트 y 250 */
 export function cameraFor(playerArtX, viewW, viewH) {
   const camX = Math.min(Math.max(Math.round(playerArtX - viewW / 2), 0), Math.max(0, ART.width - viewW));
   const camY = ART.bottomY - viewH;

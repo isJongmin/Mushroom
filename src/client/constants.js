@@ -1,9 +1,10 @@
-// 디자인 정본 값 (docs/design/style-guide.md v2.0, screens/*.md). 값을 바꾸려면 디자인 문서를 먼저 고친다.
+// 디자인 정본 값 (docs/design/style-guide.md v3.0, screens/*.md v3.0)과 ARCHITECTURE 블록 아트 계약 값.
+// 값을 바꾸려면 정본 문서를 먼저 고친다.
 
 export const FONT_UI =
-  'system-ui, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", "Segoe UI", sans-serif';
+  'system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", "Noto Sans CJK KR", "Segoe UI", sans-serif';
 
-// style-guide 1.1 팔레트 (프런트가 직접 쓰는 색만)
+// style-guide 1장 팔레트 (프런트가 직접 쓰는 색만)
 export const PAL = Object.freeze({
   ink: '#1A1626', hb1: '#4A4560', hb2: '#2E2A3E',
   w1: '#E0A868', w2: '#B97A4A', w3: '#8A5232', w4: '#5E3620',
@@ -20,7 +21,7 @@ export const PAL = Object.freeze({
   st1: '#C8C4D0', st2: '#8E88A0',
 });
 
-// 4장: 게임 월드. 월드 단위(로직, 네트워크)와 아트 px(그리기) = 2 : 1
+// 게임 월드 (style-guide v3 6장). 월드 단위(로직, 네트워크)와 아트 px(그리기) = 2 : 1
 export const WORLD = Object.freeze({
   width: 2400,
   height: 540,
@@ -34,106 +35,108 @@ export const ART = Object.freeze({
   perWorld: 2, // 월드 2단위 = 아트 1px
   width: 1200,
   height: 270,
-  groundY: 220,
-  bottomY: 250, // 화면 아래 끝 (4.3)
-  headLineY: 176, // 말풍선 머리 위 기준선 (9장)
+  groundY: 220, // 지면선 (ARCHITECTURE 블록 아트 계약)
+  bottomY: 250, // 화면 아래 끝 (style-guide 6.2)
+  headLine: 52, // 말풍선 머리 위 기준선: 기준점에서 아트 52px 위 (style-guide 8.2)
   minViewH: 80,
 });
 
 export const MOBILE_MAX_WIDTH = 720; // 미만이면 모바일
-export const MOBILE_CONTROLS_H = 124; // 모바일 캔버스 아래 조작 영역 (game.md 3장)
+export const MOBILE_CONTROLS_H = 132; // 모바일 캔버스 아래 조작 영역 (game.md v3 3장: 64 + 68)
+export const MOBILE_MIN_CANVAS_H = 160; // 소프트 키보드 시 최소 캔버스 세로
 export const DESKTOP_RESERVED_H = 72; // 데스크톱 캔버스 아래 채팅 행 + 여백
-export const UI_SCALE = 2; // U (UI 스킨 PNG 1px = 2 CSS px)
 
-/** style-guide 4.2: 정수 픽셀 배율 P */
+/** style-guide 6.1: 정수 픽셀 배율 P */
 export function pixelScale(vw, vh) {
   return vw >= 1600 && vh >= 900 ? 3 : 2;
 }
 
-// 5장: 아바타 (ARCHITECTURE 픽셀아트 계약)
+// 아바타 (ARCHITECTURE 블록 아트 계약). manifest.json 값이 우선이고, 아래는 manifest가 없거나 깨졌을 때의 기본값이다.
 export const AVATAR = Object.freeze({
-  frameW: 32,
-  frameH: 48,
-  anchorX: 16,
-  anchorY: 46,
-  frames: 6,
+  frameW: 48,
+  frameH: 64,
+  anchorX: 24,
+  anchorY: 60,
+  frames: Object.freeze(['front', 'side_idle', 'side_walk0', 'side_walk1', 'side_walk2', 'side_walk3', 'back']),
   animations: Object.freeze({
-    idle: Object.freeze({ frames: Object.freeze([0, 1]), ms: 500 }),
-    walk: Object.freeze({ frames: Object.freeze([2, 3, 4, 5]), ms: 120 }),
+    idle: Object.freeze({ frames: Object.freeze([1]), ms: 500 }),
+    walk: Object.freeze({ frames: Object.freeze([2, 3, 4, 5]), ms: 150 }),
   }),
 });
-export const PART_KEYS = Object.freeze(['skin', 'hair', 'eyes', 'top', 'bottom']);
-export const DEFAULT_LAYER_ORDER = Object.freeze(['skin', 'bottom', 'top', 'eyes', 'hair']);
-export const PART_LABELS = Object.freeze({ skin: '피부', hair: '머리', eyes: '눈', top: '상의', bottom: '하의' });
-// aria-label 용 ("이전 머리 모양")
-export const PART_ARIA = Object.freeze({ skin: '피부색', hair: '머리 모양', eyes: '눈 모양', top: '상의', bottom: '하의' });
-
-// manifest.json이 없거나 깨졌을 때 쓰는 목록 (style-guide 5.10 순서, 첫 항목이 기본값)
-export const DEFAULT_PARTS = Object.freeze({
-  skin: [
-    { id: 'skin-light', label: '밝은 피부' },
-    { id: 'skin-tan', label: '보통 피부' },
-    { id: 'skin-dark', label: '진한 피부' },
-  ],
-  hair: [
-    { id: 'hair-round-black', label: '단발 · 흑발' },
-    { id: 'hair-round-chestnut', label: '단발 · 밤색' },
-    { id: 'hair-spiky-black', label: '뾰족 · 흑발' },
-    { id: 'hair-spiky-chestnut', label: '뾰족 · 밤색' },
-    { id: 'hair-spiky-mint', label: '뾰족 · 민트' },
-    { id: 'hair-long-pink', label: '긴머리 · 분홍' },
-    { id: 'hair-long-blonde', label: '긴머리 · 금발' },
-  ],
-  eyes: [
-    { id: 'eyes-dot', label: '기본 눈' },
-    { id: 'eyes-happy', label: '웃는 눈' },
-    { id: 'eyes-sleepy', label: '졸린 눈' },
-    { id: 'eyes-sparkle', label: '반짝 눈' },
-  ],
-  top: [
-    { id: 'top-tee-red', label: '빨간 티셔츠' },
-    { id: 'top-hoodie-blue', label: '파란 후드티' },
-    { id: 'top-overalls-blue', label: '파란 멜빵' },
-    { id: 'top-cape-mushroom', label: '버섯 망토' },
-  ],
-  bottom: [
-    { id: 'bottom-shorts-navy', label: '네이비 반바지' },
-    { id: 'bottom-jeans-blue', label: '청바지' },
-    { id: 'bottom-skirt-pink', label: '분홍 치마' },
-    { id: 'bottom-pumpkin-green', label: '초록 호박바지' },
-  ],
+// 아바타 데이터 키 (ARCHITECTURE 인터페이스 계약, 사이클 3): 정확히 7개
+export const PART_KEYS = Object.freeze(['skin', 'hair', 'face', 'top', 'bottom', 'shoes', 'hat']);
+// 합성 레이어 순서 (hair는 hair_back / hair_front 두 레이어)
+export const DEFAULT_LAYER_ORDER = Object.freeze(['hair_back', 'skin', 'face', 'bottom', 'shoes', 'top', 'hair_front', 'hat']);
+export const LAYER_PART = Object.freeze({
+  hair_back: 'hair', skin: 'skin', face: 'face', bottom: 'bottom', shoes: 'shoes', top: 'top', hair_front: 'hair', hat: 'hat',
 });
+export const HAT_NONE = 'none';
 
-// 사이클 1 id 호환 (style-guide 5.10). 매니페스트 aliases가 있으면 그것을 우선한다.
-export const DEFAULT_ALIASES = Object.freeze({
-  eyes: Object.freeze({ 'eyes-round': 'eyes-sparkle' }),
-  top: Object.freeze({ 'top-vest-green': 'top-overalls-blue' }),
-});
+// 캐릭터 생성 카테고리 탭 순서와 글자 (character-create.md v3 5.1)
+export const CATEGORY_ORDER = Object.freeze(['skin', 'face', 'hair', 'hat', 'top', 'bottom', 'shoes']);
+export const PART_LABELS = Object.freeze({ skin: '피부', face: '얼굴', hair: '머리', hat: '모자', top: '상의', bottom: '하의', shoes: '신발' });
 
+// manifest 각 파츠 첫 항목 (manifest가 없을 때의 기본값과 저장 기본값)
 export const DEFAULT_AVATAR = Object.freeze({
-  skin: 'skin-light',
-  hair: 'hair-round-black',
-  eyes: 'eyes-dot',
-  top: 'top-tee-red',
-  bottom: 'bottom-shorts-navy',
+  skin: 'light',
+  hair: 'black-short',
+  face: 'basic',
+  top: 'hoodie-black',
+  bottom: 'pants-navy',
+  shoes: 'sneakers-white',
+  hat: 'none',
 });
 
-// 8장 닉네임 라벨, 9장 말풍선 (CSS px)
-export const LABEL = Object.freeze({ font: 12, lineH: 16, h: 20, padX: 6, minW: 24, gap: 4, textTop: 2 });
+// 사이클 1~2 id -> 사이클 3 id (art-20261014-block-final.md 5장 매핑표). face에는 옛 eyes id가 들어올 수 있다.
+export const LEGACY_ALIASES = Object.freeze({
+  skin: Object.freeze({ 'skin-light': 'light', 'skin-tan': 'medium', 'skin-dark': 'dark' }),
+  hair: Object.freeze({
+    'hair-round-black': 'black-short',
+    'hair-round-chestnut': 'brown-short',
+    'hair-spiky-black': 'black-short',
+    'hair-spiky-chestnut': 'brown-short',
+    'hair-spiky-mint': 'mint-curly',
+    'hair-long-pink': 'pink-long',
+    'hair-long-blonde': 'blonde-spiky',
+  }),
+  face: Object.freeze({
+    'eyes-dot': 'basic', 'eyes-round': 'basic', 'eyes-sparkle': 'basic', 'eyes-happy': 'smile', 'eyes-sleepy': 'sleepy',
+  }),
+  top: Object.freeze({
+    'top-tee-red': 'tee-stripe-red',
+    'top-hoodie-blue': 'hoodie-white',
+    'top-overalls-blue': 'overalls-green',
+    'top-vest-green': 'overalls-green',
+    'top-cape-mushroom': 'cape-blue',
+  }),
+  bottom: Object.freeze({
+    'bottom-shorts-navy': 'pants-navy',
+    'bottom-jeans-blue': 'jeans-blue',
+    'bottom-skirt-pink': 'skirt-pink',
+    'bottom-pumpkin-green': 'shorts-brown',
+  }),
+  shoes: Object.freeze({}),
+  hat: Object.freeze({}),
+});
+
+// style-guide v3 7장 닉네임 라벨, 8장 말풍선 (CSS px, U=2 고정)
+export const LABEL = Object.freeze({ font: 12, lineH: 16, h: 20, padX: 6, minW: 24, top: 6, textTop: 2, edge: 4 });
 export const BUBBLE = Object.freeze({
   font: 14,
   lineH: 18,
-  padX: 12,
-  padY: 8,
+  padTop: 6,
+  padX: 10,
+  padBottom: 8,
+  wrapW: 180,
   maxW: 200,
   minW: 40,
   maxLines: 4,
-  tailW: 16,
-  tailH: 8,
-  tipGap: 4, // 꼬리 끝 = 머리 기준선 - 4
-  bodyGap: 6, // 몸통 아래 끝 = 꼬리 끝 - 6
+  tipGap: 4, // 꼬리 끝 = 머리 위 기준선 - 4
+  tailH: 8, // 박스 아래 끝 ~ 꼬리 끝
   edge: 8,
+  tailEdge: 10,
   topMin: 4,
+  topClamp: 6,
   showMs: 5000,
   fadeMs: 500,
 });

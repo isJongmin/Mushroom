@@ -5,7 +5,7 @@
 index.html       진입점 (GitHub Pages 루트에서 서빙) (frontend)
 src/client/      프런트엔드 ES 모듈 (frontend)
 supabase/        migrations/*.sql, 정책 (backend)
-assets/          SVG 에셋 (art)
+assets/          블록 아트 PNG + _src 생성 스크립트 (art)
 tests/           테스트 (qa)
 docs/            문서
   design/        스타일 가이드, 화면 설계 (design)
@@ -30,25 +30,26 @@ docs/            문서
    - move의 `dir` 값은 `'left' | 'right'`.
 
 ## 인터페이스 계약
-- 아바타 데이터(`characters.avatar`, jsonb): `{ "skin": "<id>", "hair": "<id>", "eyes": "<id>", "top": "<id>", "bottom": "<id>" }` (DB 스키마 변경 없음)
+- 아바타 데이터(`characters.avatar`, jsonb, 사이클 3부터): `{ "skin", "hair", "face", "top", "bottom", "shoes", "hat" }` 7개 키, 값은 파츠 id 문자열. `hat`은 `"none"` 허용. (사이클 1~2의 `eyes` 키는 `face`로 대체. backend 마이그레이션으로 변환)
+- 표시 시 manifest에 없는 id는 해당 파츠의 기본값(첫 항목)으로 그린다.
 
-### 픽셀아트 계약 (2026-10-14 사이클 2, SVG 벡터 방식 폐기)
-- 스타일: 메이플스토리풍 픽셀아트. 안티에일리어싱 없음. 렌더 시 `imageSmoothingEnabled = false`, CSS `image-rendering: pixelated`.
-- 배율: 아트 1px = 월드 2단위 (데스크톱 2배 표시). 월드 좌표계 2400x540, 지면 y=440은 유지. 아트 좌표로는 1200x270.
-- 아바타 프레임: 32x48 px. 기준점(발 중앙) (16, 46). 기본 방향은 오른쪽, 왼쪽은 x=16 기준 좌우 반전.
-- 프레임 순서(가로 한 줄 시트, 6프레임, 192x48): `idle0, idle1, walk0, walk1, walk2, walk3`.
-  - idle: 프레임당 500ms. walk: 프레임당 120ms.
-  - 모든 파츠가 같은 프레임 순서와 프레임별 움직임(몸 상하 흔들림, 팔·다리 위치)을 공유해야 레이어가 맞는다. 프레임별 몸통 오프셋 표는 style-guide에 정의한다.
-- 아바타 파츠 시트: `assets/avatar/<part>/<id>.png` (part = skin, bottom, top, eyes, hair).
+### 블록 아트 계약 (2026-10-14 사이클 3 — 마인크래프트풍 블록 스타일, 이전 픽셀아트 계약 폐기)
+- 스타일: 모든 사물을 상자로 보고 윗면(밝게)/정면(기본)/옆면(어둡게) 3면 톤으로 그리는 블록 픽셀아트. 사선 투영(위·오른쪽에서 본 3/4). 안티에일리어싱 없음.
+- 렌더: `imageSmoothingEnabled = false`, CSS `image-rendering: pixelated`. 아트 1px = 월드 2단위. 표시 배율은 정수만(기본 2, 1600x900 이상 화면 3).
+- 월드: 2400x540 월드 단위 = 아트 1200x270. 지면선 아트 y=220 (월드 440). 잔디 타일 윗면 첫 행 = 218.
+- 아바타 프레임: 48x64. 기준점 (24, 60) = 두 발 사이 바닥 중앙. 지면선 y에 서면 프레임 왼쪽 위 = (x-24, y-60).
+- 시트: 가로 한 줄 7프레임 336x64, 순서 `front, side_idle, side_walk0, side_walk1, side_walk2, side_walk3, back` (프레임 i의 x = 48i).
+  - 인게임: side_idle / side_walk(150ms/프레임). 기본 오른쪽, 왼쪽은 x=24 기준 좌우 반전.
+  - front/back: 캐릭터 생성 미리보기 회전용.
+- 레이어(합성 순서): `hair_back → skin → face → bottom → shoes → top → hair_front → hat`.
+  - 파일: `assets/avatar/<layer>/<id>.png`. hair id 하나가 `hair_back/<id>.png`와 `hair_front/<id>.png` 두 파일을 가진다(뒷부분이 없으면 hair_back 파일은 완전 투명 시트). `hat/none`은 파일 없음.
+- 외곽선: 레이어 PNG는 외곽선 없이 납품. 프런트가 합성 후 바깥 실루엣 1px 외곽선을 그린다: 투명 픽셀 중 4방향(아래, 왼쪽, 오른쪽, 위 순) 이웃에 불투명 픽셀이 있으면 그 이웃 색을 `assets/avatar/outline.json`(`{ "#RRGGBB": "#RRGGBB" }`, 팔레트 색 → line 색)로 매핑한 색으로 칠한다. 매핑에 없으면 RGB 각 성분 x0.45. 결과는 외형 조합당 1회 계산해 캐시. 프레임 경계 안에서 처리(기준점 여백 확보됨).
 - 매니페스트 `assets/avatar/manifest.json`:
-  `{ "frame": {"w":32,"h":48}, "anchor": {"x":16,"y":46}, "scale": 2, "layerOrder": ["skin","bottom","top","eyes","hair"], "animations": { "idle": {"frames":[0,1], "ms":500}, "walk": {"frames":[2,3,4,5], "ms":120} }, "parts": { "<part>": [ {"id":"..","label":".."} ] } }` — 각 part 배열의 첫 항목이 기본값.
-- 맵: `assets/map/manifest.json`이 레이어를 정의한다.
-  `{ "scale": 2, "layers": [ {"src":"assets/map/<file>.png", "parallax": 0.0~1.0, "y": <아트 px>, "repeatX": true|false } ] }` — 앞에 올수록 뒤에 그린다. parallax 1.0은 월드와 같이 움직임.
-- UI 스킨: `assets/ui/` 9-slice PNG. 버튼 등 상태가 있는 요소는 상태별 개별 파일(CSS border-image 사용을 위해). 파일 목록과 slice 값은 style-guide와 `assets/ui/manifest.json`.
-- 표시 배율 P는 정수만: 기본 2, 1600x900 이상 화면 3. 시야는 화면 크기에 따라 가변, 카메라는 화면 아래 끝 고정(style-guide 정본). 월드 밖 상단은 하늘색으로 채운다.
-- 사이클 1 아바타 id 호환: 목록에 없는 id는 style-guide의 매핑 또는 기본값으로 그린다. DB 저장값은 바꾸지 않는다.
-- 원본: `assets/_src/` 에 Python(Pillow) 생성 스크립트와 픽셀 데이터. `python3 assets/_src/build.py`로 모든 PNG 재생성.
-- 텍스트(닉네임, 말풍선, UI)는 화면 해상도에서 시스템 폰트로 선명하게 그린다. 픽셀 한글 폰트(Galmuri, OFL)는 후속 과제(개발 환경에서 다운로드 불가).
+  `{ "frame":{"w":48,"h":64}, "anchor":{"x":24,"y":60}, "scale":2, "frames":["front","side_idle","side_walk0","side_walk1","side_walk2","side_walk3","back"], "animations":{"idle":{"frames":[1],"ms":500},"walk":{"frames":[2,3,4,5],"ms":150}}, "layerOrder":["hair_back","skin","face","bottom","shoes","top","hair_front","hat"], "parts":{ "skin":[..], "hair":[..], "face":[..], "top":[..], "bottom":[..], "shoes":[..], "hat":[{"id":"none","label":"없음"}, ..] }, "presets":[ {"label":"..","avatar":{..}} ] }` — 각 part 배열 항목은 `{"id","label"}`, 첫 항목이 기본값. hair 파츠는 hair_back/hair_front 레이어로, 나머지는 같은 이름 레이어로 그린다.
+- 맵: `assets/map/manifest.json` — `{ "scale":2, "groundY":220, "width":1200, "layers":[ {"src":"assets/map/<file>.png","parallax":0.0~1.0,"y":<아트 px>,"repeatX":true|false} ] }`. 배열 앞쪽이 뒤에 그려진다. parallax 1.0 = 월드와 같이 움직임. 마지막 지면 레이어(parallax 1.0)는 너비 1200.
+- 원본: `assets/_src/block/` Python(Pillow) 스크립트. `python3 assets/_src/block/build.py`로 assets/avatar, assets/map 전체 재생성(결정적 출력).
+- UI: 블록 스타일을 CSS로 구현(계단형 픽셀 테두리, 3면 톤 버튼). PNG UI 스킨은 쓰지 않는다. 정본은 docs/design/style-guide.md.
+- 텍스트(닉네임, 말풍선, UI)는 시스템 폰트로 화면 해상도에서 선명하게.
 
 ## 데이터 모델 (backend가 확정)
 - characters: user_id (PK, auth.users 참조), nickname (unique), avatar (jsonb), created_at

@@ -10,43 +10,51 @@ export function mount(root, app, opts = {}) {
   let mode = 'login'; // 'login' | 'signup'
   let busy = false;
 
-  // --- 요소 ---------------------------------------------------------------
-  const tabLogin = h('button', { type: 'button', class: 'btn btn-tab', role: 'tab', id: 'tab-login', testid: 'toggle-login', 'aria-controls': 'auth-form' }, '로그인');
-  const tabSignup = h('button', { type: 'button', class: 'btn btn-tab', role: 'tab', id: 'tab-signup', testid: 'toggle-signup', 'aria-controls': 'auth-form' }, '회원가입');
-  const banner = h('div', { class: 'err-banner', role: 'alert', testid: 'error-message', hidden: true });
+  // --- 요소 (login.md v3 2장, ui-kit.css 클래스) ----------------------------
+  const tabLogin = h('button', { type: 'button', class: 'bk-btn', role: 'tab', id: 'tab-login', testid: 'toggle-login', 'aria-controls': 'auth-form' }, '로그인');
+  const tabSignup = h('button', { type: 'button', class: 'bk-btn', role: 'tab', id: 'tab-signup', testid: 'toggle-signup', 'aria-controls': 'auth-form' }, '회원가입');
+  const tabs = h('div', { class: 'bk-tabs', role: 'tablist', 'aria-label': '로그인 또는 회원가입' }, tabLogin, tabSignup);
+  const banner = h('div', { class: 'bk-banner bk-banner--error', role: 'alert', testid: 'error-message', hidden: true });
 
   const idInput = h('input', {
-    id: 'login-id', type: 'text', class: 'input', testid: 'login-id', autocomplete: 'username', autocapitalize: 'none',
+    id: 'login-id', type: 'text', class: 'bk-input', testid: 'login-id', autocomplete: 'username', autocapitalize: 'none',
     spellcheck: 'false', maxlength: '16', inputmode: 'latin', 'aria-describedby': 'login-id-help login-id-error',
   });
-  const idHelp = h('p', { id: 'login-id-help', class: 'help' }, '영문 소문자, 숫자, 밑줄(_) 4~16자');
-  const idError = h('p', { id: 'login-id-error', class: 'field-error', testid: 'error-id', hidden: true });
+  const idHelp = h('p', { id: 'login-id-help', class: 'bk-help' }, '영문 소문자, 숫자, 밑줄(_) 4~16자');
+  const idError = h('p', { id: 'login-id-error', class: 'bk-help bk-help--error', testid: 'error-id', hidden: true });
 
   const pwInput = h('input', {
-    id: 'login-pw', type: 'password', class: 'input input-with-toggle', testid: 'login-pw', autocomplete: 'current-password',
+    id: 'login-pw', type: 'password', class: 'bk-input bk-input--with-end', testid: 'login-pw', autocomplete: 'current-password',
     maxlength: '72', 'aria-describedby': 'login-pw-help login-pw-error',
   });
-  const pwToggle = h('button', { type: 'button', class: 'pw-toggle', testid: 'pw-toggle', 'aria-pressed': 'false', 'aria-label': '비밀번호 보기' }, '보기');
-  const pwHelp = h('p', { id: 'login-pw-help', class: 'help', hidden: true }, '8자 이상');
-  const pwError = h('p', { id: 'login-pw-error', class: 'field-error', testid: 'error-pw', hidden: true });
+  const pwToggle = h('button', { type: 'button', class: 'bk-link', testid: 'pw-toggle', 'aria-pressed': 'false', 'aria-label': '비밀번호 보기' }, '보기');
+  const pwHelp = h('p', { id: 'login-pw-help', class: 'bk-help', hidden: true }, '8자 이상');
+  const pwError = h('p', { id: 'login-pw-error', class: 'bk-help bk-help--error', testid: 'error-pw', hidden: true });
 
   const pw2Input = h('input', {
-    id: 'login-pw2', type: 'password', class: 'input', testid: 'login-pw-confirm', autocomplete: 'new-password',
+    id: 'login-pw2', type: 'password', class: 'bk-input', testid: 'login-pw-confirm', autocomplete: 'new-password',
     maxlength: '72', 'aria-describedby': 'login-pw2-error',
   });
-  const pw2Error = h('p', { id: 'login-pw2-error', class: 'field-error', testid: 'error-pw-confirm', hidden: true });
-  const pw2Field = h('div', { class: 'field' },
-    h('label', { for: 'login-pw2', class: 'label' }, '비밀번호 확인'), pw2Input, pw2Error);
+  const pw2Error = h('p', { id: 'login-pw2-error', class: 'bk-help bk-help--error', testid: 'error-pw-confirm', hidden: true });
+  const pw2Field = h('div', { class: 'bk-field' },
+    h('label', { for: 'login-pw2', class: 'bk-label-text' }, '비밀번호 확인'),
+    h('div', { class: 'bk-input-wrap' }, pw2Input),
+    pw2Error);
 
   const submitLabel = h('span', {}, '로그인');
-  const spinner = h('span', { class: 'dots', 'aria-hidden': 'true', hidden: true }, h('i'), h('i'), h('i'));
-  const submit = h('button', { type: 'submit', class: 'btn btn-primary btn-block btn-lg', testid: 'login-submit' }, spinner, submitLabel);
+  const spinner = h('span', { class: 'bk-dots', 'aria-hidden': 'true', hidden: true }, h('i'), h('i'), h('i'));
+  const submit = h('button', { type: 'submit', class: 'bk-btn bk-btn--primary bk-btn--block auth-submit', testid: 'login-submit' }, spinner, submitLabel);
 
+  // Tab 순서: 탭 → 아이디 → 비밀번호 → (확인) → 보기 토글 → 제출 (login.md 7장). 토글은 DOM상 입력 끝 요소이지만
+  // 회원가입 모드에서는 tabindex 로 확인 필드 뒤에 오게 할 수 없으므로 DOM 순서(비밀번호 바로 뒤)를 따른다.
   const form = h('form', { id: 'auth-form', class: 'auth-form', novalidate: true, role: 'tabpanel' },
-    h('div', { class: 'field' }, h('label', { for: 'login-id', class: 'label' }, '아이디'), idInput, idHelp, idError),
-    h('div', { class: 'field' },
-      h('label', { for: 'login-pw', class: 'label' }, '비밀번호'),
-      h('div', { class: 'pw-wrap' }, pwInput, pwToggle),
+    h('div', { class: 'bk-field' },
+      h('label', { for: 'login-id', class: 'bk-label-text' }, '아이디'),
+      h('div', { class: 'bk-input-wrap' }, idInput),
+      idHelp, idError),
+    h('div', { class: 'bk-field' },
+      h('label', { for: 'login-pw', class: 'bk-label-text' }, '비밀번호'),
+      h('div', { class: 'bk-input-wrap' }, pwInput, h('span', { class: 'bk-input-end' }, pwToggle)),
       pwHelp, pwError),
     pw2Field,
     submit,
@@ -54,17 +62,17 @@ export function mount(root, app, opts = {}) {
 
   const modeSlot = h('span', { class: 'mode-slot' });
   const modeRow = app.mode === 'local'
-    ? h('div', { class: 'mode-row' }, modeSlot, h('span', { class: 'mode-note' }, '이 브라우저에만 저장됩니다'))
+    ? h('div', { class: 'card-foot' }, modeSlot, h('span', {}, '이 브라우저에만 저장됩니다'))
     : null;
-  const panel = h('section', { class: 'px-panel login-panel' },
-    h('p', { class: 'subtitle' }, '친구들과 함께 노는 작은 마을'),
-    h('div', { class: 'tabs', role: 'tablist', 'aria-label': '로그인 또는 회원가입' }, tabLogin, tabSignup),
+  const panel = h('section', { class: 'bk-panel card-login' },
+    h('p', { class: 'bk-logo-sub' }, '친구들과 함께 노는 작은 마을'),
+    tabs,
     banner,
     form,
     modeRow,
   );
-  const card = h('main', { class: 'login-wrap' },
-    h('h1', { class: 'logo' }, h('span', { class: 'logo-icon', 'aria-hidden': 'true' }), h('span', {}, '버섯마을')),
+  const card = h('main', { class: 'scr-auth' },
+    h('h1', { class: 'bk-logo' }, h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), h('span', {}, '버섯마을')),
     panel,
   );
   root.append(card);
@@ -122,8 +130,6 @@ export function mount(root, app, opts = {}) {
     const signup = mode === 'signup';
     tabLogin.setAttribute('aria-selected', String(!signup));
     tabSignup.setAttribute('aria-selected', String(signup));
-    tabLogin.classList.toggle('active', !signup);
-    tabSignup.classList.toggle('active', signup);
     tabLogin.tabIndex = signup ? -1 : 0;
     tabSignup.tabIndex = signup ? 0 : -1;
     pwInput.value = '';
@@ -195,7 +201,7 @@ export function mount(root, app, opts = {}) {
   // --- 이벤트 -------------------------------------------------------------
   on(tabLogin, 'click', () => { if (mode !== 'login') setMode('login'); });
   on(tabSignup, 'click', () => { if (mode !== 'signup') setMode('signup'); });
-  on(root.querySelector('.tabs'), 'keydown', (e) => {
+  on(tabs, 'keydown', (e) => {
     if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
       e.preventDefault();
       setMode(mode === 'login' ? 'signup' : 'login');

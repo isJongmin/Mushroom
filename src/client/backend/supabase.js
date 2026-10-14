@@ -8,13 +8,13 @@
 //   insert: 23505 + characters_nickname_lower_key → NICK_TAKEN
 //           23505 + characters_pkey               → CHAR_EXISTS (재조회 후 맵으로)
 //           23514 + characters_nickname_format    → NICK_FORMAT
-//           23514 + characters_avatar_shape       → AVATAR_FORMAT
+//           23514 + characters_avatar_shape       → AVATAR_FORMAT (avatar는 항상 정확히 7개 키로 보낸다)
 //           23502                                 → SERVER (필수 값 누락)
 //           42501                                 → AUTH_REQUIRED (다시 로그인)
 //   fetch 실패/오프라인 → NETWORK
 import { AppError } from '../errors.js';
 import { SUPABASE_CDN, CHANNEL_NAME, CHAT_MAX } from '../constants.js';
-import { assertCredentials, isValidAvatarShape, isValidNickname, pickAvatar } from './common.js';
+import { assertCredentials, isValidAvatarShape, isValidNickname, pickAvatar, readAvatar } from './common.js';
 
 const emailOf = (id) => `${id}@mushroom.local`;
 const TRACK_IDLE_MS = 600; // 정지 후 Presence 좌표 갱신(track) 지연
@@ -233,7 +233,8 @@ export function createSupabaseBackend(url, anonKey) {
         throw mapDbError(e);
       }
       if (res.error) throw mapDbError(res.error);
-      return res.data ? { user_id: res.data.user_id, nickname: res.data.nickname, avatar: res.data.avatar } : null;
+      // 마이그레이션 전/후 어느 형식이든 7개 키(eyes→face, 옛 id 별칭, 누락 키 기본값)로 읽는다
+      return res.data ? { user_id: res.data.user_id, nickname: res.data.nickname, avatar: readAvatar(res.data.avatar) } : null;
     },
 
     async isNicknameTaken(nickname) {

@@ -1,11 +1,11 @@
-// 인게임 화면 (docs/design/screens/game.md, style-guide 4~7장)
+// 인게임 화면 (docs/design/screens/game.md v3.0, style-guide v3 6~8장)
 import { h, setText, wait } from '../dom.js';
 import {
-  WORLD, ART, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, DESKTOP_RESERVED_H, NICK_RE,
+  WORLD, ART, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, MOBILE_MIN_CANVAS_H, DESKTOP_RESERVED_H, NICK_RE,
   CHAT_MAX, CHAT_COOLDOWN_MS, MOVE_INTERVAL_MS, RECONNECT_DELAYS_MS, pixelScale,
 } from '../constants.js';
 import { GAME_MESSAGES as M } from '../errors.js';
-import { createAvatarRenderer, makeCanvas, idleOffset } from '../avatar.js';
+import { createAvatarRenderer, makeCanvas } from '../avatar.js';
 import { drawMap, drawFootShadow, cameraFor } from '../game/world.js';
 import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overlay.js';
 import { createMoveInput, KEY_DIR } from '../game/input.js';
@@ -13,7 +13,7 @@ import { createMoveInput, KEY_DIR } from '../game/input.js';
 const JOIN_TIMEOUT_MS = 12000;
 const REMOTE_SNAP_DIST = 400; // 이보다 멀면 순간 이동
 const REMOTE_CATCHUP = 32; // 뒤처진 거리(월드 단위)마다 속도를 1배씩 더한다
-const WALK_HOLD_MS = 150; // 원격 아바타: 마지막으로 움직인 뒤 이 시간 안이면 walk (패킷 간격 100ms 흡수)
+const WALK_HOLD_MS = 200; // 원격 아바타: 마지막으로 움직인 뒤 200ms 안이면 walk (game.md 6장, 패킷 간격 100ms 흡수)
 const toArt = (wx) => Math.round(wx / 2);
 
 const clampX = (x) => Math.min(WORLD.maxX, Math.max(WORLD.minX, x));
@@ -30,7 +30,6 @@ export function mount(root, app) {
   let assets = null;
   let avatarR = null;
   let map = null; // loadMapAssets() 결과
-  let ui = null; // loadUiAssets() 결과
   let link = null; // { sendMove, sendChat, leave }
   let joinGen = 0;
   let connection = 'joining'; // joining | connected | disconnected | failed | fatal
@@ -46,7 +45,7 @@ export function mount(root, app) {
   const players = new Map();
   let me = null;
 
-  // 레이아웃 (style-guide 4.2): P = 정수 픽셀 배율, view = 아트 px 시야
+  // 레이아웃 (style-guide 6.1): P = 정수 픽셀 배율, view = 아트 px 시야
   let layout = { mobile: false, cssW: 2, cssH: 2, viewW: 1, viewH: 1, P: 2, dpr: 1 };
   let off = makeCanvas(1, 1); // 아트 해상도 오프스크린
   let offCtx = off.getContext('2d');
@@ -57,47 +56,48 @@ export function mount(root, app) {
   let sentDir = null;
   let lastChatAt = -Infinity;
 
-  // --- DOM ----------------------------------------------------------------
+  // --- DOM (game.md v3 1~3장, ui-kit.css 클래스) -------------------------------
   const countText = h('span', { testid: 'player-count' }, '접속 중 1명');
-  const countDot = h('span', { class: 'count-dot', title: '연결 끊김', hidden: true });
-  const countBadge = h('div', { class: 'chip count-badge', 'aria-live': 'off' },
-    h('span', { class: 'chip-icon', 'aria-hidden': 'true' }), countText, countDot);
+  const countDot = h('span', { class: 'bk-dot-off', title: '연결 끊김', hidden: true });
+  const countBadge = h('div', { class: 'bk-chip count-badge', 'aria-live': 'off' },
+    h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), countText, countDot);
   const modeSlot = h('span', { class: 'mode-slot' });
-  const hint = h('div', { class: 'chip hud-hint' }, '← → 또는 A D 이동 · Enter 채팅 · Esc 입력 해제');
-  const logoutBtn = h('button', { type: 'button', class: 'btn btn-secondary btn-sm hud-logout', testid: 'logout' }, '로그아웃');
+  const hint = h('div', { class: 'bk-chip bk-chip--hint hint-desktop' }, '← → 또는 A D 이동 · Enter 채팅 · Esc 입력 해제');
+  const logoutBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--sm', testid: 'logout' }, '로그아웃');
   const hud = h('div', { class: 'hud' },
-    h('div', { class: 'hud-left' }, countBadge, modeSlot),
-    h('div', { class: 'hud-right' }, hint, logoutBtn));
+    h('div', { class: 'hud-l' }, countBadge, modeSlot),
+    h('div', { class: 'hud-r' }, hint, logoutBtn));
 
   const bannerText = h('span', {});
-  const bannerBtn = h('button', { type: 'button', class: 'btn btn-primary btn-sm', testid: 'reconnect-button', hidden: true });
-  const banner = h('div', { class: 'game-banner', testid: 'game-banner', role: 'status', hidden: true }, bannerText, bannerBtn);
+  const bannerBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary bk-btn--sm', testid: 'reconnect-button', hidden: true });
+  const banner = h('div', { class: 'hud-banner bk-banner', testid: 'game-banner', role: 'status', hidden: true }, bannerText, bannerBtn);
 
   const canvas = h('canvas', {
     class: 'game-canvas', testid: 'game-canvas', tabindex: '0',
     'aria-label': '버섯마을 맵. 좌우 방향키로 이동, Enter로 채팅',
   });
-  const loadingDots = h('span', { class: 'dots dots-light canvas-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
-  const canvasWrap = h('div', { class: 'canvas-wrap' }, canvas, hud, banner, loadingDots);
+  const loadingDots = h('span', { class: 'bk-dots canvas-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
+  const canvasWrap = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots);
 
-  const arrowL = h('span', { class: 'arrow arrow-left', 'aria-hidden': 'true' }, '◀');
-  const arrowR = h('span', { class: 'arrow', 'aria-hidden': 'true' }, '▶');
-  const leftBtn = h('button', { type: 'button', class: 'btn btn-secondary touch-btn', testid: 'move-left', 'aria-label': '왼쪽으로 이동' }, arrowL, '왼쪽');
-  const rightBtn = h('button', { type: 'button', class: 'btn btn-secondary touch-btn', testid: 'move-right', 'aria-label': '오른쪽으로 이동' }, '오른쪽', arrowR);
+  const leftBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--touch', testid: 'move-left', 'aria-label': '왼쪽으로 이동' },
+    h('span', { class: 'bk-ico bk-ico--arrow bk-ico--left', 'aria-hidden': 'true' }), '왼쪽');
+  const rightBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--touch', testid: 'move-right', 'aria-label': '오른쪽으로 이동' },
+    '오른쪽', h('span', { class: 'bk-ico bk-ico--arrow', 'aria-hidden': 'true' }));
   const touchRow = h('div', { class: 'touch-row' }, leftBtn, rightBtn);
 
   const chatInput = h('input', {
-    type: 'text', class: 'input chat-input', testid: 'chat-input', maxlength: String(CHAT_MAX), placeholder: '메시지를 입력하세요',
+    type: 'text', class: 'bk-input bk-input--with-end', testid: 'chat-input', maxlength: String(CHAT_MAX), placeholder: '메시지를 입력하세요',
     autocomplete: 'off', 'aria-label': '채팅 메시지',
   });
-  const counter = h('span', { class: 'chat-counter', testid: 'chat-counter', hidden: true, 'aria-hidden': 'true' });
-  const sendBtn = h('button', { type: 'button', class: 'btn btn-primary chat-send', testid: 'chat-send', disabled: true }, '보내기');
-  const chatHint = h('div', { class: 'chip chat-hint', testid: 'chat-hint', hidden: true }, M.COOLDOWN);
-  const chatError = h('div', { class: 'err-banner chat-error', testid: 'chat-error', role: 'alert', hidden: true });
-  const chatBar = h('div', { class: 'chat-bar' }, h('div', { class: 'chat-field' }, chatInput, counter), sendBtn);
-  const chatRow = h('div', { class: 'chat-row' }, chatHint, chatError, chatBar);
+  const counter = h('span', { class: 'bk-counter', testid: 'chat-counter', hidden: true, 'aria-hidden': 'true' });
+  const sendBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary chat-send', testid: 'chat-send', disabled: true }, '보내기');
+  const chatHint = h('div', { class: 'bk-chip bk-chip--hint chat-float', testid: 'chat-hint', hidden: true }, M.COOLDOWN);
+  const chatError = h('div', { class: 'bk-banner bk-banner--error chat-float', testid: 'chat-error', role: 'alert', hidden: true });
+  const chatRow = h('div', { class: 'chat-row' }, chatHint, chatError,
+    h('div', { class: 'bk-input-wrap' }, chatInput, h('span', { class: 'bk-input-end' }, counter)),
+    sendBtn);
 
-  const col = h('div', { class: 'game-col' }, canvasWrap, touchRow, chatRow);
+  const col = h('main', { class: 'scr-game' }, canvasWrap, touchRow, chatRow);
   root.append(col);
   app.placeModeBadge(modeSlot);
 
@@ -114,7 +114,7 @@ export function mount(root, app) {
     if (mobile) {
       P = 2;
       cssW = Math.floor(vw / P) * P;
-      cssH = Math.floor((vh - MOBILE_CONTROLS_H) / P) * P;
+      cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor((vh - MOBILE_CONTROLS_H) / P) * P);
     } else {
       P = pixelScale(vw, vh);
       cssW = Math.min(Math.floor(vw / P) * P, 640 * P); // 1280 (P=2), 1920 (P=3)
@@ -140,13 +140,7 @@ export function mount(root, app) {
       offCtx = off.getContext('2d');
     }
     offCtx.imageSmoothingEnabled = false;
-    hint.classList.toggle('narrow', cssW < 900);
-    // 데스크톱 바깥 배경 경계: 캔버스 아래 끝 (하늘 / 흙)
-    if (!mobile) {
-      const r = canvasWrap.getBoundingClientRect();
-      const top = root.getBoundingClientRect().top;
-      root.style.setProperty('--ground-y', `${Math.round(r.bottom - top)}px`);
-    } else root.style.removeProperty('--ground-y');
+    hint.classList.toggle('narrow', cssW < 900); // 캔버스 가로 900px 미만이면 조작 힌트 숨김
     if (connection === 'joining' || connection === 'fatal') paintLetterbox();
     else render(performance.now());
   }
@@ -165,7 +159,7 @@ export function mount(root, app) {
     banner.classList.remove('fade-out');
     if (!kind) { banner.hidden = true; return; }
     banner.hidden = false;
-    banner.className = `game-banner ${kind}`;
+    banner.className = kind === 'error' ? 'hud-banner bk-banner bk-banner--error' : 'hud-banner bk-banner';
     banner.setAttribute('role', kind === 'error' ? 'alert' : 'status');
     setText(bannerText, text);
     if (button) { setText(bannerBtn, button); bannerBtn.hidden = false; }
@@ -228,7 +222,7 @@ export function mount(root, app) {
     return {
       user_id: uid, nickname, avatar, x, targetX: x, y: WORLD.groundY, dir: 1,
       moving: false, lastMoveAt: 0, lastMovedAt: -Infinity, anim: 'idle', animSince: performance.now(),
-      idleOffset: idleOffset(uid), bubble: null, lastChat: null, isSelf,
+      bubble: null, lastChat: null, isSelf,
     };
   }
 
@@ -246,7 +240,7 @@ export function mount(root, app) {
         if (s.user_id === me.user_id) continue;
         seen.add(s.user_id);
         const nickname = typeof s.nickname === 'string' && NICK_RE.test(s.nickname) ? s.nickname : '???';
-        const avatar = assets.sanitizeAvatar(s.avatar);
+        const avatar = assets.sanitizeAvatar(s.avatar); // 7개 키 정규화 (옛 5키/eyes/없는 id → 기본값)
         const existing = players.get(s.user_id);
         if (existing) {
           existing.nickname = nickname;
@@ -399,10 +393,10 @@ export function mount(root, app) {
 
   function frameOf(p, now) {
     const t = now - p.animSince;
-    return p.anim === 'walk' ? avatarR.frameAt('walk', t) : avatarR.frameAt('idle', t + p.idleOffset);
+    return avatarR.frameAt(p.anim === 'walk' ? 'walk' : 'idle', t);
   }
 
-  // style-guide 4.4 파이프라인: 아트 해상도 오프스크린 → 정수 배율 확대(스무딩 끔) → 화면 해상도 글자
+  // style-guide 6.3 파이프라인: 아트 해상도 오프스크린(맵 → 발 그림자 → 아바타) → 정수 배율 확대(스무딩 끔) → 화면 해상도 라벨/말풍선
   function render(now) {
     if (!me || !avatarR) return;
     if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
@@ -432,13 +426,11 @@ export function mount(root, app) {
     ctx.drawImage(off, 0, 0, viewW, viewH, 0, 0, canvas.width, canvas.height);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const footY = groundY * P;
-    for (const [p, ax] of visible) drawLabel(ctx, ui, p.nickname, ax * P, footY, p.isSelf, cssW);
-    const headY = (ART.headLineY - camY) * P;
-    for (const [p, ax] of visible) {
-      if (!p.bubble) continue;
-      drawBubble(ctx, ui, p.bubble.layout, ax * P, headY, cssW, bubbleAlpha(now - p.bubble.at));
-    }
+    const fy = groundY * P; // 발바닥 선 (CSS px)
+    for (const [p, ax] of visible) drawLabel(ctx, p.nickname, ax * P, fy, p.isSelf, cssW);
+    // 말풍선: 먼저 받은 것부터 그려 최신이 위 (style-guide 6.3-6)
+    const talking = visible.filter(([p]) => p.bubble).sort((a, b) => a[0].bubble.at - b[0].bubble.at);
+    for (const [p, ax] of talking) drawBubble(ctx, p.bubble.layout, ax * P, fy, P, cssW, bubbleAlpha(now - p.bubble.at));
   }
 
   function frame(now) {
@@ -552,12 +544,12 @@ export function mount(root, app) {
   on(canvas, 'blur', () => canvas.classList.remove('kbd-focus'));
 
   for (const [btn, dir, id] of [[leftBtn, -1, 'touch:left'], [rightBtn, 1, 'touch:right']]) {
-    const release = () => { input.release(id); btn.classList.remove('pressed'); };
+    const release = () => { input.release(id); btn.classList.remove('is-pressed'); };
     on(btn, 'pointerdown', (e) => {
       e.preventDefault();
       if (connection !== 'connected') return;
       input.press(id, dir);
-      btn.classList.add('pressed');
+      btn.classList.add('is-pressed');
     });
     on(btn, 'pointerup', release);
     on(btn, 'pointercancel', release);
@@ -601,14 +593,19 @@ export function mount(root, app) {
   if (window.visualViewport) on(window.visualViewport, 'resize', onResize);
 
   // --- 테스트 훅 상태 공급 -----------------------------------------------------
-  const snap = (p) => ({ user_id: p.user_id, nickname: p.nickname, x: Math.round(p.x * 10) / 10, y: p.y, lastChat: p.lastChat, anim: p.anim });
+  const snap = (p) => ({
+    user_id: p.user_id, nickname: p.nickname, avatar: { ...p.avatar }, x: Math.round(p.x * 10) / 10, y: p.y,
+    dir: p.dir < 0 ? 'left' : 'right', lastChat: p.lastChat, anim: p.anim,
+    frame: avatarR ? frameOf(p, performance.now()) : null,
+  });
   app.gameStateProvider = () => ({
     connection,
     assets: assets ? {
-      source: assets.source, images: assets.imageCount, background: !!(map && map.layerCount),
-      mapLayers: map ? map.layerCount : 0, ui: ui ? ui.source : null,
+      source: assets.source, images: assets.imageCount, imageTotal: assets.imageTotal, background: !!(map && map.layerCount),
+      mapLayers: map ? map.layerCount : 0, sheets: avatarR ? avatarR.cacheSize : 0,
+      layout: { P: layout.P, cssW: layout.cssW, cssH: layout.cssH, viewW: layout.viewW, viewH: layout.viewH },
     } : null,
-    me: me ? { ...snap(me), avatar: { ...me.avatar }, dir: me.dir < 0 ? 'left' : 'right' } : null,
+    me: me ? snap(me) : null,
     players: [...players.values()].map(snap),
   });
 
@@ -647,11 +644,12 @@ export function mount(root, app) {
     }
     if (!alive) return;
     if (!character) { app.forceLogout(); return; }
-    [map, ui] = await Promise.all([app.mapAssets.catch(() => null), app.uiAssets.catch(() => null)]);
+    map = await app.mapAssets.catch(() => null);
     if (!alive) return;
     avatarR = createAvatarRenderer(assets);
     const startX = clampX(300 + Math.floor(Math.random() * 600));
     me = makePlayer(character.user_id, character.nickname, assets.sanitizeAvatar(character.avatar), startX, true);
+    avatarR.warm(me.avatar);
     players.set(me.user_id, me);
     updateCount();
     raf = requestAnimationFrame(frame);

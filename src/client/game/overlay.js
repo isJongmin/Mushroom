@@ -1,51 +1,23 @@
-// 닉네임 라벨(style-guide 8장)과 말풍선(9장). 화면 해상도(CSS px, dpr 변환된 컨텍스트)에서 그린다.
-// 배경은 UI 스킨 9-slice(U=2)를 Canvas로 직접 그리고, 스킨이 없으면 같은 크기의 단색 픽셀 상자로 그린다.
-// 글자는 Canvas fillText로만 그린다 (사용자 문자열을 HTML로 해석하지 않는다).
-import { BUBBLE, LABEL, PAL, FONT_UI, UI_SCALE } from '../constants.js';
+// 닉네임 라벨(style-guide v3 7장)과 말풍선(8장) Canvas 레시피.
+// 화면 해상도 컨텍스트(setTransform(dpr)로 CSS px 단위)에 fillRect 와 fillText 만으로 그린다.
+// 위치 기준은 기준점 화면 좌표(ax, fy)와 머리 위 기준선(아트 52px)뿐이다. 사용자 문자열은 fillText로만 그린다.
+import { BUBBLE, LABEL, PAL, FONT_UI, ART } from '../constants.js';
 
 const LABEL_FONT = `700 ${LABEL.font}px ${FONT_UI}`;
 const BUBBLE_FONT = `700 ${BUBBLE.font}px ${FONT_UI}`;
 const ELLIPSIS = '…';
-const U = UI_SCALE;
 
 const even = (v) => Math.ceil(v / 2) * 2;
-const roundEven = (v) => Math.round(v / 2) * 2;
+const round2 = (v) => Math.round(v / 2) * 2;
+const clamp = (v, lo, hi) => Math.max(lo, Math.min(v, hi));
 
-/** 9-slice: 모서리는 slice x U 크기 그대로, 변과 가운데는 늘린다 (스무딩 끔). */
-export function drawNine(ctx, img, slice, x, y, w, h) {
-  const sw = img.naturalWidth || img.width;
-  const sh = img.naturalHeight || img.height;
-  const s = slice;
-  const d = s * U;
-  const mw = Math.max(0, w - 2 * d);
-  const mh = Math.max(0, h - 2 * d);
-  const smw = sw - 2 * s;
-  const smh = sh - 2 * s;
-  const cols = [[0, s, x, d], [s, smw, x + d, mw], [sw - s, s, x + d + mw, d]];
-  const rows = [[0, s, y, d], [s, smh, y + d, mh], [sh - s, s, y + d + mh, d]];
-  for (const [sy, shh, dy, dh] of rows) {
-    if (dh <= 0 || shh <= 0) continue;
-    for (const [sx, sww, dx, dw] of cols) {
-      if (dw <= 0 || sww <= 0) continue;
-      ctx.drawImage(img, sx, sy, sww, shh, dx, dy, dw, dh);
-    }
-  }
-}
-
-/** 스킨이 없을 때: 2px 외곽선 + 모서리 2px 깎은 픽셀 상자 */
-function pixelBox(ctx, x, y, w, h, line, fill) {
-  ctx.fillStyle = line;
-  ctx.fillRect(x + 2, y, w - 4, h);
-  ctx.fillRect(x, y + 2, w, h - 4);
-  ctx.fillStyle = fill;
-  ctx.fillRect(x + 2, y + 2, w - 4, h - 4);
-}
-
-function shadowText(ctx, text, x, y, color, shadow, sx, sy) {
-  ctx.fillStyle = shadow;
-  ctx.fillText(text, x + sx, y + sy);
+/** 계단 테두리 2px: 네 변만 칠하고 모서리 2x2는 비운다. */
+function stepBorder(ctx, x, y, w, h, color) {
   ctx.fillStyle = color;
-  ctx.fillText(text, x, y);
+  ctx.fillRect(x, y - 2, w, 2);
+  ctx.fillRect(x, y + h, w, 2);
+  ctx.fillRect(x - 2, y, 2, h);
+  ctx.fillRect(x + w, y, 2, h);
 }
 
 /** 공백 기준 줄바꿈, 공백 없는 긴 글은 글자 단위. 최대 줄 수를 넘으면 마지막 줄 끝을 …으로 자른다. */
@@ -86,16 +58,16 @@ export function wrapText(ctx, text, maxWidth, maxLines) {
   return out;
 }
 
-/** 말풍선 레이아웃을 한 번만 계산해 둔다(텍스트가 바뀔 때만). */
+/** 말풍선 레이아웃 (8.1): 글자 폭 180 줄바꿈, 가로 = 가장 긴 줄 + 20 (40~200, 짝수), 세로 = 줄 x 18 + 14 */
 export function layoutBubble(ctx, text) {
   ctx.save();
   ctx.font = BUBBLE_FONT;
-  const lines = wrapText(ctx, text, BUBBLE.maxW - BUBBLE.padX * 2, BUBBLE.maxLines);
+  const lines = wrapText(ctx, text, BUBBLE.wrapW, BUBBLE.maxLines);
   let tw = 0;
   for (const l of lines) tw = Math.max(tw, ctx.measureText(l).width);
   ctx.restore();
-  const w = even(Math.min(BUBBLE.maxW, Math.max(BUBBLE.minW, Math.ceil(tw) + BUBBLE.padX * 2)));
-  const h = even(lines.length * BUBBLE.lineH + BUBBLE.padY * 2);
+  const w = Math.min(BUBBLE.maxW, even(Math.max(BUBBLE.minW, Math.ceil(tw) + BUBBLE.padX * 2)));
+  const h = lines.length * BUBBLE.lineH + BUBBLE.padTop + BUBBLE.padBottom;
   return { lines, w, h };
 }
 
@@ -107,84 +79,84 @@ export function bubbleAlpha(ageMs) {
 }
 
 /**
- * @param ui loadUiAssets() 결과 (없으면 단색 폴백)
- * @param anchorX 기준점 화면 x (CSS px)
- * @param headY 머리 위 기준선 화면 y (아트 y 176)
- * @param viewW 캔버스 CSS 폭
+ * 말풍선 (8.2 위치, 8.1 모양).
+ * @param ax 기준점 화면 x (CSS px) = (artX - camX) * P
+ * @param fy 발바닥 선 화면 y (CSS px) = (220 - camY) * P
+ * @param P  아트 배율
+ * @param canvasW 캔버스 CSS 폭
+ * @returns 그린 박스 {bx, by, w, h, tx, ty, tail} (검증용)
  */
-export function drawBubble(ctx, ui, layout, anchorX, headY, viewW, alpha) {
-  if (alpha <= 0) return;
+export function drawBubble(ctx, layout, ax, fy, P, canvasW, alpha) {
+  if (alpha <= 0) return null;
   const { lines, w, h } = layout;
-  const tipX = Math.round(anchorX);
-  const tipY = Math.round(headY) - BUBBLE.tipGap;
-  let bottom = tipY - BUBBLE.bodyGap;
-  let top = bottom - h;
+  const ty = fy - ART.headLine * P - BUBBLE.tipGap; // 꼬리 끝
+  let by = ty - BUBBLE.tailH - h;
   let tail = true;
-  if (top < BUBBLE.topMin) {
-    top = BUBBLE.topMin;
-    bottom = top + h;
-    tail = false;
-  }
-  let left = roundEven(tipX - w / 2);
-  left = Math.max(BUBBLE.edge, Math.min(left, viewW - BUBBLE.edge - w));
-  const tailLeft = Math.max(left + BUBBLE.edge, Math.min(tipX - BUBBLE.tailW / 2, left + w - BUBBLE.edge - BUBBLE.tailW));
+  if (by - 2 < BUBBLE.topMin) { by = BUBBLE.topClamp; tail = false; }
+  const bx = clamp(round2(ax - w / 2), BUBBLE.edge, Math.max(BUBBLE.edge, canvasW - w - BUBBLE.edge));
+  const tx = clamp(round2(ax), bx + BUBBLE.tailEdge, bx + w - BUBBLE.tailEdge);
+  const b = by + h;
 
-  const body = ui && ui.nine && ui.nine.bubble;
-  const tailImg = ui && ui.sprites && ui.sprites['bubble-tail'];
   ctx.save();
   ctx.globalAlpha = alpha;
-  ctx.imageSmoothingEnabled = false;
-  if (body) drawNine(ctx, body.img, body.slice, left, top, w, h);
-  else {
-    pixelBox(ctx, left, top, w, h, PAL.hb2, PAL.white);
-    ctx.fillStyle = PAL.c2;
-    ctx.fillRect(left + 2, top + h - 4, w - 4, 2);
-  }
+  stepBorder(ctx, bx, by, w, h, PAL.hb2);
+  ctx.fillStyle = PAL.white;
+  ctx.fillRect(bx, by, w, h);
+  ctx.fillStyle = PAL.c2;
+  ctx.fillRect(bx, b - 2, w, 2);
   if (tail) {
-    if (tailImg) ctx.drawImage(tailImg.img, tailLeft, bottom - 2, BUBBLE.tailW, BUBBLE.tailH);
-    else {
-      // 8x4 꼬리를 2배로 (style-guide 7.6 모양)
-      ctx.fillStyle = PAL.hb2;
-      ctx.fillRect(tailLeft + 2, bottom, 12, 2);
-      ctx.fillRect(tailLeft + 4, bottom + 2, 8, 2);
-      ctx.fillRect(tailLeft + 6, bottom + 4, 4, 2);
-      ctx.fillStyle = PAL.white;
-      ctx.fillRect(tailLeft + 4, bottom - 2, 8, 2);
-      ctx.fillRect(tailLeft + 4, bottom, 8, 2);
-      ctx.fillRect(tailLeft + 6, bottom + 2, 4, 2);
-    }
+    const C = PAL.c2;
+    const L = PAL.hb2;
+    const r = (color, x, y, ww, hh) => { ctx.fillStyle = color; ctx.fillRect(x, y, ww, hh); };
+    r(C, tx - 4, b, 8, 2);
+    r(L, tx - 6, b + 2, 2, 2); r(C, tx - 4, b + 2, 8, 2); r(L, tx + 4, b + 2, 2, 2);
+    r(L, tx - 4, b + 4, 2, 2); r(C, tx - 2, b + 4, 4, 2); r(L, tx + 2, b + 4, 2, 2);
+    r(L, tx - 2, b + 6, 4, 2);
   }
   ctx.font = BUBBLE_FONT;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const cx = left + w / 2;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'top';
+  ctx.fillStyle = PAL.ink;
   for (let i = 0; i < lines.length; i++) {
-    const ty = top + BUBBLE.padY + BUBBLE.lineH * i + BUBBLE.lineH / 2;
-    shadowText(ctx, lines[i], cx, ty, PAL.ink, PAL.c2, 1, 1);
+    ctx.fillText(lines[i], bx + BUBBLE.padX, by + BUBBLE.padTop + BUBBLE.lineH * i + (BUBBLE.lineH - BUBBLE.font) / 2);
   }
   ctx.restore();
+  return { bx, by, w, h, tx, ty, tail };
 }
 
-/** 라벨 위 = 발바닥 화면 y + 4, 가로 중심 = 기준점 화면 x (2의 배수). */
-export function drawLabel(ctx, ui, text, anchorX, footY, isSelf, viewW) {
+/**
+ * 닉네임 라벨 (7장). 위 = 발바닥 선 + 6, 높이 20, 가로 = 글자 폭 + 12 (짝수, 최소 24).
+ * @returns 그린 박스 {bx, by, w, h}
+ */
+export function drawLabel(ctx, text, ax, fy, isSelf, canvasW) {
   ctx.save();
   ctx.font = LABEL_FONT;
   const tw = Math.ceil(ctx.measureText(text).width);
   const w = Math.max(LABEL.minW, even(tw + LABEL.padX * 2));
   const h = LABEL.h;
-  let x = roundEven(anchorX) - w / 2;
-  x = Math.max(4, Math.min(x, viewW - 4 - w));
-  const y = Math.round(footY) + LABEL.gap;
-  ctx.imageSmoothingEnabled = false;
-  const skin = ui && ui.nine && ui.nine[isSelf ? 'label-self' : 'label-other'];
-  if (skin) drawNine(ctx, skin.img, skin.slice, x, y, w, h);
-  else if (isSelf) pixelBox(ctx, x, y, w, h, PAL.y4, PAL.y3);
-  else pixelBox(ctx, x, y, w, h, PAL.ink, PAL.hb2);
+  const bx = clamp(round2(ax - w / 2), LABEL.edge, Math.max(LABEL.edge, canvasW - w - LABEL.edge));
+  const by = Math.round(fy) + LABEL.top;
+  if (isSelf) {
+    stepBorder(ctx, bx, by, w, h, PAL.y4);
+    ctx.fillStyle = PAL.y2; ctx.fillRect(bx, by, w, h);
+    ctx.fillStyle = PAL.y1; ctx.fillRect(bx, by, w, 2);
+    ctx.fillStyle = PAL.y3; ctx.fillRect(bx, by + h - 2, w, 2);
+  } else {
+    stepBorder(ctx, bx, by, w, h, PAL.ink);
+    ctx.fillStyle = PAL.hb2; ctx.fillRect(bx, by, w, h);
+    ctx.fillStyle = PAL.hb1; ctx.fillRect(bx, by, w, 2);
+  }
   ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  const tx = x + w / 2;
-  const ty = y + LABEL.textTop + LABEL.lineH / 2;
-  if (isSelf) shadowText(ctx, text, tx, ty, PAL.ink, PAL.y1, 0, 1);
-  else shadowText(ctx, text, tx, ty, PAL.white, PAL.ink, 1, 1);
+  ctx.textBaseline = 'top';
+  const cx = bx + w / 2;
+  const ty = by + LABEL.textTop + (LABEL.lineH - LABEL.font) / 2;
+  if (isSelf) {
+    ctx.fillStyle = PAL.y1; ctx.fillText(text, cx, ty + 1);
+    ctx.fillStyle = PAL.ink; ctx.fillText(text, cx, ty);
+  } else {
+    ctx.fillStyle = PAL.ink; ctx.fillText(text, cx + 1, ty + 1);
+    ctx.fillStyle = PAL.white; ctx.fillText(text, cx, ty);
+  }
   ctx.restore();
+  return { bx, by, w, h };
 }

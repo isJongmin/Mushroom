@@ -1,7 +1,6 @@
 // 앱 진입점: 어댑터 선택, 세션 복구, 화면 전환, 테스트 훅(window.__mushroom).
 import { createBackend, selectedMode } from './backend/index.js';
-import { loadAvatarAssets, loadMapAssets, loadUiAssets } from './assets.js';
-import { createBackgroundMap } from './bgmap.js';
+import { loadAvatarAssets, loadMapAssets } from './assets.js';
 import { h, setText } from './dom.js';
 import { BOOT_TIMEOUT_MS } from './constants.js';
 import { AppError, LOGIN_MESSAGES } from './errors.js';
@@ -14,12 +13,12 @@ const SCREENS = { login: loginScreen, create: createScreen, game: gameScreen };
 const root = document.getElementById('app');
 const mode = selectedMode();
 
-// LOCAL MODE 칩 (style-guide 7.9): position: fixed 금지. 각 화면이 자기 슬롯에 넣는다 (app.placeModeBadge).
+// LOCAL MODE 칩 (style-guide v3 5.6 .bk-chip--mode): 각 화면이 자기 슬롯에 넣는다 (app.placeModeBadge).
 // supabase 모드에서는 표시하지 않는다.
-const modeBadge = h('span', { class: 'mode-chip', testid: 'mode-badge', 'aria-label': '실행 모드' }, mode === 'local' ? 'LOCAL MODE' : 'SUPABASE MODE');
+const modeBadge = h('span', { class: 'bk-chip bk-chip--mode', testid: 'mode-badge', 'aria-label': '실행 모드' }, mode === 'local' ? 'LOCAL MODE' : 'SUPABASE MODE');
 if (mode !== 'local') modeBadge.hidden = true;
 
-const toast = h('div', { class: 'global-toast err-banner', role: 'alert', testid: 'global-error', hidden: true });
+const toast = h('div', { class: 'global-toast bk-banner bk-banner--error', role: 'alert', testid: 'global-error', hidden: true });
 document.body.appendChild(toast);
 let toastTimer = 0;
 function showToast(text) {
@@ -34,7 +33,6 @@ const app = {
   backend: null,
   assets: null, // Promise: 아바타 (loadAvatarAssets)
   mapAssets: null, // Promise: 맵 레이어 (loadMapAssets)
-  uiAssets: null, // Promise: UI 스킨 (loadUiAssets) — Canvas 라벨/말풍선용
   modeBadge,
   /** 화면이 LOCAL MODE 칩을 넣을 자리를 지정한다 (local 모드만 보임). */
   placeModeBadge(slot) {
@@ -45,6 +43,8 @@ const app = {
   character: null,
   /** game 화면이 등록하는 상태 공급자 (테스트 훅용) */
   gameStateProvider: null,
+  /** create 화면이 등록하는 상태 공급자 (테스트 훅용) */
+  createStateProvider: null,
   go: null,
   /** 로그인/가입 직후: 캐릭터 유무로 분기. 실패하면 AppError를 던진다. */
   async routeAfterAuth(session) {
@@ -87,18 +87,34 @@ app.go = function go(name, opts = {}) {
   return navChain;
 };
 
-// 로그인/생성 화면 공통 배경. 두 화면 사이에서는 유지하고(카메라 위치 이어짐), 게임에 들어가면 제거한다.
+// 로그인/생성 화면 공통 배경 .bk-world (style-guide v3 5.11, login.md 2.1): CSS만으로 그린다(이미지 요청 없음).
+// 두 화면 사이에서는 유지하고, 게임에 들어가면 제거한다. 구름 흐름은 CSS 애니메이션(동작 줄이기면 정지)이라 해제할 타이머가 없다.
+const CLOUDS = [[4, 76, false], [24, 36, true], [40, 132, false]]; // [left %, top px, 큰 구름] — 같은 배치 2벌 (200% 묶음)
 let bg = null;
+function createWorldBackground() {
+  const clouds = h('div', { class: 'bk-clouds' });
+  for (const off of [0, 50]) {
+    for (const [left, top, big] of CLOUDS) {
+      clouds.appendChild(h('div', { class: big ? 'bk-cloud bk-cloud--b' : 'bk-cloud', style: { left: `${left + off}%`, top: `${top}px` } }));
+    }
+  }
+  const el = h('div', { class: 'bk-world', 'aria-hidden': 'true', testid: 'world-bg' },
+    clouds, h('div', { class: 'bk-world__hills' }), h('div', { class: 'bk-world__ground' }));
+  document.body.prepend(el);
+  return el;
+}
 function syncBackground(name) {
-  const want = name === 'login' || name === 'create';
-  if (want && !bg && app.mapAssets) bg = createBackgroundMap(app.mapAssets);
-  else if (!want && bg) { bg.destroy(); bg = null; }
+  const want = name === 'login' || name === 'create' || name === 'boot';
+  if (want && !bg) bg = createWorldBackground();
+  else if (!want && bg) { bg.remove(); bg = null; }
 }
 
 function renderBoot() {
+  syncBackground('boot');
   const el = h('div', { class: 'screen screen-boot', 'data-screen': 'boot' },
-    h('div', { class: 'px-panel boot-panel', role: 'status', 'aria-label': '불러오는 중' },
-      h('span', { class: 'dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'))));
+    h('main', { class: 'scr-auth' },
+      h('div', { class: 'bk-panel boot-panel', role: 'status', 'aria-label': '불러오는 중' },
+        h('span', { class: 'bk-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i')))));
   root.appendChild(el);
   current = { name: 'boot', el, unmount: null };
   document.body.dataset.screen = 'boot';
@@ -118,15 +134,9 @@ async function boot() {
   app.assets.catch(() => {});
   app.mapAssets = loadMapAssets();
   app.mapAssets.catch(() => {});
-  app.uiAssets = loadUiAssets();
-  app.uiAssets.catch(() => {});
-  // 스킨이 없는 화면이 잠깐 보이지 않도록 UI 스킨을 조금 기다린다 (최대 1.5초, 실패해도 진행)
-  const uiWait = Promise.race([app.uiAssets.catch(() => null), new Promise((r) => setTimeout(r, 1500))]);
-
   try {
     app.backend = await createBackend();
   } catch {
-    await uiWait;
     app.go('login', { banner: 'SERVER' });
     return;
   }
@@ -152,7 +162,6 @@ async function boot() {
   } catch (e) {
     target = { name: 'login', opts: { banner: e && e.code === 'NETWORK' ? 'NETWORK' : 'SERVER' } };
   }
-  await uiWait;
   app.go(target.name, target.opts);
 }
 
@@ -182,6 +191,8 @@ function getState() {
     connection: g ? g.connection : null,
     assets: g ? g.assets : null,
     me: g ? g.me : ch ? { user_id: ch.user_id, nickname: ch.nickname, avatar: { ...ch.avatar }, x: null, y: null, lastChat: null } : null,
+    // create 화면: 현재 고른 아바타(7개 키)와 미리보기 상태
+    create: app.createStateProvider ? app.createStateProvider() : null,
     players: g ? g.players : [],
   };
   return deepFreeze(JSON.parse(JSON.stringify(snapshot)));

@@ -8,6 +8,7 @@
 |---|---|
 | `migrations/20261014000000_characters.sql` | `public.characters` 테이블, 제약, RLS, 컬럼 권한, `is_nickname_taken` RPC |
 | `migrations/20261014000100_realtime.sql` | 주석만 있음(no-op). Realtime에서 하지 않는 것과 후속 과제 기록 |
+| `migrations/20261014000200_avatar_v3.sql` | 사이클 3 아바타 7개 키(`skin, hair, face, top, bottom, shoes, hat`). 기존 행 변환(eyes→face, shoes/hat 기본값) + `characters_avatar_shape` 교체. 권한/RLS 변경 없음 |
 
 규칙: 이미 적용된 마이그레이션은 수정하지 않는다. 변경은 항상 새 타임스탬프 파일로 추가한다.
 
@@ -18,9 +19,17 @@
 1. Supabase 대시보드 > 프로젝트 > **SQL Editor** > New query.
 2. `migrations/20261014000000_characters.sql` 전체를 붙여넣고 **Run**. 오류 없이 끝나야 한다.
 3. `migrations/20261014000100_realtime.sql`은 주석뿐이라 실행하지 않아도 된다(실행해도 변화 없음).
-4. 확인: **Table Editor**에 `characters`가 보이고 "RLS enabled" 표시가 있어야 한다. **Database > Functions**에 `is_nickname_taken`이 있어야 한다.
+4. `migrations/20261014000200_avatar_v3.sql` 전체를 **한 번에** 붙여넣고 **Run**. (일부만 선택해 실행하지 말 것. 한 번에 보내면 전체가 하나의 트랜잭션으로 실행되어, 중간에 실패해도 변경 전 상태로 돌아간다.)
+5. 확인: **Table Editor**에 `characters`가 보이고 "RLS enabled" 표시가 있어야 한다. **Database > Functions**에 `is_nickname_taken`이 있어야 한다. 아래 쿼리 결과가 `0`이어야 한다(구 형식 행 없음).
+   ```sql
+   select count(*) from public.characters where avatar ? 'eyes' or not avatar ?& array['face','shoes','hat'];
+   ```
 
-같은 파일을 두 번 실행하면 `relation "characters" already exists` 오류가 난다. 이것은 정상이며 이미 적용되었다는 뜻이다.
+`20261014000000_characters.sql`을 두 번 실행하면 `relation "characters" already exists` 오류가 난다. 이것은 정상이며 이미 적용되었다는 뜻이다. `20261014000200_avatar_v3.sql`은 다시 실행해도 안전하다(이미 변환된 행은 그대로 둔다).
+
+psql로 직접 적용할 때는 파일마다 `psql -1 -f <파일>`(단일 트랜잭션)로 실행한다.
+
+**배포 순서 주의(사이클 3)**: `20261014000200_avatar_v3.sql` 적용 직후부터 구 형식(`eyes` 포함 5개 키) avatar의 insert/update는 `23514`로 거부된다. 새 7개 키 형식을 보내는 프런트와 같은 시점에 적용한다. 적용 중에는 `characters` 테이블이 잠시(행 수에 비례, 수 ms 수준) 잠긴다.
 
 ### B. supabase CLI 사용
 
@@ -105,7 +114,10 @@ const { error } = await supabase
   .insert({ user_id: uid, nickname, avatar });   // created_at은 보내지 말 것(권한 없음)
 ```
 
-- `avatar`: `{ skin, hair, eyes, top, bottom }` 5개 키만. 값은 `^[a-z0-9-]{1,32}$`. 그 외 키가 있으면 거부.
+- `avatar`: `{ skin, hair, face, top, bottom, shoes, hat }` **정확히 7개 키**(사이클 3부터). 값은 모두 문자열 `^[a-z0-9-]{1,32}$`. 키 누락·추가 키(구 `eyes` 포함)·비문자열 값은 `23514`(`characters_avatar_shape`).
+  - `hat`은 모자 없음을 `"none"`으로 보낸다(키 생략·`null` 불가).
+  - 파츠 id가 manifest에 실제로 있는지는 DB가 검사하지 않는다. manifest에 없는 id는 해당 파츠의 기본값(첫 항목)으로 그린다.
+  - 예: `{ "skin":"skin-light", "hair":"hair-round-black", "face":"basic", "top":"top-tee-red", "bottom":"bottom-jeans-blue", "shoes":"sneakers-white", "hat":"none" }`
 - `nickname`: `^[가-힣A-Za-z0-9]{2,12}$`. 대소문자 무시 중복 불가(`Mushroom`과 `mushroom`은 같은 닉네임).
 - `upsert`는 쓰지 말 것(닉네임 update 권한이 없어 실패한다).
 
@@ -143,6 +155,8 @@ const { data: taken, error } = await supabase.rpc('is_nickname_taken', { p_nickn
 await supabase.from('characters').update({ avatar }).eq('user_id', uid);
 ```
 
+`avatar`는 7개 키 전체를 보낸다(부분 갱신 불가, 형식은 3절과 같음).
+
 `nickname`, `user_id`, `created_at`을 update에 포함하면 `42501`로 전체 요청이 거부된다. 다른 사람 행을 대상으로 하면 오류 없이 0행이 변경된다(RLS). 변경 여부를 확인하려면 `.select()`를 붙여 반환 행 수를 본다.
 
 ### 6. 다른 플레이어 정보
@@ -176,6 +190,18 @@ ch.on('presence', { event: 'sync' }, () => { const state = ch.presenceState(); /
 ch.send({ type: 'broadcast', event: 'move', payload: { user_id: uid, x, y, dir } });
 ```
 
+### 8. 사이클 1~2 데이터 변환 결과 (`20261014000200_avatar_v3.sql`)
+
+| 키 | 변환 규칙 |
+|---|---|
+| `skin`, `hair`, `top`, `bottom` | 기존 값 유지(구 id 그대로) |
+| `face` | 기존 `eyes` 값을 그대로 옮김(예: `eyes-dot`). 유효한 값이 없으면 `"basic"` |
+| `shoes` | 없으면 `"sneakers-white"` |
+| `hat` | 없으면 `"none"` |
+| `eyes` 및 그 밖의 키 | 삭제 |
+
+사이클 1~2의 id(`eyes-dot`, `hair-round-black` 등)는 새 manifest에 없을 수 있다. 프런트는 계약대로 manifest에 없는 id를 해당 파츠 기본값으로 그린다(필요하면 구 id → 새 id 별칭 매핑을 프런트에 둘 수 있도록 id를 보존했다). Presence로 받은 avatar도 구 클라이언트가 보낸 5키일 수 있으므로 같은 방식으로 정규화해 그린다.
+
 ## 테이블 요약
 
 `public.characters`
@@ -184,7 +210,7 @@ ch.send({ type: 'broadcast', event: 'move', payload: { user_id: uid, x, y, dir }
 |---|---|---|
 | `user_id` | uuid | PK(`characters_pkey`), `auth.users(id)` 참조, on delete cascade |
 | `nickname` | text | not null, check `characters_nickname_format`, unique index `characters_nickname_lower_key` on `lower(nickname)` |
-| `avatar` | jsonb | not null, check `characters_avatar_shape` |
+| `avatar` | jsonb | not null, check `characters_avatar_shape`: object, 키 `skin, hair, face, top, bottom, shoes, hat` 정확히 7개, 각 값 string `^[a-z0-9-]{1,32}$` |
 | `created_at` | timestamptz | not null default now() |
 
 권한 (anon은 테이블/RPC 권한 없음):
@@ -205,5 +231,5 @@ ch.send({ type: 'broadcast', event: 'move', payload: { user_id: uid, x, y, dir }
 5. **닉네임/아이디 존재 여부 노출**: 로그인 사용자는 `is_nickname_taken`과 `characters` 조회로 닉네임 존재 여부를 알 수 있다(의도된 동작). Auth의 `user_already_exists`로 아이디 존재 여부도 알 수 있다.
 6. **비밀번호 재설정 불가**: `@mushroom.local` 메일은 수신 불가. 분실 시 관리자가 대시보드에서 처리.
 7. **닉네임 변경 불가**: 사용자 경로로는 불가. 관리자만 SQL로 변경 가능.
-8. **아바타 파트 id의 존재 여부는 DB가 검증하지 않는다**: 형식(`^[a-z0-9-]{1,32}$`)만 검사한다. 매니페스트에 없는 id는 프런트가 기본값으로 대체해 그린다. 파트 종류(키)가 늘어나면 새 마이그레이션으로 `characters_avatar_shape`를 교체해야 한다.
+8. **아바타 파트 id의 존재 여부는 DB가 검증하지 않는다**: 형식(`^[a-z0-9-]{1,32}$`)만 검사한다. 매니페스트에 없는 id는 프런트가 기본값으로 대체해 그린다. 파트 종류(키)가 바뀌면 새 마이그레이션으로 `characters_avatar_shape`를 교체해야 한다(사이클 3의 `20261014000200_avatar_v3.sql`이 그 예).
 9. **한글 닉네임 범위**: 완성형 `가-힣`만 허용. 자모 단독(ㄱ, ㅏ), 공백, 밑줄, 이모지는 거부된다. 대소문자 무시는 영문에만 의미가 있다.

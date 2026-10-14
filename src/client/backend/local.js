@@ -8,7 +8,7 @@
 //   Presence: join → 2초마다 heartbeat → 6초 동안 소식이 없으면 제거. 탭 종료(pagehide) 시 leave 송신.
 import { AppError } from '../errors.js';
 import { NICK_RE, CHAT_MAX } from '../constants.js';
-import { assertCredentials, isValidAvatarShape, isValidNickname, pickAvatar } from './common.js';
+import { assertCredentials, isValidAvatarShape, isValidNickname, pickAvatar, readAvatar } from './common.js';
 
 const LS_ACCOUNTS = 'mushroom.local.accounts.v1';
 const LS_CHARACTERS = 'mushroom.local.characters.v1';
@@ -283,7 +283,9 @@ export function createLocalBackend() {
       const s = requireSession();
       await delay(LATENCY_MS / 2);
       const ch = readJSON(localStorage, LS_CHARACTERS, {})[s.user_id];
-      return ch ? { user_id: ch.user_id, nickname: ch.nickname, avatar: { ...ch.avatar } } : null;
+      if (!ch || typeof ch !== 'object') return null;
+      // 사이클 1~2 형식(eyes 키, 옛 id)으로 저장된 캐릭터도 7개 키로 읽는다 (저장 값은 그대로 둔다)
+      return { user_id: s.user_id, nickname: typeof ch.nickname === 'string' ? ch.nickname : '', avatar: readAvatar(ch.avatar) };
     },
 
     async isNicknameTaken(nickname) {
@@ -308,7 +310,7 @@ export function createLocalBackend() {
       const row = { user_id: s.user_id, nickname, avatar: pickAvatar(avatar), created_at: new Date().toISOString() };
       chars[s.user_id] = row;
       writeJSON(localStorage, LS_CHARACTERS, chars);
-      return { user_id: row.user_id, nickname: row.nickname, avatar: { ...row.avatar } };
+      return { user_id: row.user_id, nickname: row.nickname, avatar: pickAvatar(row.avatar) };
     },
 
     /**

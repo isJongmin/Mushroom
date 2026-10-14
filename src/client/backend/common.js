@@ -1,6 +1,9 @@
 // 두 어댑터가 공유하는 검증. 서버(DB 제약)와 같은 규칙을 클라이언트에서도 확인한다.
-import { ID_RE, PW_MIN, NICK_RE, PART_KEYS, PART_ID_RE } from '../constants.js';
+import { ID_RE, PW_MIN, NICK_RE } from '../constants.js';
 import { AppError } from '../errors.js';
+import { isValidAvatarShape, pickAvatar, normalizeAvatar } from '../avatar-data.js';
+
+export { isValidAvatarShape, pickAvatar };
 
 export function assertCredentials(id, password, { signup }) {
   if (typeof id !== 'string' || !ID_RE.test(id)) throw new AppError(signup ? 'ID_FORMAT' : 'LOGIN_FAILED');
@@ -8,20 +11,14 @@ export function assertCredentials(id, password, { signup }) {
   if (signup && password.length < PW_MIN) throw new AppError('PW_SHORT');
 }
 
-/** characters_avatar_shape 와 같은 규칙: 정확히 5개 키, 각 값 ^[a-z0-9-]{1,32}$ */
-export function isValidAvatarShape(avatar) {
-  if (!avatar || typeof avatar !== 'object' || Array.isArray(avatar)) return false;
-  const keys = Object.keys(avatar);
-  if (keys.length !== PART_KEYS.length) return false;
-  return PART_KEYS.every((k) => typeof avatar[k] === 'string' && PART_ID_RE.test(avatar[k]));
-}
-
 export function isValidNickname(nickname) {
   return typeof nickname === 'string' && NICK_RE.test(nickname);
 }
 
-export function pickAvatar(avatar) {
-  const out = {};
-  for (const k of PART_KEYS) out[k] = avatar[k];
-  return out;
+/**
+ * DB/localStorage에서 읽은 avatar를 7개 키로 맞춘다 (eyes→face, 옛 id 별칭, 누락 키 기본값).
+ * manifest id 검사는 화면 쪽(assets.sanitizeAvatar)이 한다. 저장된 값은 바꾸지 않는다.
+ */
+export function readAvatar(raw) {
+  return normalizeAvatar(raw);
 }

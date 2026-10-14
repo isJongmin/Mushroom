@@ -1,0 +1,93 @@
+{
+  "canvas": {
+    "w": 64,
+    "h": 96
+  },
+  "anchor": {
+    "x": 32,
+    "y": 92
+  },
+  "layerOrder": [
+    "skin",
+    "bottom",
+    "top",
+    "eyes",
+    "hair"
+  ],
+  "parts": {
+    "skin": [
+      {
+        "id": "skin-light",
+        "label": "밝은 피부"
+      },
+      {
+        "id": "skin-tan",
+        "label": "보통 피부"
+      },
+      {
+        "id": "skin-dark",
+        "label": "진한 피부"
+      }
+    ],
+    "hair": [
+      {
+        "id": "hair-round-black",
+        "label": "둥근 단발 · 흑발"
+      },
+      {
+        "id": "hair-round-chestnut",
+        "label": "둥근 단발 · 밤색"
+      },
+      {
+        "id": "hair-spiky-black",
+        "label": "뾰족 머리 · 흑발"
+      },
+      {
+        "id": "hair-spiky-chestnut",
+        "label": "뾰족 머리 · 밤색"
+      }
+    ],
+    "eyes": [
+      {
+        "id": "eyes-dot",
+        "label": "점 눈"
+      },
+      {
+        "id": "eyes-round",
+        "label": "큰 눈"
+      },
+      {
+        "id": "eyes-happy",
+        "label": "웃는 눈"
+      }
+    ],
+    "top": [
+      {
+        "id": "top-tee-red",
+        "label": "빨간 티셔츠"
+      },
+      {
+        "id": "top-hoodie-blue",
+        "label": "파란 후드티"
+      },
+      {
+        "id": "top-vest-green",
+        "label": "초록 조끼"
+      }
+    ],
+    "bottom": [
+      {
+        "id": "bottom-shorts-navy",
+        "label": "네이비 반바지"
+      },
+      {
+        "id": "bottom-jeans-blue",
+        "label": "청바지"
+      },
+      {
+        "id": "bottom-skirt-pink",
+        "label": "분홍 치마"
+      }
+    ]
+  }
+}

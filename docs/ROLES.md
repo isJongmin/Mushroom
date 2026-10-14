@@ -3,7 +3,7 @@
 | 역할 | 모델 | 정의 파일 | 쓰기 범위 |
 |---|---|---|---|
 | 메인 | 세션 모델 | - | docs/PROJECT.md, ARCHITECTURE.md, ROLES.md, STATUS.md |
-| 프런트 | opus | .claude/agents/frontend.md | src/client/ |
+| 프런트 | opus | .claude/agents/frontend.md | index.html, src/client/ |
 | 백엔드 | opus | .claude/agents/backend.md | supabase/ |
 | 아트 | haiku | .claude/agents/art.md | assets/ |
 | 디자인 | haiku | .claude/agents/design.md | docs/design/ |

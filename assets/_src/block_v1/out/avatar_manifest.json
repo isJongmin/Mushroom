@@ -1,0 +1,135 @@
+{
+ "frame": {
+  "w": 48,
+  "h": 64
+ },
+ "anchor": {
+  "x": 24,
+  "y": 60
+ },
+ "scale": 2,
+ "frames": [
+  "front",
+  "side_idle",
+  "side_walk0",
+  "side_walk1",
+  "side_walk2",
+  "side_walk3",
+  "back"
+ ],
+ "animations": {
+  "front": {
+   "frames": [
+    0
+   ]
+  },
+  "side_idle": {
+   "frames": [
+    1
+   ]
+  },
+  "walk": {
+   "frames": [
+    2,
+    3,
+    4,
+    5
+   ],
+   "ms": 150
+  },
+  "back": {
+   "frames": [
+    6
+   ]
+  }
+ },
+ "layerOrder": [
+  "hair_back",
+  "body",
+  "face",
+  "bottom",
+  "shoes",
+  "top",
+  "hair_front",
+  "hat"
+ ],
+ "parts": {
+  "hair_back": [
+   "black_short",
+   "blonde_short",
+   "brown_short",
+   "pink_long"
+  ],
+  "body": [
+   "skin_light"
+  ],
+  "face": [
+   "basic"
+  ],
+  "bottom": [
+   "overalls_green",
+   "pants_black",
+   "pants_navy",
+   "skirt_pink"
+  ],
+  "shoes": [
+   "boots_brown",
+   "maryjane_red",
+   "sneakers_red",
+   "sneakers_white"
+  ],
+  "top": [
+   "blouse_white",
+   "hoodie_black",
+   "hoodie_white",
+   "overalls_green"
+  ],
+  "hair_front": [
+   "black_short",
+   "blonde_short",
+   "brown_short",
+   "pink_long"
+  ],
+  "hat": [
+   "cap_white",
+   "mushroom_red"
+  ]
+ },
+ "hairSplit": "hair id 하나가 hair_back/hair_front 두 시트를 가진다",
+ "characters": {
+  "c1_hoodie": {
+   "body": "skin_light",
+   "face": "basic",
+   "hair": "black_short",
+   "top": "hoodie_black",
+   "bottom": "pants_navy",
+   "shoes": "sneakers_white"
+  },
+  "c2_pink": {
+   "body": "skin_light",
+   "face": "basic",
+   "hair": "pink_long",
+   "top": "blouse_white",
+   "bottom": "skirt_pink",
+   "shoes": "maryjane_red"
+  },
+  "c3_cap": {
+   "body": "skin_light",
+   "face": "basic",
+   "hair": "brown_short",
+   "hat": "cap_white",
+   "top": "hoodie_white",
+   "bottom": "pants_black",
+   "shoes": "sneakers_red"
+  },
+  "c4_mushroom": {
+   "body": "skin_light",
+   "face": "basic",
+   "hair": "blonde_short",
+   "hat": "mushroom_red",
+   "top": "overalls_green",
+   "bottom": "overalls_green",
+   "shoes": "boots_brown"
+  }
+ }
+}

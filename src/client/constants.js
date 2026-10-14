@@ -141,19 +141,30 @@ export const BUBBLE = Object.freeze({
   fadeMs: 500,
 });
 
-// 입력 규칙
-export const ID_RE = /^[a-z0-9_]{4,16}$/;
-export const PW_MIN = 8;
+// 입력 규칙 (ARCHITECTURE 결정 3, 4)
 export const NICK_RE = /^[가-힣a-zA-Z0-9]{2,12}$/;
+export const NICK_MAX = 12;
+export const ROOM_NAME_MAX = 24;
+export const ROOM_PW_MIN = 4;
+export const ROOM_PW_MAX = 32;
+export const ROOM_CAPACITY = 20;
 export const PART_ID_RE = /^[a-z0-9-]{1,32}$/;
 
 // 네트워크
 export const CHAT_MAX = 80;
 export const CHAT_COOLDOWN_MS = 1000;
 export const MOVE_INTERVAL_MS = 100; // 최대 10회/초
-export const NICK_DEBOUNCE_MS = 500;
 export const RECONNECT_DELAYS_MS = Object.freeze([1000, 2000, 4000]);
-export const BOOT_TIMEOUT_MS = 3000;
+export const BOOT_TIMEOUT_MS = 8000; // 익명 로그인 + 재입장 대기 상한
+export const HEARTBEAT_MS = 20000; // 방 안 하트비트 (ARCHITECTURE 결정 4)
+export const LOBBY_POLL_MS = 5000; // 로비 목록 폴링 (lobby.md 3.2)
+export const RATE_LOCK_MS = 10000; // RATE_LIMITED 후 주 버튼 잠금 (lobby.md 7, 8.3)
+export const LEAVE_WAIT_MS = 1500; // 나가기: leave_room 최대 대기 (room.md 1.2)
+export const LOG_DOM_MAX = 200; // 채팅 로그 DOM 상한 (room.md 5.3-8)
+export const SYS_LEAVE_DELAY_MS = 3000; // 퇴장 시스템 메시지 지연 (room.md 5.3-6)
 
-export const CHANNEL_NAME = 'map:village';
+// 저장소 키 (ARCHITECTURE 결정 3, 6)
+export const LS_PROFILE = 'mushroom:profile';
+export const SS_ROOM = 'mushroom:room';
+export const SS_LOG_OPEN = 'mushroom:logOpen';
 export const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';

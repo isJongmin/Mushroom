@@ -1,20 +1,23 @@
-// 앱 진입점: 어댑터 선택, 세션 복구, 화면 전환, 테스트 훅(window.__mushroom).
+// 앱 진입점: 어댑터 선택, 익명 로그인(init), 화면 전환(profile → lobby → room), 테스트 훅(window.__mushroom).
+// 화면 흐름 정본: ARCHITECTURE "화면 흐름 (사이클 4)".
 import { createBackend, selectedMode } from './backend/index.js';
+import { localIdentity } from './backend/identity.js';
 import { loadAvatarAssets, loadMapAssets } from './assets.js';
 import { h, setText } from './dom.js';
 import { BOOT_TIMEOUT_MS } from './constants.js';
-import { AppError, LOGIN_MESSAGES } from './errors.js';
-import * as loginScreen from './screens/login.js';
-import * as createScreen from './screens/create.js';
-import * as gameScreen from './screens/game.js';
+import { AppError, GLOBAL_MESSAGE, toAppError } from './errors.js';
+import { profileKey, readProfile, readRoomSession, clearRoomSession } from './store.js';
+import { closeAnyModal } from './ui/modal.js';
+import * as profileScreen from './screens/profile.js';
+import * as lobbyScreen from './screens/lobby.js';
+import * as roomScreen from './screens/room.js';
 
-const SCREENS = { login: loginScreen, create: createScreen, game: gameScreen };
+const SCREENS = { profile: profileScreen, lobby: lobbyScreen, room: roomScreen };
 
 const root = document.getElementById('app');
 const mode = selectedMode();
 
-// LOCAL MODE 칩 (style-guide v3 5.6 .bk-chip--mode): 각 화면이 자기 슬롯에 넣는다 (app.placeModeBadge).
-// supabase 모드에서는 표시하지 않는다.
+// LOCAL MODE 칩 (style-guide 5.6 .bk-chip--mode): 각 화면이 자기 슬롯에 넣는다 (app.placeModeBadge).
 const modeBadge = h('span', { class: 'bk-chip bk-chip--mode', testid: 'mode-badge', 'aria-label': '실행 모드' }, mode === 'local' ? 'LOCAL MODE' : 'SUPABASE MODE');
 if (mode !== 'local') modeBadge.hidden = true;
 
@@ -28,38 +31,54 @@ function showToast(text) {
   toastTimer = setTimeout(() => { toast.hidden = true; }, 4000);
 }
 
+function withTimeout(promise, ms) {
+  let t;
+  return Promise.race([
+    Promise.resolve(promise).finally(() => clearTimeout(t)),
+    new Promise((_, reject) => { t = setTimeout(() => reject(new AppError('NETWORK', 'timeout')), ms); }),
+  ]);
+}
+
 const app = {
   mode,
   backend: null,
   assets: null, // Promise: 아바타 (loadAvatarAssets)
   mapAssets: null, // Promise: 맵 레이어 (loadMapAssets)
   modeBadge,
-  /** 화면이 LOCAL MODE 칩을 넣을 자리를 지정한다 (local 모드만 보임). */
+  /** local 모드 테스트 훅 ?as=<이름> (backend/identity.js). supabase 모드는 null */
+  as: mode === 'local' ? localIdentity().as : null,
+  profileKey: null, // 아래에서 as에 따라 정함
+  /** { nickname, avatar } | null — localStorage `mushroom:profile` */
+  profile: null,
+  /** 프로필 저장 실패(STORAGE) → 로비 정보 배너 1회 */
+  storageFailed: false,
+  userId: null,
+  screen: 'boot',
+  /** 화면이 등록하는 테스트 훅 상태 공급자 */
+  providers: { profile: null, lobby: null, room: null },
   placeModeBadge(slot) {
     if (slot && modeBadge.parentNode !== slot) slot.appendChild(modeBadge);
   },
-  screen: 'boot',
-  session: null,
-  character: null,
-  /** game 화면이 등록하는 상태 공급자 (테스트 훅용) */
-  gameStateProvider: null,
-  /** create 화면이 등록하는 상태 공급자 (테스트 훅용) */
-  createStateProvider: null,
   go: null,
-  /** 로그인/가입 직후: 캐릭터 유무로 분기. 실패하면 AppError를 던진다. */
-  async routeAfterAuth(session) {
-    app.session = session;
-    const ch = await app.backend.getMyCharacter();
-    app.character = ch;
-    return app.go(ch ? 'game' : 'create');
-  },
-  /** 세션이 무효가 되었을 때(42501 등) 로그인 화면으로 */
-  async forceLogout(bannerCode) {
-    try { await app.backend.signOut(); } catch { /* 무시 */ }
-    app.session = null;
-    app.character = null;
-    return app.go('login', { banner: bannerCode });
-  },
+  ensureInit: null,
+};
+app.profileKey = profileKey(app.as);
+
+// 익명 로그인(init)은 한 번만 진행하고, 실패하면 다음 호출에서 다시 시도한다 (로비 "다시 시도").
+let initPromise = null;
+app.ensureInit = function ensureInit() {
+  if (!initPromise) {
+    initPromise = (async () => {
+      if (!app.backend) app.backend = await createBackend();
+      const r = await withTimeout(app.backend.init(), BOOT_TIMEOUT_MS);
+      app.userId = r.userId;
+      return r;
+    })().catch((e) => {
+      initPromise = null;
+      throw toAppError(e, 'NETWORK');
+    });
+  }
+  return initPromise;
 };
 
 let current = null; // { name, el, unmount }
@@ -67,6 +86,7 @@ let navChain = Promise.resolve();
 
 app.go = function go(name, opts = {}) {
   navChain = navChain.then(async () => {
+    closeAnyModal();
     if (current) {
       const prev = current;
       current = null;
@@ -79,16 +99,17 @@ app.go = function go(name, opts = {}) {
     root.appendChild(el);
     app.screen = name;
     document.body.dataset.screen = name;
+    window.scrollTo(0, 0);
     const inst = await SCREENS[name].mount(el, app, opts);
     current = { name, el, unmount: inst && inst.unmount };
-  }).catch(() => {
-    showToast(LOGIN_MESSAGES.SERVER);
+  }).catch((e) => {
+    console.error(e); // eslint-disable-line no-console
+    showToast(GLOBAL_MESSAGE);
   });
   return navChain;
 };
 
-// 로그인/생성 화면 공통 배경 .bk-world (style-guide v3 5.11, login.md 2.1): CSS만으로 그린다(이미지 요청 없음).
-// 두 화면 사이에서는 유지하고, 게임에 들어가면 제거한다. 구름 흐름은 CSS 애니메이션(동작 줄이기면 정지)이라 해제할 타이머가 없다.
+// 프로필/로비 공통 배경 .bk-world (style-guide 5.11): CSS만으로 그린다. 두 화면 사이에서는 유지, 방에 들어가면 제거.
 const CLOUDS = [[4, 76, false], [24, 36, true], [40, 132, false]]; // [left %, top px, 큰 구름] — 같은 배치 2벌 (200% 묶음)
 let bg = null;
 function createWorldBackground() {
@@ -104,7 +125,7 @@ function createWorldBackground() {
   return el;
 }
 function syncBackground(name) {
-  const want = name === 'login' || name === 'create' || name === 'boot';
+  const want = name === 'profile' || name === 'lobby' || name === 'boot';
   if (want && !bg) bg = createWorldBackground();
   else if (!want && bg) { bg.remove(); bg = null; }
 }
@@ -120,60 +141,45 @@ function renderBoot() {
   document.body.dataset.screen = 'boot';
 }
 
-function withTimeout(promise, ms) {
-  let t;
-  return Promise.race([
-    promise.finally(() => clearTimeout(t)),
-    new Promise((_, reject) => { t = setTimeout(() => reject(new AppError('NETWORK', 'timeout')), ms); }),
-  ]);
-}
-
 async function boot() {
   renderBoot();
   app.assets = loadAvatarAssets();
   app.assets.catch(() => {});
   app.mapAssets = loadMapAssets();
   app.mapAssets.catch(() => {});
-  try {
-    app.backend = await createBackend();
-  } catch {
-    app.go('login', { banner: 'SERVER' });
+  app.profile = readProfile(app.profileKey);
+  // 익명 로그인은 화면과 별개로 바로 시작한다 (프로필 화면은 기다리지 않고, 로비가 기다린다)
+  app.ensureInit().catch(() => {});
+
+  if (!app.profile) { app.go('profile', { mode: 'first' }); return; }
+
+  // 새로고침 재입장 (room.md 1.1): 비밀번호 없이 멤버 행으로 확인. 실패하면 로비 + 배너.
+  const rs = readRoomSession();
+  if (rs) {
+    try {
+      await app.ensureInit();
+      await withTimeout(app.backend.joinRoom({ roomId: rs.roomId, password: null, nickname: rs.nickname }), BOOT_TIMEOUT_MS);
+      let info = null;
+      try { info = (await withTimeout(app.backend.listRooms(), BOOT_TIMEOUT_MS)).find((r) => r.id === rs.roomId) || null; } catch { /* 이름 없이 진행 */ }
+      app.go('room', { roomId: rs.roomId, name: info ? info.name : '', locked: info ? !!info.locked : false, nickname: rs.nickname });
+    } catch {
+      clearRoomSession();
+      app.go('lobby', { banner: 'REJOIN_FAILED' });
+    }
     return;
   }
-  let target;
-  try {
-    target = await withTimeout((async () => {
-      const session = await app.backend.getSession();
-      if (!session) return { name: 'login' };
-      app.session = session;
-      try {
-        const ch = await app.backend.getMyCharacter();
-        app.character = ch;
-        return { name: ch ? 'game' : 'create' };
-      } catch (e) {
-        if (e && e.code === 'AUTH_REQUIRED') {
-          try { await app.backend.signOut(); } catch { /* 무시 */ }
-          app.session = null;
-          return { name: 'login' };
-        }
-        throw e;
-      }
-    })(), BOOT_TIMEOUT_MS);
-  } catch (e) {
-    target = { name: 'login', opts: { banner: e && e.code === 'NETWORK' ? 'NETWORK' : 'SERVER' } };
-  }
-  app.go(target.name, target.opts);
+  app.go('lobby');
 }
 
 // ---------------------------------------------------------------------------
 // 처리되지 않은 비동기 오류는 콘솔 대신 사용자 문구로 알린다.
 window.addEventListener('unhandledrejection', (e) => {
   e.preventDefault();
-  showToast(LOGIN_MESSAGES.SERVER);
+  showToast(GLOBAL_MESSAGE);
 });
 
 // ---------------------------------------------------------------------------
-// QA 테스트 훅 (읽기 전용)
+// QA 테스트 훅 (읽기 전용). docs/handoff/frontend-20261015-rooms.md "테스트 훅"
 function deepFreeze(o) {
   if (o && typeof o === 'object' && !Object.isFrozen(o)) {
     Object.freeze(o);
@@ -183,17 +189,28 @@ function deepFreeze(o) {
 }
 
 function getState() {
-  const g = app.gameStateProvider ? app.gameStateProvider() : null;
-  const ch = app.character;
+  const r = app.providers.room ? app.providers.room() : null;
+  const l = app.providers.lobby ? app.providers.lobby() : null;
+  const p = app.providers.profile ? app.providers.profile() : null;
   const snapshot = {
     screen: app.screen,
     mode: app.mode,
-    connection: g ? g.connection : null,
-    assets: g ? g.assets : null,
-    me: g ? g.me : ch ? { user_id: ch.user_id, nickname: ch.nickname, avatar: { ...ch.avatar }, x: null, y: null, lastChat: null } : null,
-    // create 화면: 현재 고른 아바타(7개 키)와 미리보기 상태
-    create: app.createStateProvider ? app.createStateProvider() : null,
-    players: g ? g.players : [],
+    userId: app.userId,
+    as: app.as,
+    profile: app.profile ? { nickname: app.profile.nickname, avatar: { ...app.profile.avatar } } : null,
+    // 프로필 화면(꾸미기) 상태: 현재 고른 아바타 7키, 미리보기, 닉네임 상태
+    create: p,
+    // 로비
+    lobby: l ? l.lobby : null,
+    rooms: l ? l.rooms : [],
+    // 방
+    room: r ? r.room : null,
+    chatLog: r ? r.chatLog : [],
+    log: r ? r.log : null,
+    connection: r ? r.connection : null,
+    assets: r ? r.assets : null,
+    me: r ? r.me : null,
+    players: r ? r.players : [],
   };
   return deepFreeze(JSON.parse(JSON.stringify(snapshot)));
 }

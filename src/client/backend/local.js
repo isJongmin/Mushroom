@@ -1,44 +1,87 @@
-// local 모드 어댑터 — 개발·QA 전용. 실제 서비스에 쓰지 않는다.
+// local 모드 어댑터 — 개발·QA 전용. 실제 서비스에 쓰지 않는다. 외부 네트워크(CDN 포함)에 접근하지 않는다.
 //
-// - 계정/캐릭터: localStorage (같은 브라우저 프로필의 모든 탭이 공유)
-//   비밀번호는 평문으로 저장하지 않는다. Web Crypto PBKDF2-SHA256(무작위 salt, 100,000회)로 해시만 저장한다.
-//   그래도 브라우저 저장소는 보안 저장소가 아니다. 개발용이다.
-// - 세션: sessionStorage (탭마다 따로, 새로고침해도 유지). 한 브라우저에서 탭마다 다른 계정으로 테스트할 수 있다.
-// - 실시간: BroadcastChannel('mushroom:map:village')로 같은 브라우저의 탭끼리 Presence/move/chat을 흉내 낸다.
-//   Presence: join → 2초마다 heartbeat → 6초 동안 소식이 없으면 제거. 탭 종료(pagehide) 시 leave 송신.
+// 서버(supabase/migrations/20261015000000_rooms.sql)의 RPC 규칙을 같은 의미로 흉내 낸다.
+// - 저장: localStorage `mushroom.local.v4.db` 한 키에 { seq, rooms, members, messages, failures, lastChat }.
+//   같은 브라우저 프로필의 모든 탭이 공유한다(= 하나의 "서버").
+// - 동시 쓰기: navigator.locks.request('mushroom.local.v4.db')로 읽기-수정-쓰기를 탭 사이에서 직렬화한다.
+//   Web Locks가 없는 브라우저(Safari 15.4 미만 등)에서는 직렬화하지 않는다 → 두 탭이 같은 순간 쓰면 마지막 쓰기가 이긴다
+//   (예: 같은 닉네임 동시 입장이 둘 다 성공할 수 있음). 개발용이라 수용.
+// - 비밀번호: PBKDF2-SHA256(무작위 salt 16바이트, 100,000회) 해시만 저장. 평문 저장 안 함.
+// - 사용자: backend/identity.js (브라우저 프로필 단위 userId, 테스트 훅 `?as=<이름>`으로 탭별 사용자).
+// - 실시간: 방별 BroadcastChannel `mushroom:room:<id>`.
+//   Presence: join → 2초마다 heartbeat → 6초 소식 없으면 제거, pagehide 때 leave(= untrack).
+//   chat: sendChat이 저장 후 같은 채널로 'chat'을 보낸다(서버 송신 흉내). 보낸 탭도 같은 이벤트를 받고 id로 중복 제거.
+//   move: 최대 10회/초.
 import { AppError } from '../errors.js';
-import { NICK_RE, CHAT_MAX } from '../constants.js';
-import { assertCredentials, isValidAvatarShape, isValidNickname, pickAvatar, readAvatar } from './common.js';
+import { HEARTBEAT_MS, MOVE_INTERVAL_MS, ROOM_CAPACITY } from '../constants.js';
+import {
+  isValidNickname, cleanRoomName, cleanRoomPassword, cleanChatText, cleanPresenceState, cleanChatMessage, createThrottle,
+} from './common.js';
+import { localIdentity } from './identity.js';
 
-const LS_ACCOUNTS = 'mushroom.local.accounts.v1';
-const LS_CHARACTERS = 'mushroom.local.characters.v1';
-const SS_SESSION = 'mushroom.local.session.v1';
-const BC_NAME = 'mushroom:map:village';
+const DB_KEY = 'mushroom.local.v4.db';
+const LOCK_NAME = 'mushroom.local.v4.db';
+const BC_PREFIX = 'mushroom:room:';
 const PBKDF2_ITER = 100000;
-const LATENCY_MS = 80; // 스피너 등 비동기 상태를 눈으로 확인할 수 있게 작은 지연을 둔다
-const HEARTBEAT_MS = 2000;
+const LATENCY_MS = 60; // 로딩 상태를 눈으로 확인할 수 있게 작은 지연
+const PRESENCE_HEARTBEAT_MS = 2000;
 const PRESENCE_TIMEOUT_MS = 6000;
 const PRUNE_MS = 1000;
 
-const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+// 서버와 같은 시간 상수 (backend handoff 2장)
+const ACTIVE_MS = 60 * 1000; // 활성 멤버
+const VALID_MS = 10 * 60 * 1000; // 유효 멤버(재접속 비밀번호 생략, 채팅, 채널)
+const EXPIRE_MS = 30 * 60 * 1000; // 방 만료
+const FAIL_WINDOW_MS = 60 * 1000; // 비밀번호 실패 창
+const FAIL_MAX = 5;
+const FAIL_KEEP_MS = 10 * 60 * 1000;
+const CHAT_GAP_MS = 1000; // 사용자당 모든 방 합산
+const MSG_KEEP = 50;
+const OWN_MAX = 3;
+const LIST_MAX = 100;
 
-function readJSON(storage, key, fallback) {
+const delay = (ms) => new Promise((r) => setTimeout(r, ms));
+const own = (o, k) => Object.prototype.hasOwnProperty.call(o, k);
+
+function emptyDb() {
+  return { v: 4, seq: 0, rooms: {}, members: {}, messages: {}, failures: [], lastChat: {} };
+}
+
+function loadDb() {
   try {
-    const raw = storage.getItem(key);
-    if (!raw) return fallback;
-    const v = JSON.parse(raw);
-    return v && typeof v === 'object' ? v : fallback;
+    const raw = localStorage.getItem(DB_KEY);
+    if (!raw) return emptyDb();
+    const db = JSON.parse(raw);
+    if (!db || typeof db !== 'object' || db.v !== 4) return emptyDb();
+    const base = emptyDb();
+    for (const k of Object.keys(base)) if (!own(db, k) || typeof db[k] !== typeof base[k]) db[k] = base[k];
+    if (!Array.isArray(db.failures)) db.failures = [];
+    return db;
   } catch {
-    return fallback;
+    return emptyDb();
   }
 }
 
-function writeJSON(storage, key, value) {
+function saveDb(db) {
   try {
-    storage.setItem(key, JSON.stringify(value));
+    localStorage.setItem(DB_KEY, JSON.stringify(db));
   } catch (e) {
-    throw new AppError('SERVER', e);
+    throw new AppError('UNKNOWN', e); // 저장 공간 가득 참 등
   }
+}
+
+/** 읽기-수정-쓰기 트랜잭션. fn이 던지면 쓰지 않는다(롤백). */
+async function tx(fn, { write = true } = {}) {
+  const run = async () => {
+    const db = loadDb();
+    const out = await fn(db, Date.now());
+    if (write) saveDb(db);
+    return out;
+  };
+  if (typeof navigator !== 'undefined' && navigator.locks && typeof navigator.locks.request === 'function') {
+    return navigator.locks.request(LOCK_NAME, run);
+  }
+  return run(); // 한계: 직렬화 없음 (파일 머리 주석)
 }
 
 function b64(bytes) {
@@ -46,7 +89,6 @@ function b64(bytes) {
   for (const b of bytes) s += String.fromCharCode(b);
   return btoa(s);
 }
-
 function unb64(str) {
   const s = atob(str);
   const out = new Uint8Array(s.length);
@@ -55,13 +97,9 @@ function unb64(str) {
 }
 
 async function hashPassword(password, saltBytes) {
-  if (!globalThis.crypto || !crypto.subtle) throw new AppError('SERVER', 'Web Crypto 사용 불가(보안 컨텍스트 필요)');
+  if (!globalThis.crypto || !crypto.subtle) throw new AppError('UNKNOWN', 'Web Crypto 사용 불가(보안 컨텍스트 필요)');
   const key = await crypto.subtle.importKey('raw', new TextEncoder().encode(password), 'PBKDF2', false, ['deriveBits']);
-  const bits = await crypto.subtle.deriveBits(
-    { name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations: PBKDF2_ITER },
-    key,
-    256,
-  );
+  const bits = await crypto.subtle.deriveBits({ name: 'PBKDF2', hash: 'SHA-256', salt: saltBytes, iterations: PBKDF2_ITER }, key, 256);
   return b64(new Uint8Array(bits));
 }
 
@@ -81,71 +119,71 @@ function uuid() {
   return `${hx.slice(0, 8)}-${hx.slice(8, 12)}-${hx.slice(12, 16)}-${hx.slice(16, 20)}-${hx.slice(20)}`;
 }
 
-function currentSession() {
-  const s = readJSON(sessionStorage, SS_SESSION, null);
-  if (!s || typeof s.user_id !== 'string' || typeof s.login_id !== 'string') return null;
-  const acc = readJSON(localStorage, LS_ACCOUNTS, {})[s.login_id];
-  if (!acc || acc.user_id !== s.user_id) return null; // 계정이 지워졌으면 세션 무효
-  return { user_id: s.user_id, login_id: s.login_id };
+// --- 규칙 헬퍼 (서버 app_private.* 와 같은 의미) ---------------------------------
+function roomMembers(db, roomId) {
+  if (!own(db.members, roomId) || typeof db.members[roomId] !== 'object') db.members[roomId] = {};
+  return db.members[roomId];
 }
-
-function requireSession() {
-  const s = currentSession();
-  if (!s) throw new AppError('AUTH_REQUIRED');
-  return s;
+function roomAlive(db, room, now) {
+  if (now - room.last_active_at <= EXPIRE_MS) return true;
+  return Object.values(roomMembers(db, room.id)).some((m) => now - m.last_seen_at <= EXPIRE_MS);
 }
-
-function setSession(account, loginId) {
-  writeJSON(sessionStorage, SS_SESSION, { user_id: account.user_id, login_id: loginId });
-  return { user_id: account.user_id, login_id: loginId };
+function deleteRoom(db, roomId) {
+  delete db.rooms[roomId];
+  delete db.members[roomId];
+  delete db.messages[roomId];
+  db.failures = db.failures.filter((f) => f.room_id !== roomId);
+}
+function isValidMember(db, roomId, uid, now) {
+  const m = roomMembers(db, roomId)[uid];
+  return !!m && now - m.last_seen_at < VALID_MS;
+}
+function activeOthers(db, roomId, uid, now) {
+  return Object.entries(roomMembers(db, roomId)).filter(([id, m]) => id !== uid && now - m.last_seen_at < ACTIVE_MS);
+}
+function postToRoom(roomId, msg) {
+  try {
+    const bc = new BroadcastChannel(BC_PREFIX + roomId);
+    bc.postMessage(msg); // 닫기 전에 보낸 메시지는 전달된다
+    bc.close();
+  } catch { /* BroadcastChannel 없음: 실시간 없이 저장만 */ }
 }
 
 // ---------------------------------------------------------------------------
-// 실시간 (BroadcastChannel)
-
-const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-
-function cleanPresenceState(s) {
-  if (!s || typeof s !== 'object') return null;
-  if (typeof s.user_id !== 'string' || s.user_id.length > 64) return null;
-  if (!isNum(s.x) || !isNum(s.y)) return null;
-  return {
-    user_id: s.user_id,
-    nickname: typeof s.nickname === 'string' ? s.nickname.slice(0, 32) : '',
-    avatar: s.avatar && typeof s.avatar === 'object' ? s.avatar : null,
-    x: s.x,
-    y: s.y,
-  };
-}
-
-let activeMap = null;
-
-function joinMapLocal(handlers, self) {
-  const myState = { ...self };
+// 실시간 연결 (방 하나)
+function createConnection(roomId, uid, handlers, self, backend, onClose) {
+  const myState = { ...self, user_id: uid };
   const members = new Map(); // user_id -> { state, lastSeen }
+  const seenChat = new Set();
   let closed = false;
-  const bc = new BroadcastChannel(BC_NAME);
-
-  const emitPresence = () => {
-    if (closed) return;
-    const list = [{ ...myState }];
-    for (const m of members.values()) list.push({ ...m.state });
-    handlers.onPresence?.(list);
-  };
+  const bc = new BroadcastChannel(BC_PREFIX + roomId);
 
   const post = (msg) => {
     if (closed) return;
-    try {
-      bc.postMessage(msg);
-    } catch {
-      /* 닫힌 채널 등: 무시 */
-    }
+    try { bc.postMessage(msg); } catch { /* 닫힌 채널 */ }
+  };
+  const call = (name, ...args) => {
+    if (closed) return;
+    try { handlers[name]?.(...args); } catch (e) { console.error(e); } // eslint-disable-line no-console
+  };
+  const list = () => [{ ...myState }, ...[...members.values()].map((m) => ({ ...m.state }))];
+  const emitSync = () => call('onSync', list());
+
+  /** @returns 'new' | 'changed' | 'same' */
+  const upsert = (st) => {
+    const prev = members.get(st.user_id);
+    members.set(st.user_id, { state: st, lastSeen: Date.now() });
+    if (!prev) return 'new';
+    const p = prev.state;
+    return p.nickname !== st.nickname || JSON.stringify(p.avatar) !== JSON.stringify(st.avatar) || p.x !== st.x ? 'changed' : 'same';
   };
 
-  const upsertMember = (state) => {
-    const prev = members.get(state.user_id);
-    members.set(state.user_id, { state, lastSeen: Date.now() });
-    return !prev || prev.state.nickname !== state.nickname || JSON.stringify(prev.state.avatar) !== JSON.stringify(state.avatar);
+  const deliver = (raw) => {
+    const m = cleanChatMessage(raw);
+    if (!m || seenChat.has(m.id)) return;
+    seenChat.add(m.id);
+    if (seenChat.size > 500) seenChat.delete(seenChat.values().next().value);
+    call('onChat', m);
   };
 
   bc.onmessage = (ev) => {
@@ -153,180 +191,283 @@ function joinMapLocal(handlers, self) {
     if (closed || !msg || typeof msg !== 'object') return;
     switch (msg.type) {
       case 'presence-join':
+      case 'presence-here':
       case 'presence-heartbeat': {
         const st = cleanPresenceState(msg.state);
-        if (!st || st.user_id === myState.user_id) return;
-        const changed = upsertMember(st);
-        if (msg.type === 'presence-join') {
-          // 새로 들어온 사람이 나를 바로 알 수 있게 즉시 heartbeat
-          post({ type: 'presence-heartbeat', state: { ...myState } });
-          emitPresence();
-        } else if (changed) emitPresence();
+        if (!st || st.user_id === uid) return;
+        const r = upsert(st);
+        if (msg.type === 'presence-join') post({ type: 'presence-here', state: { ...myState } });
+        // presence-here = 내가 들어오기 전부터 있던 사람(첫 sync에 해당) → 입장 이벤트 없음
+        if (r === 'new' && msg.type !== 'presence-here') call('onJoin', { ...st });
+        if (r !== 'same') emitSync();
         break;
       }
       case 'presence-leave': {
-        const uid = msg.user_id;
-        if (typeof uid === 'string' && members.delete(uid)) emitPresence();
-        break;
-      }
-      case 'broadcast': {
-        const p = msg.payload;
-        if (!p || typeof p !== 'object') return;
-        // Presence에 있는 상대만 heartbeat로 간주하지 않는다(heartbeat은 presence 메시지로만 갱신)
-        if (msg.event === 'move') {
-          const m = members.get(p.user_id);
-          if (m && isNum(p.x) && isNum(p.y)) { m.state.x = p.x; m.state.y = p.y; }
-          handlers.onMove?.(p);
-        } else if (msg.event === 'chat') {
-          handlers.onChat?.(p);
+        const m = typeof msg.user_id === 'string' ? members.get(msg.user_id) : null;
+        if (m) {
+          members.delete(msg.user_id);
+          call('onLeave', { ...m.state });
+          emitSync();
         }
         break;
       }
+      case 'move': {
+        const p = msg.payload;
+        if (!p || typeof p !== 'object' || p.user_id === uid) return;
+        const m = members.get(p.user_id);
+        if (m && typeof p.x === 'number' && Number.isFinite(p.x)) m.state.x = p.x;
+        call('onMove', p);
+        break;
+      }
+      case 'chat': // 서버(sendChat) 송신 흉내. 아무 탭이나 같은 형식으로 보낼 수 있다는 점은 실제 서버와 같은 한계.
+        deliver(msg.payload);
+        break;
       default:
         break;
     }
   };
 
-  const heartbeat = setInterval(() => post({ type: 'presence-heartbeat', state: { ...myState } }), HEARTBEAT_MS);
-  const prune = setInterval(() => {
+  const presenceTimer = setInterval(() => post({ type: 'presence-heartbeat', state: { ...myState } }), PRESENCE_HEARTBEAT_MS);
+  const pruneTimer = setInterval(() => {
     const now = Date.now();
     let removed = false;
-    for (const [uid, m] of members) {
-      if (now - m.lastSeen > PRESENCE_TIMEOUT_MS) { members.delete(uid); removed = true; }
+    for (const [id, m] of members) {
+      if (now - m.lastSeen > PRESENCE_TIMEOUT_MS) {
+        members.delete(id);
+        call('onLeave', { ...m.state });
+        removed = true;
+      }
     }
-    if (removed) emitPresence();
+    if (removed) emitSync();
   }, PRUNE_MS);
+  // 서버 하트비트 (ARCHITECTURE 결정 4: 20초). NOT_MEMBER면 화면에 알린다.
+  const heartbeatTimer = setInterval(() => {
+    backend.heartbeat(roomId).catch((e) => {
+      if (e && e.code === 'NOT_MEMBER') call('onStatus', 'not_member');
+    });
+  }, HEARTBEAT_MS);
 
-  const onPageHide = () => post({ type: 'presence-leave', user_id: myState.user_id });
-  // 숨김 탭은 타이머가 느려진다. 다시 보이면 바로 heartbeat을 보내 상대 목록에서 빠지지 않게 한다.
+  // 탭 닫기: leave_room은 보장할 수 없으므로 Presence만 내린다(untrack). 멤버 행은 활성 60초 규칙에 맡긴다.
+  const onPageHide = () => post({ type: 'presence-leave', user_id: uid });
+  const onPageShow = (e) => { if (e.persisted) post({ type: 'presence-join', state: { ...myState } }); };
+  // 숨김 탭은 타이머가 느려진다. 다시 보이면 바로 heartbeat.
   const onVisible = () => { if (document.visibilityState === 'visible') post({ type: 'presence-heartbeat', state: { ...myState } }); };
   window.addEventListener('pagehide', onPageHide);
+  window.addEventListener('pageshow', onPageShow);
   document.addEventListener('visibilitychange', onVisible);
 
-  const leave = async () => {
-    if (closed) return;
-    post({ type: 'presence-leave', user_id: myState.user_id });
-    closed = true;
-    clearInterval(heartbeat);
-    clearInterval(prune);
-    window.removeEventListener('pagehide', onPageHide);
-    document.removeEventListener('visibilitychange', onVisible);
-    bc.onmessage = null;
-    bc.close();
-    members.clear();
-    if (activeMap === api) activeMap = null;
-  };
+  const mover = createThrottle(MOVE_INTERVAL_MS, (p) => post({ type: 'move', payload: p }));
 
   const api = {
+    roomId,
+    deliver,
     async sendMove({ x, y, dir }) {
       if (closed) throw new AppError('NETWORK');
       myState.x = x;
       myState.y = y;
-      post({ type: 'broadcast', event: 'move', payload: { user_id: myState.user_id, x, y, dir } });
+      mover.push({ user_id: uid, x, y, dir: dir === 'left' ? 'left' : 'right' });
     },
-    async sendChat(text) {
+    async updateSelf(partial) {
       if (closed) throw new AppError('NETWORK');
-      const t = String(text).slice(0, CHAT_MAX);
-      post({ type: 'broadcast', event: 'chat', payload: { user_id: myState.user_id, text: t } });
+      for (const k of ['nickname', 'avatar', 'x', 'y']) if (partial && own(partial, k)) myState[k] = partial[k];
+      post({ type: 'presence-heartbeat', state: { ...myState } });
     },
-    leave,
+    async leave() {
+      if (closed) return;
+      post({ type: 'presence-leave', user_id: uid });
+      closed = true;
+      mover.cancel();
+      clearInterval(presenceTimer);
+      clearInterval(pruneTimer);
+      clearInterval(heartbeatTimer);
+      window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('pageshow', onPageShow);
+      document.removeEventListener('visibilitychange', onVisible);
+      bc.onmessage = null;
+      bc.close();
+      members.clear();
+      onClose(api);
+    },
   };
 
   post({ type: 'presence-join', state: { ...myState } });
-  activeMap = api;
-  // 연결 상태: BroadcastChannel은 끊기지 않으므로 바로 connected
-  queueMicrotask(() => { emitPresence(); handlers.onStatus?.('connected'); });
+  // BroadcastChannel은 끊기지 않으므로 바로 connected. 첫 sync = 나 혼자(이미 있던 사람은 presence-here로 조용히 추가).
+  queueMicrotask(() => { emitSync(); call('onStatus', 'connected'); });
   return api;
 }
 
 // ---------------------------------------------------------------------------
 
 export function createLocalBackend() {
-  return {
+  const conns = new Set();
+  let uid = null;
+
+  const requireUid = () => {
+    if (!uid) throw new AppError('NOT_MEMBER'); // 서버: 세션 없음 = NOT_MEMBER
+    return uid;
+  };
+
+  const backend = {
     mode: 'local',
 
-    async signUp(id, password) {
-      assertCredentials(id, password, { signup: true });
+    async init() {
+      uid = localIdentity().userId;
       await delay(LATENCY_MS);
-      const accounts = readJSON(localStorage, LS_ACCOUNTS, {});
-      if (Object.prototype.hasOwnProperty.call(accounts, id)) throw new AppError('ID_TAKEN');
-      const salt = crypto.getRandomValues(new Uint8Array(16));
-      const hash = await hashPassword(password, salt);
-      const account = { user_id: uuid(), salt: b64(salt), hash, iter: PBKDF2_ITER, created_at: new Date().toISOString() };
-      accounts[id] = account;
-      writeJSON(localStorage, LS_ACCOUNTS, accounts);
-      return setSession(account, id);
+      return { userId: uid };
     },
 
-    async signIn(id, password) {
-      assertCredentials(id, password, { signup: false });
+    async listRooms() {
+      requireUid();
       await delay(LATENCY_MS);
-      const accounts = readJSON(localStorage, LS_ACCOUNTS, {});
-      const acc = Object.prototype.hasOwnProperty.call(accounts, id) ? accounts[id] : null;
-      // 계정이 없어도 해시를 계산해 응답 시간 차이를 줄인다
-      const salt = acc ? unb64(acc.salt) : new Uint8Array(16);
-      const hash = await hashPassword(password, salt);
-      if (!acc || !safeEqual(hash, acc.hash)) throw new AppError('LOGIN_FAILED');
-      return setSession(acc, id);
+      return tx((db, now) => {
+        for (const room of Object.values(db.rooms)) if (!roomAlive(db, room, now)) deleteRoom(db, room.id);
+        const rows = Object.values(db.rooms).map((r) => {
+          const ms = Object.values(roomMembers(db, r.id));
+          const members = ms.filter((m) => now - m.last_seen_at < ACTIVE_MS).length;
+          const lastAct = Math.max(r.last_active_at, ...ms.map((m) => m.last_seen_at));
+          return { r, members, lastAct };
+        });
+        rows.sort((a, b) => b.members - a.members || b.lastAct - a.lastAct || b.r.created_at - a.r.created_at);
+        return rows.slice(0, LIST_MAX).map(({ r, members }) => ({
+          id: r.id, name: r.name, locked: !!r.pw_hash, members, createdAt: new Date(r.created_at).toISOString(),
+        }));
+      });
     },
 
-    async signOut() {
-      if (activeMap) await activeMap.leave();
-      try { sessionStorage.removeItem(SS_SESSION); } catch { /* 무시 */ }
-    },
-
-    async getSession() {
-      return currentSession();
-    },
-
-    async getMyCharacter() {
-      const s = requireSession();
-      await delay(LATENCY_MS / 2);
-      const ch = readJSON(localStorage, LS_CHARACTERS, {})[s.user_id];
-      if (!ch || typeof ch !== 'object') return null;
-      // 사이클 1~2 형식(eyes 키, 옛 id)으로 저장된 캐릭터도 7개 키로 읽는다 (저장 값은 그대로 둔다)
-      return { user_id: s.user_id, nickname: typeof ch.nickname === 'string' ? ch.nickname : '', avatar: readAvatar(ch.avatar) };
-    },
-
-    async isNicknameTaken(nickname) {
-      requireSession();
+    async createRoom({ name, password, nickname }) {
+      const me = requireUid();
       await delay(LATENCY_MS);
-      const lower = String(nickname).toLowerCase();
-      const chars = readJSON(localStorage, LS_CHARACTERS, {});
-      return Object.values(chars).some((c) => c && typeof c.nickname === 'string' && c.nickname.toLowerCase() === lower);
-    },
-
-    async createCharacter(nickname, avatar) {
-      const s = requireSession();
-      await delay(LATENCY_MS);
-      if (!isValidNickname(nickname) || !NICK_RE.test(nickname)) throw new AppError('NICK_FORMAT');
-      if (!isValidAvatarShape(avatar)) throw new AppError('AVATAR_FORMAT');
-      const chars = readJSON(localStorage, LS_CHARACTERS, {});
-      if (chars[s.user_id]) throw new AppError('CHAR_EXISTS'); // characters_pkey
-      const lower = nickname.toLowerCase();
-      if (Object.values(chars).some((c) => c && String(c.nickname).toLowerCase() === lower)) {
-        throw new AppError('NICK_TAKEN'); // characters_nickname_lower_key
+      const cleanName = cleanRoomName(name);
+      if (cleanName === null) throw new AppError('ROOM_NAME_FORMAT');
+      const pw = cleanRoomPassword(password);
+      if (pw === null) throw new AppError('PASSWORD_FORMAT');
+      if (!isValidNickname(nickname)) throw new AppError('NICK_FORMAT');
+      let salt = null;
+      let hash = null;
+      if (pw) {
+        const saltBytes = crypto.getRandomValues(new Uint8Array(16));
+        hash = await hashPassword(pw, saltBytes);
+        salt = b64(saltBytes);
       }
-      const row = { user_id: s.user_id, nickname, avatar: pickAvatar(avatar), created_at: new Date().toISOString() };
-      chars[s.user_id] = row;
-      writeJSON(localStorage, LS_CHARACTERS, chars);
-      return { user_id: row.user_id, nickname: row.nickname, avatar: pickAvatar(row.avatar) };
+      const roomId = await tx((db, now) => {
+        const owned = Object.values(db.rooms).filter((r) => r.created_by === me && roomAlive(db, r, now)).length;
+        if (owned >= OWN_MAX) throw new AppError('TOO_MANY_ROOMS');
+        const id = uuid();
+        db.rooms[id] = { id, name: cleanName, pw_salt: salt, pw_hash: hash, created_by: me, created_at: now, last_active_at: now };
+        roomMembers(db, id)[me] = { nickname, joined_at: now, last_seen_at: now };
+        return id;
+      });
+      return { roomId };
+    },
+
+    async joinRoom({ roomId, password, nickname }) {
+      const me = requireUid();
+      await delay(LATENCY_MS);
+      if (!isValidNickname(nickname)) throw new AppError('NICK_FORMAT');
+      if (typeof roomId !== 'string') throw new AppError('ROOM_NOT_FOUND');
+      // 해시 계산(수십 ms)은 잠금 밖에서. 방 비밀번호는 바뀌지 않으므로 salt를 미리 읽어도 된다.
+      const pre = loadDb().rooms[roomId];
+      let tryHash = null;
+      if (pre && pre.pw_hash && typeof password === 'string' && password !== '') {
+        tryHash = await hashPassword(password, unb64(pre.pw_salt));
+      }
+      const result = await tx((db, now) => {
+        const room = own(db.rooms, roomId) ? db.rooms[roomId] : null;
+        if (!room || !roomAlive(db, room, now)) throw new AppError('ROOM_NOT_FOUND');
+        const ms = roomMembers(db, roomId);
+        for (const [id, m] of Object.entries(ms)) if (now - m.last_seen_at >= VALID_MS) delete ms[id];
+        db.failures = db.failures.filter((f) => now - f.at < FAIL_KEEP_MS);
+        const isMember = own(ms, me);
+        if (room.pw_hash && !isMember) {
+          const fails = db.failures.filter((f) => f.user_id === me && f.room_id === roomId && now - f.at < FAIL_WINDOW_MS).length;
+          if (fails >= FAIL_MAX) throw new AppError('RATE_LIMITED');
+          if (password == null || password === '') return 'WRONG_PASSWORD'; // 세지 않음 (새로고침 재입장 보호)
+          if (!tryHash || !safeEqual(tryHash, room.pw_hash)) {
+            db.failures.push({ room_id: roomId, user_id: me, at: now }); // 실패 기록은 커밋한다
+            return 'WRONG_PASSWORD';
+          }
+        }
+        if (activeOthers(db, roomId, me, now).length >= ROOM_CAPACITY) throw new AppError('ROOM_FULL');
+        const lower = nickname.toLowerCase();
+        if (activeOthers(db, roomId, me, now).some(([, m]) => m.nickname.toLowerCase() === lower)) throw new AppError('NICK_TAKEN');
+        // 비활성(60초 초과) 멤버의 같은 닉네임은 양보 (그 사람은 heartbeat에서 NOT_MEMBER)
+        for (const [id, m] of Object.entries(ms)) if (id !== me && m.nickname.toLowerCase() === lower) delete ms[id];
+        ms[me] = { nickname, joined_at: isMember ? ms[me].joined_at : now, last_seen_at: now };
+        room.last_active_at = now;
+        return 'OK';
+      });
+      if (result === 'WRONG_PASSWORD') throw new AppError('WRONG_PASSWORD');
+    },
+
+    async leaveRoom(roomId) {
+      const me = requireUid();
+      await tx((db, now) => {
+        const ms = db.members[roomId];
+        if (ms && own(ms, me)) {
+          delete ms[me];
+          if (db.rooms[roomId]) db.rooms[roomId].last_active_at = now;
+        }
+      });
+    },
+
+    async heartbeat(roomId) {
+      const me = requireUid();
+      await tx((db, now) => {
+        if (!own(db.rooms, roomId) || !isValidMember(db, roomId, me, now)) throw new AppError('NOT_MEMBER');
+        const m = roomMembers(db, roomId)[me];
+        // 60초 넘게 비활성이었다가 돌아왔는데 그 사이 방이 찼으면 부활 금지
+        if (now - m.last_seen_at >= ACTIVE_MS && activeOthers(db, roomId, me, now).length >= ROOM_CAPACITY) {
+          throw new AppError('NOT_MEMBER');
+        }
+        m.last_seen_at = now;
+      });
+    },
+
+    async recentMessages(roomId) {
+      const me = requireUid();
+      await delay(LATENCY_MS);
+      return tx((db, now) => {
+        if (!own(db.rooms, roomId) || !isValidMember(db, roomId, me, now)) throw new AppError('NOT_MEMBER');
+        const list = Array.isArray(db.messages[roomId]) ? db.messages[roomId] : [];
+        return list.slice(-MSG_KEEP).map((m) => ({ ...m }));
+      }, { write: false });
+    },
+
+    async sendChat(roomId, text) {
+      const me = requireUid();
+      const msg = await tx((db, now) => {
+        if (!own(db.rooms, roomId) || !isValidMember(db, roomId, me, now)) throw new AppError('NOT_MEMBER');
+        const t = cleanChatText(text);
+        if (t === null) throw new AppError('TEXT_FORMAT');
+        const last = Number(db.lastChat[me]) || 0;
+        if (now - last < CHAT_GAP_MS) throw new AppError('RATE_LIMITED'); // 모든 방 합산
+        db.lastChat[me] = now;
+        db.seq = (Number(db.seq) || 0) + 1;
+        const m = { id: db.seq, user_id: me, nickname: roomMembers(db, roomId)[me].nickname, text: t, created_at: new Date(now).toISOString() };
+        const list = Array.isArray(db.messages[roomId]) ? db.messages[roomId] : [];
+        list.push(m);
+        db.messages[roomId] = list.slice(-MSG_KEEP);
+        return m;
+      });
+      postToRoom(roomId, { type: 'chat', payload: msg }); // 서버 송신 흉내 (보낸 탭의 연결도 받는다)
+      for (const c of conns) if (c.roomId === roomId) c.deliver(msg); // 반환값도 같은 경로 (id 중복 제거)
+      return { ...msg };
     },
 
     /**
-     * @param handlers { onPresence(list), onMove(payload), onChat(payload), onStatus(status) }
-     * @param self { user_id, nickname, avatar, x, y }  Presence에 올릴 내 상태
-     * @returns Promise<{ sendMove({x,y,dir}), sendChat(text), leave() }>
+     * @param handlers { onSync(list), onJoin(state), onLeave(state), onMove(payload), onChat(msg), onStatus('connected'|'disconnected'|'not_member') }
+     * @param self { nickname, avatar, x, y } Presence에 올릴 내 상태 (user_id는 어댑터가 채운다)
      */
-    async joinMap(handlers, self) {
+    async connectRoom(roomId, handlers, self) {
+      const me = requireUid();
       if (typeof BroadcastChannel === 'undefined') throw new AppError('NETWORK', 'BroadcastChannel 미지원');
-      const s = requireSession();
-      if (activeMap) await activeMap.leave();
-      return joinMapLocal(handlers, { ...self, user_id: s.user_id });
-    },
-
-    async leaveMap() {
-      if (activeMap) await activeMap.leave();
+      // 서버: 비공개 채널은 유효 멤버만 구독 가능 (아니면 CHANNEL_ERROR)
+      const ok = await tx((db, now) => own(db.rooms, roomId) && isValidMember(db, roomId, me, now), { write: false });
+      if (!ok) throw new AppError('NOT_MEMBER');
+      const conn = createConnection(roomId, me, handlers, self, backend, (c) => conns.delete(c));
+      conns.add(conn);
+      return { sendMove: conn.sendMove, updateSelf: conn.updateSelf, leave: conn.leave };
     },
   };
+  return backend;
 }

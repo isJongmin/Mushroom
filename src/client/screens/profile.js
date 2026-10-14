@@ -1,15 +1,16 @@
-// 캐릭터 생성 화면 (docs/design/screens/character-create.md v3.0, style-guide v3 5.12~5.14)
-// - 카테고리 탭 7개 + 아이템 슬롯 그리드(썸네일) + 프리셋 + 회전 미리보기(앞/옆/뒤 + 걷기) + 닉네임.
+// 프로필 화면: 닉네임 + 캐릭터 꾸미기 (docs/design/screens/profile.md v4, character-create.md v3 3·5장, style-guide 5.12~5.14)
+// - 서버와 통신하지 않는다. 저장 = localStorage `mushroom:profile` = { nickname, avatar(7키) } (ARCHITECTURE 결정 3).
+// - 모드: first(최초, "입장하기") / edit(로비 "꾸미기"에서, "취소" + "저장").
+// - 카테고리 탭 7개 + 아이템 슬롯 그리드(썸네일) + 프리셋 + 회전 미리보기(앞/옆/뒤 + 걷기)는 v3 그대로.
 // - 탭/슬롯/프리셋은 assets/avatar/manifest.json 의 parts/presets 로만 만든다(하드코딩 없음).
-// - 저장 값은 항상 정확히 7개 키 (skin, hair, face, top, bottom, shoes, hat).
 import { h, setText } from '../dom.js';
-import { PAL, NICK_RE, NICK_DEBOUNCE_MS, PART_KEYS, CATEGORY_ORDER, PART_LABELS, HAT_NONE } from '../constants.js';
-import { CREATE_MESSAGES as M, toAppError } from '../errors.js';
+import { PAL, NICK_RE, NICK_MAX, PART_KEYS, CATEGORY_ORDER, PART_LABELS, HAT_NONE } from '../constants.js';
+import { PROFILE_MESSAGES as M } from '../errors.js';
 import { createAvatarRenderer, makeCanvas } from '../avatar.js';
 import { drawFootShadow } from '../game/world.js';
 import { pickAvatar } from '../avatar-data.js';
-
-const MANIFEST_MSG = '파츠 정보를 불러오지 못했습니다. 새로고침해 주세요.';
+import { writeProfile } from '../store.js';
+import { trimWs, charLength } from '../backend/common.js';
 
 // 미리보기 무대 (style-guide 5.14): 아트 56x72, 프레임 왼쪽 위 (4,4) → 기준점 (28,64), 잔디 윗면 첫 행 62
 const STAGE = Object.freeze({ w: 56, h: 72, ax: 28, ay: 64, grassTop: 62 });
@@ -29,7 +30,8 @@ const THUMB_SIZE = 40;
 const PRESET_CROP = Object.freeze({ x: 4, y: 6 });
 const VIEWS = Object.freeze([['front', '앞'], ['side', '옆'], ['back', '뒤']]);
 
-export function mount(root, app) {
+export function mount(root, app, opts = {}) {
+  const editMode = opts.mode === 'edit' && !!app.profile;
   const ac = new AbortController();
   const on = (el, type, fn, o) => el.addEventListener(type, fn, { signal: ac.signal, ...o });
   let alive = true;
@@ -37,21 +39,17 @@ export function mount(root, app) {
   let renderer = null;
   let avatar = null;
   let ready = false;
-  let creating = false;
-  let debounceTimer = 0;
-  let checkSeq = 0;
-  let pendingCheck = null;
+  const creating = false; // 처리 중 상태 없음 (동기 저장, profile.md 6장)
   let composing = false;
+  let errorShown = false; // 한 번 오류를 보인 뒤에는 매 입력마다 즉시 갱신 (5.2)
   let activeTab = 'hair'; // 첫 진입 = 머리 (5.1)
   let view = 'front'; // front | side | back
   let walking = false;
   let walkStart = 0;
   let raf = 0;
-  const nick = { value: '', status: 'empty', checkedValue: null };
+  const nick = { value: '', status: 'empty' };
 
   // --- 요소 ---------------------------------------------------------------
-  const logoutBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--sm', testid: 'logout' }, '로그아웃');
-  const banner = h('div', { class: 'bk-banner bk-banner--error', role: 'alert', testid: 'error-message', hidden: true });
 
   // 미리보기
   const stageCanvas = h('canvas', { width: String(STAGE.w), height: String(STAGE.h), 'aria-hidden': 'true' });
@@ -82,41 +80,45 @@ export function mount(root, app) {
   const tabList = h('div', { class: 'bk-tabs bk-tabs--cat', role: 'tablist', 'aria-label': '꾸미기 항목' }, CATEGORY_ORDER.map((p) => tabBtns[p]));
   const slotGrid = h('div', { class: 'bk-slots', role: 'radiogroup', id: 'slot-grid', testid: 'slot-grid', 'aria-labelledby': `tab-${activeTab}` });
   const currentLine = h('p', { class: 'bk-help', testid: 'current-part', 'aria-live': 'polite' });
-  const partsBanner = h('div', { class: 'bk-banner bk-banner--error', role: 'alert', testid: 'manifest-error', hidden: true }, MANIFEST_MSG);
+  const partsBanner = h('div', { class: 'bk-banner bk-banner--error', role: 'alert', testid: 'manifest-error', hidden: true }, M.MANIFEST);
   const partsBody = h('div', {},
     h('h2', { class: 'section-title' }, '추천 조합'), presetGrid,
     h('h2', { class: 'section-title' }, '꾸미기'), tabList, slotGrid, currentLine);
   const partsArea = h('div', { class: 'create-parts' }, partsBanner, partsBody);
 
-  // 닉네임
+  // 닉네임 (5장)
   const nickInput = h('input', {
-    id: 'nickname', class: 'bk-input', type: 'text', testid: 'nickname-input', maxlength: '12', autocomplete: 'off',
-    spellcheck: 'false', 'aria-describedby': 'nickname-status',
+    id: 'nickname', class: 'bk-input bk-input--with-end', type: 'text', testid: 'nickname-input', maxlength: String(NICK_MAX),
+    autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'done', 'aria-describedby': 'nickname-status',
   });
+  const nickCounter = h('span', { class: 'bk-counter', testid: 'nickname-counter', 'aria-hidden': 'true', hidden: true });
   const statusIcon = h('span', { class: 'status-icon', 'aria-hidden': 'true', hidden: true });
   const statusText = h('span', {});
   const status = h('p', { id: 'nickname-status', class: 'bk-help nick-status', testid: 'nickname-status', 'aria-live': 'polite' }, statusIcon, statusText);
   const nickArea = h('div', { class: 'create-nick bk-field' },
     h('label', { for: 'nickname', class: 'bk-label-text' }, '닉네임'),
-    h('div', { class: 'bk-input-wrap' }, nickInput),
+    h('div', { class: 'bk-input-wrap' }, nickInput, h('span', { class: 'bk-input-end' }, nickCounter)),
     status);
 
-  const submitLabel = h('span', {}, '캐릭터 만들기');
-  const spinner = h('span', { class: 'bk-dots', 'aria-hidden': 'true', hidden: true }, h('i'), h('i'), h('i'));
-  const submit = h('button', { type: 'button', class: 'bk-btn bk-btn--primary bk-btn--block', testid: 'create-submit', disabled: true }, spinner, submitLabel);
-  const ctaArea = h('div', { class: 'create-cta' }, submit);
+  // 버튼 (6장): 비활성은 aria-disabled (눌렀을 때 형식 오류를 보여 주기 위해 클릭은 받는다)
+  const submit = h('button', {
+    type: 'button', class: editMode ? 'bk-btn bk-btn--primary' : 'bk-btn bk-btn--primary bk-btn--block', testid: 'create-submit', 'aria-disabled': 'true',
+  }, editMode ? '저장' : '입장하기');
+  const cancelBtn = editMode ? h('button', { type: 'button', class: 'bk-btn', testid: 'profile-cancel' }, '취소') : null;
+  const ctaArea = h('div', { class: 'create-cta' }, editMode ? h('div', { class: 'cta-pair' }, cancelBtn, submit) : submit);
 
   const modeSlot = h('span', { class: 'mode-slot' });
-  const modeRow = app.mode === 'local'
-    ? h('div', { class: 'card-foot' }, modeSlot, h('span', {}, '이 브라우저에만 저장됩니다'))
-    : null;
-  const card = h('section', { class: 'bk-panel card-create' },
-    h('div', { class: 'card-head' }, h('h1', {}, '캐릭터 만들기'), logoutBtn),
-    banner,
+  const footRow = h('div', { class: 'card-foot', testid: 'profile-note' }, app.mode === 'local' ? modeSlot : null, h('span', {}, M.NOTE));
+  const title = h('h2', { class: 'card-title', tabindex: '-1', testid: 'profile-title' }, editMode ? '프로필 수정' : '프로필 만들기');
+  const card = h('section', { class: 'bk-panel card-create', 'aria-labelledby': 'profile-title', testid: 'profile-card' },
+    h('div', { class: 'card-head' }, title),
     h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, ctaArea),
-    modeRow);
-  root.append(h('main', { class: 'scr-auth' }, card));
-  if (modeRow) app.placeModeBadge(modeSlot);
+    footRow);
+  title.id = 'profile-title';
+  const logo = editMode ? null
+    : h('h1', { class: 'bk-logo bk-logo--sm' }, h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), '버섯마을');
+  root.append(h('main', { class: 'scr-auth', 'data-mode': editMode ? 'edit' : 'first' }, logo, card));
+  if (app.mode === 'local') app.placeModeBadge(modeSlot);
 
   // --- 미리보기 그리기 ---------------------------------------------------------
   const art = makeCanvas(STAGE.w, STAGE.h);
@@ -290,15 +292,12 @@ export function mount(root, app) {
     return Math.max(1, n);
   }
 
-  // --- 닉네임 상태 (v1과 같음) ----------------------------------------------------
+  // --- 닉네임 상태 (5.2) -------------------------------------------------------
+  // empty: 안내 / ok: 형식 맞음 / format: 형식 오류
   const STATUS = {
     empty: { cls: '', text: M.HELP },
+    ok: { cls: 'bk-help--ok', text: M.OK, check: true },
     format: { cls: 'bk-help--error', text: M.NICK_FORMAT },
-    unchecked: { cls: '', text: M.UNCHECKED },
-    checking: { cls: '', text: M.CHECKING, spin: true },
-    available: { cls: 'bk-help--ok', text: M.AVAILABLE, check: true },
-    taken: { cls: 'bk-help--error', text: M.NICK_TAKEN },
-    failed: { cls: 'bk-help--error', text: M.NICK_CHECK_FAILED },
   };
 
   function setStatus(s) {
@@ -307,120 +306,64 @@ export function mount(root, app) {
     status.className = `bk-help nick-status ${d.cls}`.trim();
     status.dataset.state = s;
     setText(statusText, d.text);
-    statusIcon.replaceChildren();
-    if (d.spin) {
-      statusIcon.className = 'status-icon bk-dots';
-      statusIcon.append(h('i'), h('i'), h('i'));
-    } else if (d.check) {
-      statusIcon.className = 'status-icon bk-ico bk-ico--check';
-    } else statusIcon.className = 'status-icon';
-    statusIcon.hidden = !d.spin && !d.check;
-    if (s === 'format' || s === 'taken') nickInput.setAttribute('aria-invalid', 'true');
+    statusIcon.className = d.check ? 'status-icon bk-ico bk-ico--check' : 'status-icon';
+    statusIcon.hidden = !d.check;
+    if (s === 'format') nickInput.setAttribute('aria-invalid', 'true');
     else nickInput.removeAttribute('aria-invalid');
     updateSubmit();
   }
 
+  function canSubmit() {
+    return ready && nick.status === 'ok';
+  }
   function updateSubmit() {
-    submit.disabled = creating || !ready || !['unchecked', 'checking', 'available'].includes(nick.status);
+    submit.setAttribute('aria-disabled', String(!canSubmit()));
   }
 
-  function evaluate() {
-    const v = nickInput.value.trim();
+  function updateCounter() {
+    const n = charLength(nickInput.value);
+    nickCounter.hidden = n === 0;
+    setText(nickCounter, `${n}/${NICK_MAX}`);
+  }
+
+  /**
+   * trigger: 'input' | 'blur' | 'submit'
+   * 처음 입력하는 동안 1자일 때는 안내 상태. 오류는 (a) 2자 이상 불일치 (b) blur 때 불일치(빈 값 제외) (c) 버튼 누름 때 불일치.
+   * 한 번 오류를 보인 뒤에는 매 입력마다 즉시 갱신.
+   */
+  function evaluate(trigger = 'input') {
+    updateCounter();
+    if (composing) return; // 조합 중에는 직전 상태 유지
+    const v = trimWs(nickInput.value);
     nick.value = v;
-    clearTimeout(debounceTimer);
-    checkSeq++; // 진행 중인 확인 결과는 버린다(이전 결과를 재사용하지 않음)
-    pendingCheck = null;
-    if (!v) return setStatus('empty');
-    if (!NICK_RE.test(v)) return setStatus(composing ? 'unchecked' : 'format');
-    setStatus('unchecked');
-    debounceTimer = setTimeout(() => { if (!composing) runCheck(); }, NICK_DEBOUNCE_MS);
+    if (NICK_RE.test(v)) { setStatus('ok'); return; }
+    const show = errorShown || trigger === 'submit' || (v && (trigger === 'blur' || charLength(v) >= 2));
+    if (show) {
+      errorShown = true;
+      setStatus('format');
+    } else setStatus('empty');
   }
 
-  function runCheck() {
-    const v = nick.value;
-    if (!NICK_RE.test(v)) return Promise.resolve();
-    const seq = ++checkSeq;
-    clearTimeout(debounceTimer);
-    setStatus('checking');
-    const p = (async () => {
-      try {
-        const taken = await app.backend.isNicknameTaken(v);
-        if (!alive || seq !== checkSeq) return;
-        nick.checkedValue = v;
-        setStatus(taken ? 'taken' : 'available');
-      } catch (err) {
-        if (!alive || seq !== checkSeq) return;
-        if (toAppError(err).code === 'AUTH_REQUIRED') { app.forceLogout('SERVER'); return; }
-        setStatus('failed');
-      }
-    })();
-    pendingCheck = p;
-    return p;
-  }
-
-  // --- 생성 -----------------------------------------------------------------
-  function setCreating(b) {
-    creating = b;
-    nickInput.disabled = b;
-    logoutBtn.disabled = b;
-    walkBtn.disabled = b;
-    for (const [k] of VIEWS) viewBtns[k].disabled = b;
-    for (const p of CATEGORY_ORDER) tabBtns[p].disabled = b || !ready;
-    for (const s of slots) s.btn.disabled = b;
-    for (const btn of presetGrid.querySelectorAll('button')) btn.disabled = b;
-    spinner.hidden = !b;
-    setText(submitLabel, b ? '만드는 중' : '캐릭터 만들기');
-    updateSubmit();
-  }
-
-  async function doCreate() {
-    if (creating || submit.disabled) return;
-    banner.hidden = true;
-    if (nick.status === 'checking' && pendingCheck) await pendingCheck;
-    if (!alive) return;
-    if (nick.status === 'unchecked') await runCheck();
-    if (!alive || nick.status !== 'available' || !ready) return;
-    setCreating(true);
-    try {
-      const ch = await app.backend.createCharacter(nick.value, pickAvatar(avatar)); // 정확히 7개 키
-      if (!alive) return;
-      app.character = ch;
-      submit.disabled = true;
-      await app.go('game');
-    } catch (err) {
-      if (!alive) return;
-      const e = toAppError(err);
-      setCreating(false);
-      switch (e.code) {
-        case 'NICK_TAKEN':
-          setStatus('taken');
-          break;
-        case 'NICK_FORMAT':
-          setStatus('format');
-          break;
-        case 'CHAR_EXISTS':
-          try {
-            const ch = await app.backend.getMyCharacter();
-            if (!alive) return;
-            if (ch) { app.character = ch; await app.go('game'); return; }
-          } catch { /* 아래 배너 */ }
-          showBanner('SERVER');
-          break;
-        case 'AUTH_REQUIRED':
-          app.forceLogout('SERVER');
-          break;
-        case 'NETWORK':
-          showBanner('NETWORK');
-          break;
-        default:
-          showBanner('SERVER');
-      }
+  // --- 저장 -----------------------------------------------------------------
+  let done = false;
+  function doSave() {
+    if (done) return;
+    composing = false;
+    evaluate('submit');
+    if (!canSubmit()) {
+      if (nick.status === 'format') nickInput.focus();
+      return;
     }
+    done = true;
+    const profile = { nickname: nick.value, avatar: pickAvatar(avatar) }; // 정확히 7개 키
+    app.profile = profile;
+    if (!writeProfile(app.profileKey, profile)) app.storageFailed = true; // 막지 않고 메모리로 진행 (6.1)
+    app.go('lobby');
   }
-
-  function showBanner(code) {
-    setText(banner, M[code] || M.SERVER);
-    banner.hidden = false;
+  function doCancel() {
+    if (done || !editMode) return;
+    done = true;
+    app.go('lobby', { focus: 'edit' });
   }
 
   function showManifestError() {
@@ -433,23 +376,23 @@ export function mount(root, app) {
   // --- 이벤트 -------------------------------------------------------------
   on(nickInput, 'compositionstart', () => { composing = true; });
   on(nickInput, 'compositionend', () => { composing = false; evaluate(); });
-  on(nickInput, 'input', () => evaluate());
-  on(nickInput, 'blur', () => {
-    if (nick.status === 'unchecked' || nick.status === 'failed' || (nick.status === 'format' && NICK_RE.test(nickInput.value.trim()))) {
-      composing = false;
-      if (nick.value !== nickInput.value.trim()) evaluate();
-      if (NICK_RE.test(nick.value)) runCheck();
-    }
-  });
+  on(nickInput, 'input', (e) => { if (!e.isComposing) composing = false; evaluate(); });
+  on(nickInput, 'blur', () => { composing = false; evaluate('blur'); });
   on(nickInput, 'keydown', (e) => {
     if (e.key === 'Enter') {
       e.preventDefault();
       if (e.isComposing || e.keyCode === 229) return;
-      doCreate();
+      doSave();
     }
   });
-  on(submit, 'click', () => doCreate());
-  on(logoutBtn, 'click', () => { if (!creating) app.forceLogout(); });
+  on(submit, 'click', () => doSave());
+  if (cancelBtn) on(cancelBtn, 'click', () => doCancel());
+  // Esc: 수정 모드에서 "취소"와 같다 (IME 조합 중이면 무시)
+  on(window, 'keydown', (e) => {
+    if (e.key !== 'Escape' || !editMode || e.isComposing || e.keyCode === 229) return;
+    e.preventDefault();
+    doCancel();
+  });
 
   // 방향/걷기 (3.2): 앞/뒤를 누르면 걷기를 끈다. 걷기를 켜면 옆으로.
   for (const [k] of VIEWS) {
@@ -518,9 +461,12 @@ export function mount(root, app) {
   });
 
   // --- 테스트 훅 ---------------------------------------------------------------
-  app.createStateProvider = () => ({
+  app.providers.profile = () => ({
+    mode: editMode ? 'edit' : 'first',
     ready,
     avatar: avatar ? pickAvatar(avatar) : null,
+    nickname: nickInput.value,
+    nicknameStatus: nick.status,
     tab: activeTab,
     view,
     walking,
@@ -530,7 +476,9 @@ export function mount(root, app) {
   });
 
   // --- 시작 -----------------------------------------------------------------
+  if (editMode) nickInput.value = app.profile.nickname;
   setStatus('empty');
+  evaluate('input');
   sizeStage();
   drawPreview();
   Promise.all([app.assets, app.mapAssets.catch(() => null)]).then(([a, m]) => {
@@ -540,7 +488,8 @@ export function mount(root, app) {
     stageDots.hidden = true;
     if (!a || a.source !== 'manifest') { showManifestError(); return; }
     renderer = createAvatarRenderer(a);
-    avatar = { ...a.defaultAvatar }; // 7개 키 모두 manifest 각 파츠 첫 항목 (5.4)
+    // 최초: manifest 각 파츠 첫 항목 / 수정: 저장 값 (manifest에 없는 id는 기본값, 저장하면 그 값으로 고쳐 저장)
+    avatar = editMode ? a.sanitizeAvatar(app.profile.avatar) : { ...a.defaultAvatar };
     ready = true;
     for (const p of CATEGORY_ORDER) tabBtns[p].disabled = false;
     buildPresets();
@@ -553,16 +502,16 @@ export function mount(root, app) {
     stageDots.hidden = true;
     showManifestError();
   });
-  nickInput.focus({ preventScroll: true });
+  // 진입 포커스 = 제목 (모바일에서 키보드가 바로 올라와 미리보기를 가리지 않게, 8장)
+  title.focus({ preventScroll: true });
 
   return {
     unmount() {
       alive = false;
-      clearTimeout(debounceTimer);
       clearTimeout(resizeTimer);
       stopLoop();
       ac.abort();
-      if (app.createStateProvider) app.createStateProvider = null;
+      if (app.providers.profile) app.providers.profile = null;
       renderer?.clear();
     },
   };

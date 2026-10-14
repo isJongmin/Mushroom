@@ -1,4 +1,4 @@
-/* 버섯마을 프런트 전용 규칙 (사이클 3 블록 UI).
+/* 버섯마을 프런트 전용 규칙 (사이클 4: 프로필 → 로비 → 방, 블록 UI v4).
    토큰과 컴포넌트는 src/client/ui-kit.css (= docs/design/ui-kit.css 복사본, 직접 고치지 않는다)가 정본이다.
    이 파일은 ui-kit.css 뒤에 로드되며, 앱 구조에 필요한 규칙만 더한다.
    지키는 것: border-radius/블러/반투명 없음, 두께는 2의 배수, 조상에 overflow:hidden 없음, 글리프 화살표 대신 도트 아이콘. */
@@ -9,14 +9,14 @@ p.bk-help { margin-bottom: 0; }
 .is-hidden { visibility: hidden; }
 html, body { margin: 0; padding: 0; }
 body { overflow-x: hidden; }
-body[data-screen="game"] { background: var(--letterbox); }
+body[data-screen="room"] { background: var(--letterbox); }
 #app { position: relative; z-index: 1; }
 
-/* 화면 전환: 패널만 200ms 페이드 (login.md 6장). 동작 줄이기면 없음 */
-.screen-login .bk-panel, .screen-create .bk-panel { animation: fe-fade 200ms ease-out both; }
+/* 화면 전환: 패널만 200ms 페이드 (profile.md 6장, lobby.md 8.1). 모달은 애니메이션 없음. 동작 줄이기면 없음 */
+.screen-profile main > .bk-panel, .screen-lobby main .bk-panel, .screen-room .scr-game { animation: fe-fade 200ms ease-out both; }
 @keyframes fe-fade { from { opacity: 0; } to { opacity: 1; } }
 @media (prefers-reduced-motion: reduce) {
-  .screen-login .bk-panel, .screen-create .bk-panel { animation: none; }
+  .screen-profile main > .bk-panel, .screen-lobby main .bk-panel, .screen-room .scr-game { animation: none; }
 }
 
 /* 부팅 (세션 확인 중): 로그인 패널 자리에 가로 360, 높이 96 패널 + 로딩 점 */
@@ -26,16 +26,15 @@ body[data-screen="game"] { background: var(--letterbox); }
 /* 전역 오류 토스트 (처리되지 않은 오류) */
 .global-toast { position: fixed; z-index: 50; left: 50%; top: 16px; transform: translateX(-50%); max-width: min(480px, calc(100vw - 32px)); }
 
-/* ---------- 로그인 ---------- */
-.card-login .bk-logo-sub { margin-bottom: var(--sp-4); }
-.card-login .bk-tabs { margin-bottom: var(--sp-4); }
-.card-login .bk-banner--error { margin: 0 2px var(--sp-4); }
-.card-login .auth-form { margin: 0; }
-.auth-submit { margin-top: var(--sp-6); }
 .bk-btn .bk-dots { margin-right: 0; }
 .card-foot .bk-chip--mode { margin: 2px; }
+/* 제목(tabindex=-1)은 화면 진입 포커스 자리일 뿐 조작 요소가 아니므로 포커스 링을 그리지 않는다 */
+.card-head h2:focus, .card-head h2:focus-visible { outline: none; }
 
-/* ---------- 캐릭터 생성 ---------- */
+/* ---------- 프로필 (캐릭터 꾸미기 카드 재사용) ---------- */
+/* 최초 모드 로고는 카드 왼쪽 끝에 맞춘다 (profile.md 2.1). 데스크톱은 위에서부터(로고 + 카드가 800px보다 길다) */
+.scr-auth[data-mode="first"] { justify-content: flex-start; }
+.create-nick .bk-input-end { pointer-events: none; }
 .card-create .bk-banner--error { margin: 0 2px var(--sp-4); }
 .bk-preview__stage canvas { position: absolute; left: 0; top: 0; width: 100%; height: 100%; display: block; }
 .bk-preview__stage .bk-dots { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); color: var(--text); z-index: 1; }
@@ -66,13 +65,36 @@ body[data-screen="game"] { background: var(--letterbox); }
      (3) 닉네임 입력은 아래 상태 문구(6 + 20)까지 함께 보이도록 scroll-margin-bottom을 준다. */
   :root { --create-bar-h: calc(62px + env(safe-area-inset-bottom, 0px)); }
   .create-cta { padding-bottom: calc(10px + env(safe-area-inset-bottom, 0px)); }
-  html:has(body[data-screen="create"]) { scroll-padding-bottom: calc(var(--create-bar-h) + var(--sp-2)); }
+  html:has(body[data-screen="profile"]) { scroll-padding-bottom: calc(var(--create-bar-h) + var(--sp-2)); }
   .create-nick .bk-input { scroll-margin-bottom: 32px; }
 }
 /* :has() 미지원 브라우저: 문서 scroll-padding 대신 입력 자체 여백으로 바 높이까지 확보 */
 @supports not selector(:has(a)) {
   @media (max-width: 719px) { .create-nick .bk-input { scroll-margin-bottom: calc(var(--create-bar-h) + 40px); } }
 }
+
+/* ---------- 로비 ---------- */
+.lobby-tools h2:focus, .lobby-tools h2:focus-visible { outline: none; }
+.lobby-tools .bk-btn { flex: none; }
+.lobby-tools__count .bk-dots { vertical-align: middle; }
+.bk-room__go { gap: var(--sp-1); }
+.bk-room__go .bk-dots { margin: 0; }
+.bk-modal form { margin: 0; }
+.bk-modal .bk-help { margin: 0; min-height: 16px; }
+.bk-modal .bk-help .bk-ico { vertical-align: -2px; }
+.bk-modal .nick-status { display: flex; align-items: center; gap: var(--sp-1); }
+.bk-modal .bk-input-end .bk-counter { pointer-events: none; }
+.bk-modal__foot .bk-btn { gap: var(--sp-1); }
+.bk-empty__title:focus { outline: none; }
+
+/* ---------- 방 (게임 화면 확장) ---------- */
+.room-log-toggle .bk-badge { margin-left: var(--sp-2); margin-right: -2px; }
+.bk-log.is-hidden-fatal { display: none; }
+.bk-log__list:focus { outline: none; }
+.bk-log__list:focus-visible { outline: 2px solid var(--focus); outline-offset: -4px; }
+.bk-msg time { display: inline; }
+.hud-r .bk-btn--sm .bk-dots { margin: 0; }
+.hud-r .bk-btn--sm { gap: var(--sp-1); }
 
 /* ---------- 게임 ---------- */
 .scr-game { width: 100%; }
@@ -95,4 +117,12 @@ body[data-screen="game"] { background: var(--letterbox); }
 }
 @media (max-width: 719px) {
   .touch-row .bk-btn { width: 100%; }
+}
+
+/* QA D-2 (2026-10-15): 모바일에서 펼친 채팅 로그가 HUD 2줄째(채팅 기록 토글 + LOCAL MODE 칩)를 덮지 않게
+   2줄째 아래에서 시작한다. 2줄째 = top 46 + 버튼 32 + 아래 두께 4 → 82, 로그 바깥 테두리 2 + 틈 4 → top 88.
+   높이는 남은 공간: 내 캐릭터 머리(캔버스 아래에서 180px)보다 위에서 끝나도록 100% - 88 - 180 (360x640 → 240).
+   ui-kit.css(디자인 정본 복사본)는 고치지 않고 여기서 덮어쓴다. 데스크톱은 변경 없음. */
+@media (max-width: 719px) {
+  .game-stage .room-log { top: 88px; height: clamp(96px, calc(100% - 268px), 320px); }
 }

@@ -1,7 +1,7 @@
 /* ==========================================================================
-   버섯마을 UI 킷 v3 (블록 스타일)  —  docs/design/ui-kit.css
-   정본 설명: docs/design/style-guide.md (v3). 값을 바꾸려면 스타일 가이드를 먼저 고친다.
-   - 순수 CSS. PNG UI 스킨 없음. border-radius, 블러, 반투명 금지.
+   버섯마을 UI 킷 v4 (블록 스타일, 사이클 4 로비/방 추가)  —  docs/design/ui-kit.css
+   정본 설명: docs/design/style-guide.md (v4). 값을 바꾸려면 스타일 가이드를 먼저 고친다.
+   - 순수 CSS. PNG UI 스킨 없음. border-radius, 블러, 반투명 금지 (v4 예외 2곳: --dim, --log-bg).
    - UI 픽셀 1칸 = 2 CSS px (U=2). 모든 테두리/베벨/그림자 두께는 2의 배수.
    - 계단 테두리 = 바깥 box-shadow 4개(위/아래/왼/오른, 블러 0)로 모서리 2x2를 비워 만든다.
      주의: 바깥 그림자는 '띠'가 아니라 '옮긴 상자 전체'다. (-2px,2px) 같은 대각 오프셋은 아래쪽 띠도 덮으므로
@@ -449,4 +449,253 @@ button, input { font-family: inherit; }
   .touch-row { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); width: 100%; height: 64px; padding: var(--sp-2) 18px 0; }
   .chat-row { width: 100%; height: 68px; padding: var(--sp-3) 18px var(--sp-3); }
   .hint-desktop { display: none; }
+}
+
+/* ==========================================================================
+   v4 (사이클 4, 2026-10-15): 로비 / 방 목록 / 모달 / 채팅 로그
+   정본 설명: style-guide.md 11장. 화면: screens/profile.md, lobby.md, room.md
+   ========================================================================== */
+
+/* ---------- 14. v4 토큰 ----------
+   반투명 예외 (v4에서 이 두 곳만 허용. 그 밖의 UI는 여전히 불투명):
+   - --dim     : 모달 뒤 딤. ink 72%.
+   - --log-bg  : 채팅 로그 바탕. hb2 88%. 가장 밝은 배경(white) 위 합성색 #474455 기준으로
+                 글자 대비: white 9.4, k3 6.4, y2 6.0, m1 7.5, p1 6.5, st1 5.5 (모두 4.5:1 이상). */
+:root {
+  --dim: rgba(26, 22, 38, .72);
+  --log-bg: rgba(46, 42, 62, .88);
+  --row-h: 64px;          /* 방 목록 행 박스 높이 */
+  --thumb: 40px;          /* 내 캐릭터 미니 썸네일 (머리 40x40 아트 1배) */
+  --log-w: 320px;         /* 채팅 로그 패널 가로 (데스크톱) */
+}
+
+/* ---------- 15. 아이콘 추가 (box-shadow 도트, 1칸 = 2px) ---------- */
+/* 자물쇠 14x16 (7x8칸): 고리 hb2, 몸통 y2 + 윗줄 y1 + 오른쪽 옆면 y3, 테두리 y4, 열쇠 구멍 ink */
+.bk-ico--lock { width: 14px; height: 16px; }
+.bk-ico--lock::before { box-shadow: 6px 2px var(--pal-hb2), 8px 2px var(--pal-hb2), 10px 2px var(--pal-hb2), 4px 4px var(--pal-hb2), 12px 4px var(--pal-hb2), 4px 6px var(--pal-hb2), 12px 6px var(--pal-hb2), 2px 8px var(--pal-y4), 4px 8px var(--pal-y4), 6px 8px var(--pal-y4), 8px 8px var(--pal-y4), 10px 8px var(--pal-y4), 12px 8px var(--pal-y4), 14px 8px var(--pal-y4), 2px 10px var(--pal-y4), 4px 10px var(--pal-y1), 6px 10px var(--pal-y1), 8px 10px var(--pal-ink), 10px 10px var(--pal-y1), 12px 10px var(--pal-y2), 14px 10px var(--pal-y4), 2px 12px var(--pal-y4), 4px 12px var(--pal-y2), 6px 12px var(--pal-y2), 8px 12px var(--pal-ink), 10px 12px var(--pal-y2), 12px 12px var(--pal-y3), 14px 12px var(--pal-y4), 2px 14px var(--pal-y4), 4px 14px var(--pal-y2), 6px 14px var(--pal-y2), 8px 14px var(--pal-y2), 10px 14px var(--pal-y2), 12px 14px var(--pal-y3), 14px 14px var(--pal-y4), 2px 16px var(--pal-y4), 4px 16px var(--pal-y4), 6px 16px var(--pal-y4), 8px 16px var(--pal-y4), 10px 16px var(--pal-y4), 12px 16px var(--pal-y4), 14px 16px var(--pal-y4); }
+/* 사람 10x12 (5x6칸), currentColor */
+.bk-ico--user { width: 10px; height: 12px; color: var(--pal-hb1); }
+.bk-ico--user::before { box-shadow: 4px 2px currentColor, 6px 2px currentColor, 8px 2px currentColor, 4px 4px currentColor, 6px 4px currentColor, 8px 4px currentColor, 2px 8px currentColor, 4px 8px currentColor, 6px 8px currentColor, 8px 8px currentColor, 10px 8px currentColor, 2px 10px currentColor, 4px 10px currentColor, 6px 10px currentColor, 8px 10px currentColor, 10px 10px currentColor, 2px 12px currentColor, 4px 12px currentColor, 6px 12px currentColor, 8px 12px currentColor, 10px 12px currentColor; }
+/* 아래 화살표 14x8 (7x4칸), currentColor — "새 메시지" 버튼 */
+.bk-ico--down { width: 14px; height: 8px; color: var(--pal-ink); }
+.bk-ico--down::before { box-shadow: 2px 2px currentColor, 4px 2px currentColor, 6px 2px currentColor, 8px 2px currentColor, 10px 2px currentColor, 12px 2px currentColor, 14px 2px currentColor, 4px 4px currentColor, 6px 4px currentColor, 8px 4px currentColor, 10px 4px currentColor, 12px 4px currentColor, 6px 6px currentColor, 8px 6px currentColor, 10px 6px currentColor, 8px 8px currentColor; }
+.bk-ico--up { transform: scaleY(-1); }
+
+/* ---------- 16. 작은 로고, 아주 작은 버튼, 숫자 배지 ---------- */
+.bk-logo--sm { font-size: 24px; line-height: 32px; letter-spacing: 1px; gap: var(--sp-2); justify-content: flex-start; }
+.bk-logo--sm .bk-ico--mush { transform: scale(2); margin: 0 8px; }
+.bk-banner[hidden] { display: none; }
+/* 아주 작은 버튼: 박스 24px, 글자 12px. ::after 로 위아래 10px 투명 확장 → 터치 44px */
+.bk-btn--xs { min-height: 24px; padding: 0 var(--sp-2); gap: var(--sp-1); font-size: var(--fs-xs); line-height: var(--lh-xs); }
+.bk-btn--xs::after { content: ""; position: absolute; inset: -10px -2px; }
+/* 숫자 배지 (읽지 않은 메시지 수): 노랑 y2 + ink 계단 테두리 */
+.bk-badge {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 20px; height: 20px; padding: 0 4px; margin: 2px;
+  font: 700 var(--fs-xs)/16px var(--font-ui); color: var(--pal-ink); font-variant-numeric: tabular-nums;
+  background: var(--pal-y2);
+  box-shadow: inset 0 2px 0 0 var(--pal-y1),
+    0 -2px 0 0 var(--pal-ink), 0 2px 0 0 var(--pal-ink), -2px 0 0 0 var(--pal-ink), 2px 0 0 0 var(--pal-ink);
+}
+.bk-badge[hidden] { display: none; }
+
+/* ---------- 17. 인원 배지 .bk-count ("3/20명") ---------- */
+.bk-count { min-width: 76px; justify-content: center; font-variant-numeric: tabular-nums; }
+.bk-count.is-full {
+  color: var(--error); background: var(--error-bg);
+  box-shadow: inset 0 2px 0 0 var(--pal-white), inset 0 -2px 0 0 var(--pal-r1),
+    0 -2px 0 0 var(--pal-r3), 0 2px 0 0 var(--pal-r3), -2px 0 0 0 var(--pal-r3), 2px 0 0 0 var(--pal-r3);
+}
+.bk-count.is-full .bk-ico--user { color: var(--error); }
+
+/* ---------- 18. 내 프로필 미니 카드 .bk-me ---------- */
+.bk-me {
+  display: inline-flex; align-items: center; gap: var(--sp-2); min-width: 0;
+  padding: var(--sp-1) var(--sp-2) var(--sp-1) var(--sp-1); margin: 2px 2px 6px;
+  background: var(--pal-c1);
+  box-shadow:
+    inset 0 2px 0 0 var(--pal-white), inset 0 -2px 0 0 var(--pal-c2),
+    0 -2px 0 0 var(--pal-w4), -2px 0 0 0 var(--pal-w4), 2px 0 0 0 var(--pal-w4),
+    0 2px 0 0 var(--pal-c3),
+    -2px 2px 0 0 var(--pal-w4), 2px 2px 0 0 var(--pal-w4),
+    0 4px 0 0 var(--pal-w4);
+}
+/* 미니 썸네일: 하늘 k3 바탕 오목 칸 44x44 안에 40x40 머리 (아트 1배, 슬롯 썸네일과 같은 (4,6)~(44,46) 영역) */
+.bk-thumb { flex: none; width: 44px; height: 44px; padding: 2px; background: var(--pal-k3);
+  box-shadow: inset 2px 2px 0 0 var(--pal-w2), inset -2px -2px 0 0 var(--pal-white); }
+.bk-thumb img, .bk-thumb canvas { display: block; width: var(--thumb); height: var(--thumb); image-rendering: pixelated; }
+.bk-me__name { min-width: 0; display: flex; flex-direction: column; }
+.bk-me__label { font-size: var(--fs-xs); line-height: var(--lh-xs); color: var(--text-muted); }
+.bk-me__nick { font-size: var(--fs-md); line-height: var(--lh-md); color: var(--text); max-width: 168px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-me .bk-btn { margin-left: var(--sp-2); flex: none; }
+
+/* ---------- 19. 방 목록 .bk-roomlist > .bk-room ----------
+   목록 틀 = 오목 칸(.bk-well) 안 스크롤. 행 = 크림 판자 블록(테두리 w4 + 아래 두께 c3).
+   행 사이 gap 12 → 바깥 테두리/두께를 빼고 보이는 틈 6px. 스크롤 영역 안쪽 여백으로 테두리가 잘리지 않게 한다. */
+.bk-roomwrap { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain;
+  padding: 8px 10px 12px 8px;   /* 오목 베벨 4 + 행 테두리 2 + 여유 */
+  background: var(--pal-c2);
+  box-shadow: inset 4px 4px 0 0 var(--pal-w2), inset -4px -4px 0 0 var(--pal-white);
+  scrollbar-width: thin; scrollbar-color: var(--pal-w3) var(--pal-c2); }
+.bk-roomwrap::-webkit-scrollbar { width: 10px; }
+.bk-roomwrap::-webkit-scrollbar-track { background: var(--pal-c2); }
+.bk-roomwrap::-webkit-scrollbar-thumb { background: var(--pal-w3); border: 2px solid var(--pal-c2); border-radius: 0; }
+.bk-roomlist { list-style: none; margin: 0; padding: 2px 2px 0; display: grid; gap: 12px; }
+.bk-room {
+  position: relative; display: grid; grid-template-columns: 16px minmax(0, 1fr) auto auto; align-items: center; column-gap: var(--sp-3);
+  min-height: var(--row-h); padding: var(--sp-2) var(--sp-3) var(--sp-2) var(--sp-3);
+  background: var(--pal-c1);
+  box-shadow:
+    inset 2px 2px 0 0 var(--pal-white), inset -2px -2px 0 0 var(--pal-c2),
+    0 -2px 0 0 var(--pal-w4), -2px 0 0 0 var(--pal-w4), 2px 0 0 0 var(--pal-w4),
+    0 2px 0 0 var(--pal-c3),
+    -2px 2px 0 0 var(--pal-w4), 2px 2px 0 0 var(--pal-w4),
+    0 4px 0 0 var(--pal-w4);
+}
+.bk-room__lock { width: 16px; display: flex; justify-content: center; }
+.bk-room__main { min-width: 0; display: flex; flex-direction: column; }
+.bk-room__name { font: 700 var(--fs-md)/var(--lh-md) var(--font-ui); color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.bk-room__meta { font: 700 var(--fs-xs)/var(--lh-xs) var(--font-ui); color: var(--text-muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.bk-room__go { min-width: 88px; }
+.bk-room.is-full { background: var(--pal-c2);
+  box-shadow: inset 2px 2px 0 0 var(--pal-c1), inset -2px -2px 0 0 var(--pal-c3),
+    0 -2px 0 0 var(--pal-w3), -2px 0 0 0 var(--pal-w3), 2px 0 0 0 var(--pal-w3),
+    0 2px 0 0 var(--pal-c3), -2px 2px 0 0 var(--pal-w3), 2px 2px 0 0 var(--pal-w3), 0 4px 0 0 var(--pal-w3); }
+.bk-room.is-full .bk-room__name { color: var(--text-strong); }
+/* 막 갱신된 행 표시 없음 (5초 폴링마다 깜빡이면 산만함). 순서 변경 시 애니메이션도 없다. */
+/* 로딩 뼈대 행 */
+.bk-room.is-skel { pointer-events: none; }
+.bk-skel { display: block; height: 14px; background: var(--pal-c2); }
+.bk-skel--name { width: 55%; margin-bottom: 6px; height: 16px; }
+.bk-skel--meta { width: 30%; height: 10px; }
+.bk-skel--btn { width: 88px; height: 44px; }
+.bk-skel--count { width: 76px; height: 28px; }
+
+/* ---------- 20. 빈 상태 / 오류 상태 .bk-empty ---------- */
+.bk-empty { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: var(--sp-3);
+  min-height: 100%; padding: var(--sp-8) var(--sp-4); text-align: center; word-break: keep-all;
+  font: 700 var(--fs-sm)/var(--lh-sm) var(--font-ui); color: var(--text-strong); }
+.bk-empty__art { width: 32px; height: 28px; display: flex; align-items: center; justify-content: center; margin-bottom: var(--sp-2); }
+.bk-empty__art .bk-ico--mush { transform: scale(2); }
+.bk-empty__title { margin: 0; font-size: var(--fs-md); line-height: var(--lh-md); color: var(--text); }
+.bk-empty__text { margin: 0; max-width: 28em; }
+.bk-empty--error .bk-empty__title { color: var(--error); }
+.bk-empty .bk-btn { margin-top: var(--sp-1); }
+
+/* ---------- 21. 모달 (.bk-dim > .bk-panel.bk-modal) ----------
+   딤은 화면 전체(position: fixed). 모달 박스는 패널. 열림/닫힘 애니메이션 없음. */
+.bk-dim { position: fixed; inset: 0; z-index: 50; background: var(--dim);
+  display: flex; align-items: center; justify-content: center;
+  padding: var(--sp-4) 18px 22px; overflow-y: auto; }
+.bk-dim[hidden] { display: none; }
+.bk-modal { width: 400px; max-width: 100%; margin: auto; word-break: keep-all; overflow-wrap: anywhere; }
+.bk-modal__head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.bk-modal__head h2 { margin: 0; font: 700 var(--fs-lg)/var(--lh-lg) var(--font-ui); }
+.bk-modal__room { display: flex; align-items: center; gap: var(--sp-2); margin: 0 0 var(--sp-4); padding: var(--sp-2) var(--sp-3);
+  background: var(--pal-c2); box-shadow: inset 2px 2px 0 0 var(--pal-c3);
+  font: 700 var(--fs-sm)/var(--lh-sm) var(--font-ui); color: var(--text-strong); }
+.bk-modal__room b { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.bk-modal__desc { margin: 0 0 var(--sp-4); font: 700 var(--fs-sm)/20px var(--font-ui); color: var(--text-strong); }
+.bk-modal .bk-banner--error { margin: 2px 2px var(--sp-4); }
+.bk-modal__foot { display: flex; justify-content: flex-end; gap: var(--sp-3); margin-top: var(--sp-6); padding: 2px 2px 4px; }
+.bk-modal__foot .bk-btn { min-width: 104px; }
+body.has-modal { overflow: hidden; }
+
+/* ---------- 22. 채팅 로그 패널 .bk-log ----------
+   바탕 --log-bg(hb2 88%), 테두리 2px ink 계단, 머리줄 32px 불투명 hb2. 둥근 모서리, 블러 없음. */
+.bk-log { position: relative; display: flex; flex-direction: column; color: var(--pal-white);
+  background: var(--log-bg);
+  box-shadow: 0 -2px 0 0 var(--pal-ink), 0 2px 0 0 var(--pal-ink), -2px 0 0 0 var(--pal-ink), 2px 0 0 0 var(--pal-ink); }
+.bk-log__head { flex: none; display: flex; align-items: center; gap: var(--sp-2); height: 32px; padding: 0 6px 0 10px;
+  background: var(--pal-hb2); box-shadow: inset 0 2px 0 0 var(--pal-hb1), inset 0 -2px 0 0 var(--pal-ink);
+  font: 700 var(--fs-xs)/var(--lh-xs) var(--font-ui); color: var(--pal-c1); }
+.bk-log__title { margin: 0; font: inherit; flex: 1; }
+.bk-log__list { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; margin: 0; list-style: none;
+  padding: 6px 10px 10px; display: flex; flex-direction: column; gap: 2px;
+  scrollbar-width: thin; scrollbar-color: var(--pal-hb1) transparent; }
+.bk-log__list::-webkit-scrollbar { width: 8px; }
+.bk-log__list::-webkit-scrollbar-thumb { background: var(--pal-hb1); border-radius: 0; }
+.bk-log__list::-webkit-scrollbar-track { background: transparent; }
+.bk-msg { font: 400 var(--fs-sm)/20px var(--font-ui); overflow-wrap: anywhere; word-break: keep-all; padding: 1px 0; }
+.bk-msg__nick { font-weight: 700; color: var(--pal-k3); margin-right: 6px; }
+.bk-msg__time { font: 700 11px/16px var(--font-ui); color: var(--pal-st1); margin-left: 6px; white-space: nowrap; }
+.bk-msg--self { padding-left: 8px; box-shadow: inset 2px 0 0 0 var(--pal-y2); }
+.bk-msg--self .bk-msg__nick { color: var(--pal-y2); }
+.bk-msg--sys { font: 700 var(--fs-xs)/18px var(--font-ui); color: var(--pal-m1); }
+.bk-msg--sys::before { content: ""; display: inline-block; width: 6px; height: 6px; margin-right: 6px; vertical-align: 1px; background: currentColor; }
+.bk-msg--sys.is-error { color: var(--pal-p1); }
+.bk-msg--sys.is-history { color: var(--pal-st1); }  /* "이전 대화 N개" 구분 줄 */
+.bk-log__state { padding: var(--sp-3) 10px; font: 700 var(--fs-xs)/var(--lh-xs) var(--font-ui); color: var(--pal-st1); display: flex; align-items: center; gap: var(--sp-2); }
+.bk-log__new { position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 1; white-space: nowrap; }
+.bk-log__new:active, .bk-log__new.is-pressed { transform: translate(-50%, 2px); }
+.bk-log__new[hidden] { display: none; }
+.bk-log.is-collapsed { height: auto !important; }
+.bk-log.is-collapsed .bk-log__list, .bk-log.is-collapsed .bk-log__new, .bk-log.is-collapsed .bk-log__state { display: none; }
+.bk-log .bk-btn--xs { --b-text: var(--pal-ink); }
+
+/* ---------- 23. 화면 배치 v4 ---------- */
+/* 23.1 프로필 (캐릭터 꾸미기 카드 재사용: .scr-auth + .card-create) */
+.scr-auth .bk-logo--sm { width: 800px; max-width: 100%; }
+.card-head .card-title { margin: 0; font: 700 var(--fs-lg)/var(--lh-lg) var(--font-ui); }  /* 로고가 h1 이므로 카드 제목은 h2 */
+.cta-pair { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-3); padding: 2px 2px 4px; }
+
+/* 23.2 로비 */
+.scr-lobby { position: relative; z-index: 1; height: 100vh; height: 100dvh;
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-4);
+  padding: var(--sp-6) var(--sp-4) 56px; }
+.lobby-head, .lobby-panel { width: 720px; max-width: 100%; }
+.lobby-head { flex: none; display: flex; align-items: center; justify-content: space-between; gap: var(--sp-3); }
+.lobby-brand { display: flex; align-items: center; gap: var(--sp-3); min-width: 0; }
+.lobby-panel { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; gap: var(--sp-3); margin-bottom: 6px; }
+.lobby-tools { flex: none; display: flex; align-items: center; gap: var(--sp-3); padding: 2px 2px 4px; }
+.lobby-tools h2 { margin: 0; font: 700 var(--fs-lg)/var(--lh-lg) var(--font-ui); }
+.lobby-tools__count { flex: 1; font: 700 var(--fs-sm)/var(--lh-sm) var(--font-ui); color: var(--text-muted); }
+.lobby-panel > .bk-banner { flex: none; margin-top: 0; margin-bottom: 4px; }
+.lobby-note { flex: none; margin: 0; font: 700 var(--fs-xs)/var(--lh-xs) var(--font-ui); color: var(--text-muted); text-align: center; }
+
+/* 23.3 방 (게임 화면 .scr-game 확장) */
+.hud-room { display: inline-flex; align-items: center; gap: var(--sp-2); max-width: 360px; }
+.hud-room > span:last-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.hud-l { min-width: 0; }
+.room-log { position: absolute; left: var(--sp-3); top: 56px; width: var(--log-w); z-index: 2;
+  /* 머리 위 말풍선(최대 4줄)의 위 끝(캔버스 아래에서 262px)보다 8px 위에서 끝나도록: 100% - 56 - 262 - 8 - 2 */
+  height: clamp(120px, calc(100% - 328px), 240px); }
+.room-log-toggle { display: none; }
+.hud-row2 { display: none; }
+@media (min-width: 720px) and (max-width: 1039px) {
+  /* 캔버스가 좁으면 상태 배너를 로그 패널 오른쪽 영역 가운데로 */
+  .game-stage.log-open .hud-banner { left: calc(344px + (100% - 356px) / 2); max-width: calc(100% - 368px); }
+}
+
+@media (max-width: 719px) {
+  .scr-lobby { padding: var(--sp-4) 18px var(--sp-4); gap: var(--sp-3); }
+  .lobby-head { flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  .lobby-brand { justify-content: space-between; }
+  .bk-logo--sm { font-size: 20px; line-height: 28px; }
+  .bk-me { display: flex; margin: 2px 2px 6px; }
+  .bk-me__name { flex: 1; }
+  .bk-me__nick { max-width: none; }
+  .lobby-tools { gap: var(--sp-2); }
+  .lobby-tools h2 { font-size: var(--fs-md); line-height: var(--lh-md); }
+  .bk-roomwrap { padding: 8px 8px 12px 6px; }
+  .bk-room { grid-template-columns: 14px minmax(0, 1fr) auto; grid-template-areas: "lock name go" "lock count go"; column-gap: var(--sp-2); row-gap: 2px; padding: var(--sp-2) var(--sp-2) var(--sp-2) var(--sp-2); }
+  .bk-room__lock { grid-area: lock; width: 14px; }
+  .bk-room__main { grid-area: name; }
+  .bk-room .bk-count { grid-area: count; justify-self: start; height: 24px; min-width: 0; font-size: var(--fs-xs); }
+  .bk-room__go { grid-area: go; min-width: 72px; padding: 0 var(--sp-3); }
+  .bk-room__meta { display: none; }
+  .bk-modal__foot { display: grid; grid-template-columns: 1fr 1fr; }
+  .bk-modal__foot .bk-btn { min-width: 0; }
+  .bk-dim { align-items: flex-start; padding-top: 64px; }
+  .scr-auth .bk-logo--sm { width: calc(100vw - 36px); }
+  /* 방 화면: HUD 2줄, 로그는 접힘이 기본 */
+  .hud-room { max-width: 100%; }
+  .hud-row2 { display: flex; position: absolute; left: 0; top: 46px; padding: 0 var(--sp-2); gap: var(--sp-2); align-items: center; pointer-events: none; }
+  .hud-row2 > * { pointer-events: auto; }
+  .room-log-toggle { display: inline-flex; }
+  .room-log { left: var(--sp-2); right: var(--sp-2); width: auto; top: 46px;
+    /* 내 캐릭터 머리(캔버스 아래에서 164px)를 가리지 않게: 100% - 46 - 180 */
+    height: clamp(96px, calc(100% - 226px), 320px); }
+  .room-log[hidden] { display: none; }
+  .game-stage .hud-banner { top: 92px; }
 }

@@ -16,18 +16,38 @@ docs/            문서
 ## 확정된 결정 (2026-10-14)
 1. 호스팅: GitHub Pages, 빌드 도구 없음. 브라우저 네이티브 ES 모듈만 사용.
 2. 프런트: 바닐라 JS + Canvas 2D. 외부 라이브러리는 supabase-js 하나만, 버전 고정 CDN(`https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm`)으로 로드.
-3. 인증: Supabase Auth(email/password). 사용자가 입력한 아이디를 `<아이디>@mushroom.local`로 매핑한다.
-   - 아이디 규칙: `^[a-z0-9_]{4,16}$`, 비밀번호 8자 이상.
-   - Supabase 대시보드에서 "Confirm email"을 꺼야 한다(사용자 작업). 비밀번호 재설정 메일은 동작하지 않는다.
-4. 실시간: Supabase Realtime 채널 `map:village`.
-   - Presence: 접속자 목록. key = user_id, 상태 = `{ user_id, nickname, avatar, x, y }`.
-   - Broadcast `move`: `{ user_id, x, y, dir }` — 송신 최대 10회/초로 제한.
-   - Broadcast `chat`: `{ user_id, text }` — text 최대 80자, 저장하지 않음.
-5. 실행 모드 두 가지 (src/client/config.js로 전환):
+3. (사이클 4, 2026-10-15) 로그인 없음. 앱 시작 시 Supabase 익명 로그인(`auth.signInAnonymously()`)으로 보이지 않는 계정(uid)을 만든다. 세션은 supabase-js 기본 저장소(localStorage)에 유지.
+   - 사용자 작업: 대시보드 Authentication > Sign In / Providers 에서 "Allow anonymous sign-ins" 켜기.
+   - 프로필(닉네임 + 아바타 7키)은 서버에 저장하지 않고 localStorage `mushroom:profile` = `{ nickname, avatar }`에만 둔다. 브라우저 데이터를 지우면 사라진다(수용).
+   - 닉네임 규칙: `^[가-힣A-Za-z0-9]{2,12}$`. 중복은 같은 방의 활성 멤버 사이에서만 금지(대소문자 무시, 서버 RPC가 강제).
+4. 채팅방 (사이클 4 정책, 사용자 확정)
+   - 방 비밀번호는 선택(4~32자). 있으면 잠금 방. 서버에서 bcrypt 해시(pgcrypto)로만 저장·검증. 해시 컬럼은 클라이언트가 읽을 수 없다.
+   - 방 이름 1~24자(앞뒤 공백 제거, 제어문자 금지). 방당 최대 20명. 1인당 동시에 소유한 살아 있는 방 최대 3개.
+   - 활성 멤버 = `last_seen_at`이 60초 이내. 클라이언트는 방 안에서 20초마다 하트비트.
+   - 활성 멤버가 0명인 상태로 30분이 지난 방은 만료(목록에서 제외, 서버가 기회가 될 때 삭제).
+   - 채팅은 방마다 최근 50개만 서버에 저장. 해당 방 멤버만 읽을 수 있다. 입장 시 최근 50개를 불러와 채팅 로그에 표시.
+   - 방 목록은 로비에서 5초 간격 폴링(`list_rooms`): 이름, 잠금 여부, 활성 인원, 생성 시각. 인원 많은 순 → 최근 활동 순.
+5. 실시간 (사이클 4): 방마다 **비공개 채널** `room:<room_id>` (`{ config: { private: true } }`, Realtime Authorization).
+   - `realtime.messages` RLS: 해당 방 `room_members`에 본인 행이 있는 authenticated만 broadcast/presence 읽기·쓰기 허용. 공개 채널 `map:village`는 폐기.
+   - Presence: key = user_id, 상태 = `{ user_id, nickname, avatar, x, y }`.
+   - Broadcast `move` (클라이언트 송신): `{ user_id, x, y, dir }`, 최대 10회/초, `dir`은 `'left' | 'right'`.
+   - Broadcast `chat` (**서버 송신만**): 클라이언트는 `send_message` RPC를 호출하고, DB가 저장 후 같은 채널로 `{ id, user_id, nickname, text, created_at }`를 보낸다(발신자·닉네임은 서버가 멤버 행에서 채움 → 채팅 위장 불가). 클라이언트가 직접 보낸 `chat` 이벤트는 무시한다.
+6. 실행 모드 두 가지 (src/client/config.js로 전환):
    - supabase 모드: `SUPABASE_URL`, `SUPABASE_ANON_KEY`가 채워진 경우.
-   - local 모드: 값이 비어 있으면 자동 전환. 인증과 캐릭터는 localStorage, 실시간은 BroadcastChannel로 같은 브라우저의 탭끼리 동작. 개발·QA용.
-   - 두 모드는 같은 인터페이스(`backend` 어댑터)를 구현한다: `signUp, signIn, signOut, getSession, getMyCharacter, createCharacter, isNicknameTaken, joinMap(handlers, self) → { sendMove, sendChat, leave }`.
-   - move의 `dir` 값은 `'left' | 'right'`.
+   - local 모드: 값이 비어 있으면 자동 전환. 방/멤버/메시지는 localStorage, 실시간은 방별 BroadcastChannel(`mushroom:room:<id>`)로 같은 브라우저 탭끼리 동작. 방 비밀번호는 PBKDF2 해시. 서버 규칙(인원, 닉네임 중복, 만료, 50개, 오류 코드)을 같은 의미로 흉내 낸다. 개발·QA용.
+   - 어댑터 인터페이스(두 모드 동일):
+     `init() → { userId }` (익명 로그인/복구),
+     `listRooms() → [{ id, name, locked, members, createdAt }]`,
+     `createRoom({ name, password, nickname }) → { roomId }` (만든 사람은 자동 입장),
+     `joinRoom({ roomId, password, nickname })`,
+     `leaveRoom(roomId)`, `heartbeat(roomId)`,
+     `recentMessages(roomId) → [{ id, user_id, nickname, text, created_at }]` (오래된 것부터),
+     `sendChat(roomId, text)`,
+     `connectRoom(roomId, handlers, self) → { sendMove, updateSelf, leave }` (handlers: onSync, onJoin, onLeave, onMove, onChat, onStatus).
+   - 예외: `join_room`은 비밀번호 불일치를 예외가 아니라 반환값 `'WRONG_PASSWORD'`로 돌려준다(예외는 실패 기록까지 롤백해 시도 제한이 무력화되므로). 성공은 `'OK'`. 어댑터가 `WRONG_PASSWORD` 오류로 변환한다.
+   - 서버 세부 규칙(backend 확정): 멤버 행은 마지막 활동 후 10분간 유효 → 그 안의 재입장은 비밀번호 생략, `leave_room` 후나 10분 후에는 다시 필요. 60초 넘게 비활성인 사람의 닉네임은 새 입장자가 쓸 수 있다. 방 이름·채팅에 줄바꿈/제어문자 금지. 채팅 1초 제한은 모든 방 합산. local 모드도 같은 규칙.
+   - 재입장용으로 sessionStorage `mushroom:room` = `{ roomId, nickname }` (이 방에서 쓴 닉네임 포함).
+   - 오류는 `Error.code`로 구분: `ROOM_NOT_FOUND, WRONG_PASSWORD, ROOM_FULL, NICK_TAKEN, NICK_FORMAT, ROOM_NAME_FORMAT, PASSWORD_FORMAT, TOO_MANY_ROOMS, RATE_LIMITED, NOT_MEMBER, TEXT_FORMAT, NETWORK, UNKNOWN`. supabase 모드는 RPC가 `raise exception using message = '<코드>'`로 던지고 어댑터가 매핑한다.
 
 ## 인터페이스 계약
 - 아바타 데이터(`characters.avatar`, jsonb, 사이클 3부터): `{ "skin", "hair", "face", "top", "bottom", "shoes", "hat" }` 7개 키, 값은 파츠 id 문자열. `hat`은 `"none"` 허용. (사이클 1~2의 `eyes` 키는 `face`로 대체. backend 마이그레이션으로 변환)
@@ -51,9 +71,22 @@ docs/            문서
 - UI: 블록 스타일을 CSS로 구현(계단형 픽셀 테두리, 3면 톤 버튼). PNG UI 스킨은 쓰지 않는다. 정본은 docs/design/style-guide.md.
 - 텍스트(닉네임, 말풍선, UI)는 시스템 폰트로 화면 해상도에서 선명하게.
 
-## 데이터 모델 (backend가 확정)
-- characters: user_id (PK, auth.users 참조), nickname (unique), avatar (jsonb), created_at
+## 화면 흐름 (사이클 4)
+`프로필(닉네임 + 캐릭터 꾸미기)` → `로비(방 목록, 방 만들기, 프로필 수정)` → `방(맵 + 캐릭터 + 말풍선 + 채팅 로그 패널, 방 나가기)`.
+- 처음 방문: 프로필 화면부터. 프로필이 저장돼 있으면 로비부터.
+- 잠금 방 선택 시 비밀번호 입력 창. 공개 방은 바로 입장.
+- 입장 실패 처리: WRONG_PASSWORD(다시 입력), ROOM_FULL, ROOM_NOT_FOUND(목록 갱신), NICK_TAKEN(이 방에서만 쓸 닉네임 변경 후 재시도, 프로필은 그대로).
+- 새로고침 시 방 안에 있었으면(sessionStorage `mushroom:room`) 같은 방 재입장 시도(비밀번호 재입력 없이 멤버 행으로 확인), 실패하면 로비.
+
+## 데이터 모델 (사이클 4, backend가 확정)
+- rooms: id uuid PK, name, password_hash(null = 공개, 클라이언트 읽기 불가), locked(생성 컬럼), created_by uuid, created_at, last_active_at
+- room_members: (room_id, user_id) PK, nickname, joined_at, last_seen_at
+- room_messages: id bigint PK, room_id, user_id, nickname, text(1~80자), created_at — 방당 최근 50개 유지
+- 모든 쓰기는 security definer RPC로만: `create_room, join_room, leave_room, heartbeat, list_rooms, recent_messages, send_message`. 테이블 직접 insert/update/delete 권한 없음.
+- 사이클 1~3의 characters 테이블과 is_nickname_taken은 새 마이그레이션에서 제거(배포 전이라 데이터 없음).
 
 ## 알려진 한계 (MVP에서 수용)
-- Broadcast 메시지에는 인증된 발신자 정보가 붙지 않는다. 악의적 클라이언트가 다른 user_id로 move/chat을 보낼 수 있다. 수신 측은 Presence에 없는 user_id 메시지를 버리는 것으로 완화하고, 근본 대응(서버 경유 또는 Realtime Authorization)은 후속 과제로 둔다.
-- 위치는 서버가 검증하지 않는다 (몬스터 사냥 단계 전에 재설계).
+- 같은 방 멤버끼리는 move broadcast와 presence 상태(닉네임, 아바타)를 위장할 수 있다. 채팅은 서버 송신이라 위장 불가. 방 밖 사용자는 채널 접근 불가.
+- 익명 계정은 무제한 생성 가능 → 1인당 방 3개 제한과 비밀번호 시도 제한은 계정을 바꾸면 우회된다. 사용자가 늘면 CAPTCHA(Supabase Auth 지원) 추가.
+- 멤버 행이 지워져도 이미 연결된 채널은 다음 재연결 때 권한이 재검사된다(즉시 강퇴 아님).
+- 위치는 서버가 검증하지 않는다.

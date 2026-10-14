@@ -1,79 +1,56 @@
-// supabase 모드 어댑터.
-// supabase-js는 ARCHITECTURE.md가 고정한 CDN URL에서 "처음 필요할 때" 동적 import 한다.
-// local 모드에서는 이 파일 자체가 import되지 않는다(backend/index.js 참고).
+// supabase 모드 어댑터 (ARCHITECTURE 결정 3~6, supabase/README.md "프런트용 API 명세").
+// supabase-js는 ARCHITECTURE가 고정한 CDN URL에서 "처음 필요할 때" 동적 import 한다.
+// local 모드에서는 이 파일 자체가 import되지 않는다(backend/index.js).
+// anon(publishable) key만 쓴다. service_role 키는 어떤 경우에도 넣지 않는다.
 //
-// 오류 매핑은 docs/handoff/backend-20261014-schema.md, supabase/README.md 그대로:
-//   Auth:  user_already_exists → ID_TAKEN, invalid_credentials → LOGIN_FAILED, weak_password → PW_SHORT,
-//          over_request_rate_limit(429) → SERVER, email_not_confirmed → SERVER(대시보드 설정 문제)
-//   insert: 23505 + characters_nickname_lower_key → NICK_TAKEN
-//           23505 + characters_pkey               → CHAR_EXISTS (재조회 후 맵으로)
-//           23514 + characters_nickname_format    → NICK_FORMAT
-//           23514 + characters_avatar_shape       → AVATAR_FORMAT (avatar는 항상 정확히 7개 키로 보낸다)
-//           23502                                 → SERVER (필수 값 누락)
-//           42501                                 → AUTH_REQUIRED (다시 로그인)
-//   fetch 실패/오프라인 → NETWORK
-import { AppError } from '../errors.js';
-import { SUPABASE_CDN, CHANNEL_NAME, CHAT_MAX } from '../constants.js';
-import { assertCredentials, isValidAvatarShape, isValidNickname, pickAvatar, readAvatar } from './common.js';
+// 오류 매핑:
+//   RPC 예외: error.message === '<코드>' (SQLSTATE P0001) → 그 코드
+//   join_room 반환 'WRONG_PASSWORD' → WRONG_PASSWORD (예외가 아니라 반환값: 실패 기록 커밋 때문)
+//   42501 / PGRST301 (세션 없음·만료) → 세션 복구(getSession → 없으면 signInAnonymously) 후 1회 재시도, 그래도 실패 → UNKNOWN
+//   fetch 실패/오프라인/CDN 로드 실패 → NETWORK
+//   그 밖 → UNKNOWN
+import { AppError, ERROR_CODES } from '../errors.js';
+import { SUPABASE_CDN, HEARTBEAT_MS, MOVE_INTERVAL_MS } from '../constants.js';
+import { cleanPresenceState, cleanChatMessage, createThrottle } from './common.js';
 
-const emailOf = (id) => `${id}@mushroom.local`;
+const KNOWN = new Set(ERROR_CODES);
 const TRACK_IDLE_MS = 600; // 정지 후 Presence 좌표 갱신(track) 지연
-const JOIN_TIMEOUT_MS = 10000;
+const SUBSCRIBE_TIMEOUT_MS = 10000;
 
 function isNetworkError(err) {
   if (!err) return false;
   if (typeof navigator !== 'undefined' && navigator.onLine === false) return true;
-  if (err.name === 'AuthRetryableFetchError') return true;
+  if (err.name === 'AuthRetryableFetchError' || err.name === 'TypeError') return true;
   if (err.status === 0) return true;
-  const msg = String(err.message || err);
-  return !err.code && /fetch|network|load failed|timed? ?out/i.test(msg);
+  const msg = `${err.message || ''} ${err.details || ''}`;
+  return /failed to fetch|fetch failed|networkerror|network request failed|load failed|timed? ?out/i.test(msg);
 }
 
-function mapAuthError(err, { signup }) {
-  if (!err) return new AppError('SERVER');
-  if (isNetworkError(err)) return new AppError('NETWORK', err);
-  const code = err.code || '';
-  if (code === 'user_already_exists' || /already registered/i.test(err.message || '')) {
-    return new AppError(signup ? 'ID_TAKEN' : 'LOGIN_FAILED', err);
-  }
-  if (code === 'invalid_credentials' || /invalid login credentials/i.test(err.message || '')) return new AppError('LOGIN_FAILED', err);
-  if (code === 'weak_password') return new AppError(signup ? 'PW_SHORT' : 'LOGIN_FAILED', err);
-  if (code === 'over_request_rate_limit' || err.status === 429) return new AppError('SERVER', err);
-  if (code === 'email_not_confirmed') return new AppError('SERVER', err);
-  return new AppError('SERVER', err);
+function isAuthError(err) {
+  return !!err && (err.code === '42501' || err.code === 'PGRST301' || err.status === 401);
 }
 
-function mapDbError(err) {
-  if (!err) return new AppError('SERVER');
+function mapError(err) {
+  if (!err) return new AppError('UNKNOWN');
+  if (err instanceof AppError) return err;
   if (isNetworkError(err)) return new AppError('NETWORK', err);
-  const msg = String(err.message || '') + ' ' + String(err.details || '');
-  switch (err.code) {
-    case '23505':
-      if (msg.includes('characters_nickname_lower_key')) return new AppError('NICK_TAKEN', err);
-      if (msg.includes('characters_pkey')) return new AppError('CHAR_EXISTS', err);
-      return new AppError('SERVER', err);
-    case '23514':
-      if (msg.includes('characters_nickname_format')) return new AppError('NICK_FORMAT', err);
-      if (msg.includes('characters_avatar_shape')) return new AppError('AVATAR_FORMAT', err);
-      return new AppError('SERVER', err);
-    case '23502':
-      return new AppError('SERVER', err);
-    case '42501':
-    case 'PGRST301': // JWT 만료 등
-      return new AppError('AUTH_REQUIRED', err);
-    default:
-      return new AppError('SERVER', err);
-  }
+  const m = typeof err.message === 'string' ? err.message.trim() : '';
+  if (KNOWN.has(m)) return new AppError(m, err);
+  return new AppError('UNKNOWN', err);
 }
 
 export function createSupabaseBackend(url, anonKey) {
   let clientPromise = null;
-  let activeMap = null;
+  let userId = null;
+  let authSub = null;
+  const conns = new Set();
 
   function client() {
     if (!clientPromise) {
       clientPromise = import(SUPABASE_CDN)
-        .then((mod) => mod.createClient(url, anonKey, { auth: { persistSession: true, autoRefreshToken: true } }))
+        .then((mod) => mod.createClient(url, anonKey, {
+          auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: false },
+        }))
         .catch((e) => {
           clientPromise = null; // 다음 시도에서 다시 로드
           throw new AppError('NETWORK', e);
@@ -82,197 +59,257 @@ export function createSupabaseBackend(url, anonKey) {
     return clientPromise;
   }
 
-  async function uid() {
+  /** 세션 확보: 있으면 복구, 없으면 익명 로그인. */
+  async function ensureSession() {
     const sb = await client();
-    const { data, error } = await sb.auth.getSession();
-    if (error) throw mapAuthError(error, { signup: false });
-    const id = data && data.session && data.session.user && data.session.user.id;
-    if (!id) throw new AppError('AUTH_REQUIRED');
-    return id;
+    let session = null;
+    try {
+      const { data, error } = await sb.auth.getSession();
+      if (error) throw error;
+      session = data && data.session;
+      if (!session) {
+        const r = await sb.auth.signInAnonymously();
+        if (r.error) throw r.error;
+        session = r.data && r.data.session;
+      }
+    } catch (e) {
+      throw mapError(e);
+    }
+    if (!session || !session.user) throw new AppError('UNKNOWN', 'no session');
+    userId = session.user.id;
+    if (!authSub) {
+      // 토큰 갱신 시 Realtime에도 새 JWT 전달 (비공개 채널 권한은 JWT 갱신 때 다시 검사된다)
+      const { data } = sb.auth.onAuthStateChange((event, s) => {
+        if ((event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') && s && s.access_token) {
+          try { sb.realtime.setAuth(s.access_token); } catch { /* 무시 */ }
+        }
+      });
+      authSub = data && data.subscription;
+    }
+    return session;
   }
 
-  async function joinMapSupabase(handlers, self) {
+  async function rpc(name, args, retried = false) {
     const sb = await client();
-    const myState = { ...self };
-    let closed = false;
-    let joined = false;
-    let trackTimer = 0;
+    let res;
+    try {
+      res = await sb.rpc(name, args);
+    } catch (e) {
+      throw mapError(e);
+    }
+    if (res.error) {
+      if (!retried && isAuthError(res.error)) {
+        await ensureSession();
+        return rpc(name, args, true);
+      }
+      throw mapError(res.error);
+    }
+    return res.data;
+  }
 
-    const ch = sb.channel(CHANNEL_NAME, { config: { presence: { key: myState.user_id }, broadcast: { self: false } } });
+  const requireInit = () => {
+    if (!userId) throw new AppError('NOT_MEMBER');
+  };
+
+  async function connect(roomId, handlers, self) {
+    const sb = await client();
+    const session = await ensureSession();
+    // 비공개 채널: 구독 전에 JWT를 Realtime에 전달 (join_room 성공 후에 호출된다)
+    try { sb.realtime.setAuth(session.access_token); } catch { /* 무시 */ }
+
+    const me = userId;
+    const myState = { nickname: self.nickname, avatar: self.avatar, x: self.x, y: self.y, user_id: me };
+    const seenChat = new Set();
+    let closed = false;
+    let synced = false;
+    let subscribed = false;
+    let trackTimer = 0;
+    let heartbeatTimer = 0;
+
+    const call = (n, ...a) => {
+      if (closed) return;
+      try { handlers[n]?.(...a); } catch (e) { console.error(e); } // eslint-disable-line no-console
+    };
+    const deliver = (raw) => {
+      const m = cleanChatMessage(raw);
+      if (!m || seenChat.has(m.id)) return;
+      seenChat.add(m.id);
+      if (seenChat.size > 500) seenChat.delete(seenChat.values().next().value);
+      call('onChat', m);
+    };
+
+    const ch = sb.channel(`room:${roomId}`, {
+      config: { private: true, presence: { key: me }, broadcast: { self: false } },
+    });
 
     ch.on('presence', { event: 'sync' }, () => {
       if (closed) return;
-      const state = ch.presenceState();
+      synced = true;
       const list = [];
+      const state = ch.presenceState();
       for (const metas of Object.values(state)) {
-        if (Array.isArray(metas) && metas.length) list.push(metas[metas.length - 1]);
+        if (!Array.isArray(metas) || !metas.length) continue;
+        const st = cleanPresenceState(metas[metas.length - 1]);
+        if (st) list.push(st);
       }
-      handlers.onPresence?.(list);
-    })
-      .on('broadcast', { event: 'move' }, (msg) => { if (!closed) handlers.onMove?.(msg && msg.payload); })
-      .on('broadcast', { event: 'chat' }, (msg) => { if (!closed) handlers.onChat?.(msg && msg.payload); });
+      call('onSync', list);
+    });
+    // join/leave: 첫 sync 전(이미 있던 사람)은 무시. currentPresences가 있으면 track 갱신이지 새 입장/퇴장이 아니다.
+    ch.on('presence', { event: 'join' }, ({ key, currentPresences, newPresences }) => {
+      if (!synced || key === me || (currentPresences && currentPresences.length)) return;
+      const st = cleanPresenceState(newPresences && newPresences[newPresences.length - 1]);
+      if (st) call('onJoin', st);
+    });
+    ch.on('presence', { event: 'leave' }, ({ key, currentPresences, leftPresences }) => {
+      if (!synced || key === me || (currentPresences && currentPresences.length)) return;
+      const st = cleanPresenceState(leftPresences && leftPresences[leftPresences.length - 1]);
+      if (st) call('onLeave', st);
+    });
+    ch.on('broadcast', { event: 'move' }, (msg) => {
+      const p = msg && msg.payload;
+      if (p && typeof p === 'object' && p.user_id !== me) call('onMove', p);
+    });
+    // chat은 서버(send_message → realtime.send)만 보낸다. 형식이 맞지 않으면 버린다.
+    // 같은 방 멤버의 위조 송신은 수신 측에서 구분할 수 없다(알려진 한계 1). 신뢰 기록은 recent_messages.
+    ch.on('broadcast', { event: 'chat' }, (msg) => deliver(msg && msg.payload));
 
-    const onPageHide = () => { try { sb.removeChannel(ch); } catch { /* 무시 */ } };
+    const mover = createThrottle(MOVE_INTERVAL_MS, (p) => {
+      ch.send({ type: 'broadcast', event: 'move', payload: p }).catch(() => {});
+    });
+    const scheduleTrack = () => {
+      clearTimeout(trackTimer);
+      trackTimer = setTimeout(() => { if (!closed) ch.track({ ...myState }).catch(() => {}); }, TRACK_IDLE_MS);
+    };
+
+    // 탭 닫기: leave_room은 보장할 수 없으므로 Presence만 내린다. 멤버 행은 활성 60초 규칙에 맡긴다.
+    const onPageHide = () => { try { ch.untrack(); } catch { /* 무시 */ } };
     window.addEventListener('pagehide', onPageHide);
 
     const leave = async () => {
       if (closed) return;
       closed = true;
+      mover.cancel();
       clearTimeout(trackTimer);
+      clearInterval(heartbeatTimer);
       window.removeEventListener('pagehide', onPageHide);
+      conns.delete(conn);
       try { await ch.untrack(); } catch { /* 무시 */ }
       try { await sb.removeChannel(ch); } catch { /* 무시 */ }
-      if (activeMap === api) activeMap = null;
     };
 
-    const api = {
+    const conn = {
+      roomId,
+      deliver,
       async sendMove({ x, y, dir }) {
         if (closed) throw new AppError('NETWORK');
         myState.x = x;
         myState.y = y;
-        const r = await ch.send({ type: 'broadcast', event: 'move', payload: { user_id: myState.user_id, x, y, dir } });
-        // 정지 후 Presence 좌표도 갱신해서 새로 들어오는 사람이 올바른 위치를 보게 한다
-        clearTimeout(trackTimer);
-        trackTimer = setTimeout(() => { if (!closed) ch.track({ ...myState }).catch(() => {}); }, TRACK_IDLE_MS);
-        if (r !== 'ok') throw new AppError('NETWORK', r);
+        mover.push({ user_id: me, x, y, dir: dir === 'left' ? 'left' : 'right' });
+        scheduleTrack(); // 정지 후 좌표를 Presence에도 반영 (새로 들어오는 사람용)
       },
-      async sendChat(text) {
+      async updateSelf(partial) {
         if (closed) throw new AppError('NETWORK');
-        const r = await ch.send({ type: 'broadcast', event: 'chat', payload: { user_id: myState.user_id, text: String(text).slice(0, CHAT_MAX) } });
+        for (const k of ['nickname', 'avatar', 'x', 'y']) if (partial && Object.prototype.hasOwnProperty.call(partial, k)) myState[k] = partial[k];
+        const r = await ch.track({ ...myState });
         if (r !== 'ok') throw new AppError('NETWORK', r);
       },
       leave,
     };
 
     await new Promise((resolve, reject) => {
-      const timeout = setTimeout(() => { if (!joined) { leave(); reject(new AppError('NETWORK', 'join timeout')); } }, JOIN_TIMEOUT_MS);
+      const timeout = setTimeout(() => {
+        if (!subscribed) { leave(); reject(new AppError('NETWORK', 'subscribe timeout')); }
+      }, SUBSCRIBE_TIMEOUT_MS);
       ch.subscribe(async (status, err) => {
         if (closed) return;
         if (status === 'SUBSCRIBED') {
           try {
-            await ch.track({ ...myState });
+            const r = await ch.track({ ...myState });
+            if (r !== 'ok') throw new Error(String(r));
           } catch (e) {
-            if (!joined) { clearTimeout(timeout); leave(); reject(new AppError('NETWORK', e)); }
+            if (!subscribed) { clearTimeout(timeout); leave(); reject(new AppError('NETWORK', e)); }
             return;
           }
-          if (!joined) { joined = true; clearTimeout(timeout); resolve(); }
-          handlers.onStatus?.('connected');
+          if (!subscribed) { subscribed = true; clearTimeout(timeout); resolve(); }
+          call('onStatus', 'connected');
         } else if (status === 'CHANNEL_ERROR' || status === 'TIMED_OUT' || status === 'CLOSED') {
-          if (!joined) { clearTimeout(timeout); leave(); reject(new AppError('NETWORK', err || status)); }
-          else handlers.onStatus?.('disconnected');
+          // 비멤버 구독은 CHANNEL_ERROR(정책 거부). 첫 구독 실패는 화면이 재시도/치명 처리.
+          if (!subscribed) { clearTimeout(timeout); leave(); reject(new AppError('NETWORK', err || status)); }
+          else call('onStatus', 'disconnected');
         }
       });
     });
 
-    activeMap = api;
-    return api;
+    // 하트비트 20초 (ARCHITECTURE 결정 4). NOT_MEMBER면 화면에 알린다. 네트워크 오류는 채널 상태가 알린다.
+    heartbeatTimer = setInterval(() => {
+      rpc('heartbeat', { p_room_id: roomId }).catch((e) => {
+        if (e && e.code === 'NOT_MEMBER') call('onStatus', 'not_member');
+      });
+    }, HEARTBEAT_MS);
+
+    conns.add(conn);
+    return conn;
   }
 
   return {
     mode: 'supabase',
 
-    async signUp(id, password) {
-      assertCredentials(id, password, { signup: true });
-      const sb = await client();
-      let res;
-      try {
-        res = await sb.auth.signUp({ email: emailOf(id), password });
-      } catch (e) {
-        throw mapAuthError(e, { signup: true });
-      }
-      if (res.error) throw mapAuthError(res.error, { signup: true });
-      // Confirm email이 켜져 있으면 session이 없다 → 대시보드 설정 문제(SERVER로 안내)
-      // 이미 있는 이메일에 대해 일부 설정은 오류 대신 identities가 빈 user를 돌려준다
-      const user = res.data && res.data.user;
-      if (user && Array.isArray(user.identities) && user.identities.length === 0) throw new AppError('ID_TAKEN');
-      if (!res.data || !res.data.session) throw new AppError('SERVER', 'no session (Confirm email ON?)');
-      return { user_id: res.data.session.user.id, login_id: id };
+    async init() {
+      await ensureSession();
+      return { userId };
     },
 
-    async signIn(id, password) {
-      assertCredentials(id, password, { signup: false });
-      const sb = await client();
-      let res;
-      try {
-        res = await sb.auth.signInWithPassword({ email: emailOf(id), password });
-      } catch (e) {
-        throw mapAuthError(e, { signup: false });
-      }
-      if (res.error) throw mapAuthError(res.error, { signup: false });
-      return { user_id: res.data.session.user.id, login_id: id };
+    async listRooms() {
+      requireInit();
+      const rows = await rpc('list_rooms', {});
+      return (Array.isArray(rows) ? rows : []).map((r) => ({
+        id: r.id, name: r.name, locked: !!r.locked, members: Number(r.members) || 0, createdAt: r.created_at,
+      }));
     },
 
-    async signOut() {
-      if (activeMap) await activeMap.leave();
-      if (!clientPromise) return;
-      try {
-        const sb = await client();
-        await sb.auth.signOut();
-      } catch {
-        // 네트워크 오류여도 로컬 세션은 supabase-js가 지운다. 화면은 로그인으로 보낸다.
-      }
+    async createRoom({ name, password, nickname }) {
+      requireInit();
+      const id = await rpc('create_room', { p_name: name, p_password: password || null, p_nickname: nickname });
+      if (typeof id !== 'string') throw new AppError('UNKNOWN', 'no room id');
+      return { roomId: id };
     },
 
-    async getSession() {
-      const sb = await client();
-      const { data, error } = await sb.auth.getSession();
-      if (error) throw mapAuthError(error, { signup: false });
-      const s = data && data.session;
-      if (!s || !s.user) return null;
-      const email = s.user.email || '';
-      return { user_id: s.user.id, login_id: email.replace(/@mushroom\.local$/, '') };
+    async joinRoom({ roomId, password, nickname }) {
+      requireInit();
+      const r = await rpc('join_room', { p_room_id: roomId, p_password: password || null, p_nickname: nickname });
+      if (r === 'WRONG_PASSWORD') throw new AppError('WRONG_PASSWORD');
+      if (r !== 'OK') throw new AppError('UNKNOWN', r);
     },
 
-    async getMyCharacter() {
-      const id = await uid();
-      const sb = await client();
-      let res;
-      try {
-        res = await sb.from('characters').select('user_id,nickname,avatar').eq('user_id', id).maybeSingle();
-      } catch (e) {
-        throw mapDbError(e);
-      }
-      if (res.error) throw mapDbError(res.error);
-      // 마이그레이션 전/후 어느 형식이든 7개 키(eyes→face, 옛 id 별칭, 누락 키 기본값)로 읽는다
-      return res.data ? { user_id: res.data.user_id, nickname: res.data.nickname, avatar: readAvatar(res.data.avatar) } : null;
+    async leaveRoom(roomId) {
+      requireInit();
+      await rpc('leave_room', { p_room_id: roomId });
     },
 
-    async isNicknameTaken(nickname) {
-      const sb = await client();
-      let res;
-      try {
-        res = await sb.rpc('is_nickname_taken', { p_nickname: nickname });
-      } catch (e) {
-        throw mapDbError(e);
-      }
-      if (res.error) throw mapDbError(res.error);
-      return res.data === true;
+    async heartbeat(roomId) {
+      requireInit();
+      await rpc('heartbeat', { p_room_id: roomId });
     },
 
-    async createCharacter(nickname, avatar) {
-      if (!isValidNickname(nickname)) throw new AppError('NICK_FORMAT');
-      if (!isValidAvatarShape(avatar)) throw new AppError('AVATAR_FORMAT');
-      const id = await uid();
-      const sb = await client();
-      const row = { user_id: id, nickname, avatar: pickAvatar(avatar) };
-      let res;
-      try {
-        res = await sb.from('characters').insert(row); // upsert 금지, created_at 보내지 않음
-      } catch (e) {
-        throw mapDbError(e);
-      }
-      if (res.error) throw mapDbError(res.error);
-      return { user_id: id, nickname, avatar: row.avatar };
+    async recentMessages(roomId) {
+      requireInit();
+      const rows = await rpc('recent_messages', { p_room_id: roomId });
+      return (Array.isArray(rows) ? rows : []).map(cleanChatMessage).filter(Boolean);
     },
 
-    async joinMap(handlers, self) {
-      const id = await uid();
-      if (activeMap) await activeMap.leave();
-      return joinMapSupabase(handlers, { ...self, user_id: id });
+    async sendChat(roomId, text) {
+      requireInit();
+      const msg = cleanChatMessage(await rpc('send_message', { p_room_id: roomId, p_text: text }));
+      if (!msg) throw new AppError('UNKNOWN', 'bad message');
+      // 반환값도 실시간 chat과 같은 경로로 (id 중복 제거). realtime.send가 실패해도 내 로그에는 남는다.
+      for (const c of conns) if (c.roomId === roomId) c.deliver(msg);
+      return msg;
     },
 
-    async leaveMap() {
-      if (activeMap) await activeMap.leave();
+    async connectRoom(roomId, handlers, self) {
+      requireInit();
+      const c = await connect(roomId, handlers, self);
+      return { sendMove: c.sendMove, updateSelf: c.updateSelf, leave: c.leave };
     },
   };
 }

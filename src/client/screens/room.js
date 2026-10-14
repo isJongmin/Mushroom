@@ -1,45 +1,58 @@
-// 인게임 화면 (docs/design/screens/game.md v3.0, style-guide v3 6~8장)
+// 방 화면: 맵 + 캐릭터 + 말풍선 + HUD + 채팅 로그 (docs/design/screens/room.md v4, style-guide 6~8장·11.9)
+// 캔버스(배율/카메라/그리기 순서/라벨/말풍선)와 이동·터치·채팅 입력은 v3 game 화면 그대로.
+// 바뀐 것: 방 HUD(방 이름 + 자물쇠, 인원 n/20, 나가기), 채팅 로그 패널, 채팅 전송 = sendChat RPC,
+//          말풍선/로그 = 서버 chat 이벤트 기반(내 메시지도 RPC 성공 후), 시스템 메시지(Presence join/leave).
+// 사용자 문자열은 Canvas fillText / textContent로만 넣는다.
 import { h, setText, wait } from '../dom.js';
 import {
   WORLD, ART, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, MOBILE_MIN_CANVAS_H, DESKTOP_RESERVED_H, NICK_RE,
-  CHAT_MAX, CHAT_COOLDOWN_MS, MOVE_INTERVAL_MS, RECONNECT_DELAYS_MS, pixelScale,
+  CHAT_MAX, CHAT_COOLDOWN_MS, MOVE_INTERVAL_MS, RECONNECT_DELAYS_MS, ROOM_CAPACITY, LEAVE_WAIT_MS, SYS_LEAVE_DELAY_MS, pixelScale,
 } from '../constants.js';
-import { GAME_MESSAGES as M } from '../errors.js';
+import { ROOM_MESSAGES as M, toAppError } from '../errors.js';
 import { createAvatarRenderer, makeCanvas } from '../avatar.js';
 import { drawMap, drawFootShadow, cameraFor } from '../game/world.js';
 import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overlay.js';
 import { createMoveInput, KEY_DIR } from '../game/input.js';
+import { createChatLog } from '../ui/chatlog.js';
+import { clearRoomSession } from '../store.js';
+import { cleanChatText } from '../backend/common.js';
 
-const JOIN_TIMEOUT_MS = 12000;
+const CONNECT_TIMEOUT_MS = 12000;
 const REMOTE_SNAP_DIST = 400; // 이보다 멀면 순간 이동
 const REMOTE_CATCHUP = 32; // 뒤처진 거리(월드 단위)마다 속도를 1배씩 더한다
-const WALK_HOLD_MS = 200; // 원격 아바타: 마지막으로 움직인 뒤 200ms 안이면 walk (game.md 6장, 패킷 간격 100ms 흡수)
+const WALK_HOLD_MS = 200; // 원격 아바타: 마지막으로 움직인 뒤 200ms 안이면 walk (패킷 간격 100ms 흡수)
+const TRACK_IDLE_MS = 600; // 정지 후 Presence 좌표 갱신
 const toArt = (wx) => Math.round(wx / 2);
 
 const clampX = (x) => Math.min(WORLD.maxX, Math.max(WORLD.minX, x));
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
-// 제어 문자(줄바꿈 포함)는 공백으로
-const cleanText = (s) => s.replace(/[\u0000-\u001F\u007F\u2028\u2029]/g, ' ').trim();
+// 입력 단계: 제어 문자(줄바꿈 포함)는 공백으로 (서버는 제어문자를 거부한다)
+const cleanInput = (s) => s.replace(/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g, ' ');
 
-export function mount(root, app) {
+export function mount(root, app, opts = {}) {
   const ac = new AbortController();
   const on = (el, type, fn, o) => el.addEventListener(type, fn, { signal: ac.signal, ...o });
   let alive = true;
 
-  const character = app.character;
+  const roomId = opts.roomId;
+  const roomName = typeof opts.name === 'string' && opts.name ? opts.name : '방';
+  const locked = !!opts.locked;
+  const myNick = opts.nickname;
+  const profile = app.profile;
+
   let assets = null;
   let avatarR = null;
   let map = null; // loadMapAssets() 결과
-  let link = null; // { sendMove, sendChat, leave }
+  let link = null; // { sendMove, updateSelf, leave }
   let joinGen = 0;
-  let connection = 'joining'; // joining | connected | disconnected | failed | fatal
+  let connection = 'joining'; // joining | connected | disconnected | failed | lost | fatal
   let reconnecting = false;
   let raf = 0;
   let lastFrame = 0;
   const input = createMoveInput();
   const timers = new Set();
   const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); return t; };
-  const cancel = (t) => { clearTimeout(t); timers.delete(t); };
+  const cancel = (t) => { if (t) { clearTimeout(t); timers.delete(t); } };
 
   /** user_id -> player */
   const players = new Map();
@@ -55,18 +68,26 @@ export function mount(root, app) {
   let sentX = null;
   let sentDir = null;
   let lastChatAt = -Infinity;
+  let trackTimer = 0;
 
-  // --- DOM (game.md v3 1~3장, ui-kit.css 클래스) -------------------------------
-  const countText = h('span', { testid: 'player-count' }, '접속 중 1명');
+  // --- DOM (room.md 2~4장, ui-kit 22~23절) ------------------------------------------
+  const roomChip = h('span', { class: 'bk-chip hud-room', testid: 'room-title', title: roomName },
+    locked ? h('span', { class: 'bk-ico bk-ico--lock', 'aria-hidden': 'true' }) : null,
+    locked ? h('span', { class: 'bk-sr' }, '비밀번호 방') : null,
+    h('span', { testid: 'room-title-text' }, roomName));
+  const countText = h('span', { testid: 'player-count' }, `1/${ROOM_CAPACITY}명`);
   const countDot = h('span', { class: 'bk-dot-off', title: '연결 끊김', hidden: true });
-  const countBadge = h('div', { class: 'bk-chip count-badge', 'aria-live': 'off' },
-    h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), countText, countDot);
+  const countChip = h('span', { class: 'bk-chip bk-count', testid: 'room-count-chip', 'aria-live': 'off' },
+    h('span', { class: 'bk-ico bk-ico--user', 'aria-hidden': 'true' }), countText, countDot);
   const modeSlot = h('span', { class: 'mode-slot' });
-  const hint = h('div', { class: 'bk-chip bk-chip--hint hint-desktop' }, '← → 또는 A D 이동 · Enter 채팅 · Esc 입력 해제');
-  const logoutBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--sm', testid: 'logout' }, '로그아웃');
-  const hud = h('div', { class: 'hud' },
-    h('div', { class: 'hud-l' }, countBadge, modeSlot),
-    h('div', { class: 'hud-r' }, hint, logoutBtn));
+  const hint = h('div', { class: 'bk-chip bk-chip--hint hint-desktop' }, M.HINT);
+  const leaveDots = h('span', { class: 'bk-dots', 'aria-hidden': 'true', hidden: true }, h('i'), h('i'), h('i'));
+  const leaveIcon = h('span', { class: 'bk-ico bk-ico--arrow bk-ico--left', 'aria-hidden': 'true' });
+  const leaveText = h('span', {}, '나가기');
+  const leaveBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--sm', testid: 'room-leave' }, leaveIcon, leaveDots, leaveText);
+  const hudL = h('div', { class: 'hud-l' }, roomChip, countChip, modeSlot);
+  const hud = h('div', { class: 'hud' }, hudL, h('div', { class: 'hud-r' }, hint, leaveBtn));
+  const modeSlot2 = h('span', { class: 'mode-slot' });
 
   const bannerText = h('span', {});
   const bannerBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary bk-btn--sm', testid: 'reconnect-button', hidden: true });
@@ -74,10 +95,18 @@ export function mount(root, app) {
 
   const canvas = h('canvas', {
     class: 'game-canvas', testid: 'game-canvas', tabindex: '0',
-    'aria-label': '버섯마을 맵. 좌우 방향키로 이동, Enter로 채팅',
+    'aria-label': `${roomName} 맵. 좌우 방향키로 이동, Enter로 채팅`,
   });
   const loadingDots = h('span', { class: 'bk-dots canvas-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
-  const canvasWrap = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots);
+
+  const chatLog = createChatLog({
+    onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
+  });
+  const row2 = h('div', { class: 'hud-row2' }, chatLog.toggle, modeSlot2);
+  // Tab 순서: 캔버스 → 나가기 → (모바일) 채팅 기록 토글 → 로그 → 채팅 입력 (9장)
+  stage.append(row2, chatLog.el);
+  stage.classList.toggle('log-open', chatLog.desktopExpanded());
 
   const leftBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--touch', testid: 'move-left', 'aria-label': '왼쪽으로 이동' },
     h('span', { class: 'bk-ico bk-ico--arrow bk-ico--left', 'aria-hidden': 'true' }), '왼쪽');
@@ -87,7 +116,7 @@ export function mount(root, app) {
 
   const chatInput = h('input', {
     type: 'text', class: 'bk-input bk-input--with-end', testid: 'chat-input', maxlength: String(CHAT_MAX), placeholder: '메시지를 입력하세요',
-    autocomplete: 'off', 'aria-label': '채팅 메시지',
+    autocomplete: 'off', 'aria-label': '채팅 메시지', enterkeyhint: 'send',
   });
   const counter = h('span', { class: 'bk-counter', testid: 'chat-counter', hidden: true, 'aria-hidden': 'true' });
   const sendBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary chat-send', testid: 'chat-send', disabled: true }, '보내기');
@@ -97,9 +126,8 @@ export function mount(root, app) {
     h('div', { class: 'bk-input-wrap' }, chatInput, h('span', { class: 'bk-input-end' }, counter)),
     sendBtn);
 
-  const col = h('main', { class: 'scr-game' }, canvasWrap, touchRow, chatRow);
+  const col = h('main', { class: 'scr-game scr-room' }, stage, touchRow, chatRow);
   root.append(col);
-  app.placeModeBadge(modeSlot);
 
   // --- 레이아웃 -----------------------------------------------------------
   function computeLayout() {
@@ -126,11 +154,13 @@ export function mount(root, app) {
     viewW = Math.max(1, Math.floor(viewW));
     cssW = viewW * P;
     const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const modeChanged = layout.mobile !== mobile || !root.dataset.layout;
     layout = { mobile, cssW, cssH, viewW, viewH, P, dpr };
     root.dataset.layout = mobile ? 'mobile' : 'desktop';
     root.style.setProperty('--canvas-w', `${cssW}px`);
-    canvasWrap.style.width = `${cssW}px`;
-    canvasWrap.style.height = `${cssH}px`;
+    // .game-stage는 캔버스와 같은 CSS 크기 (로그 패널 clamp의 % 기준, design handoff 5-11)
+    stage.style.width = `${cssW}px`;
+    stage.style.height = `${cssH}px`;
     canvas.style.width = `${cssW}px`;
     canvas.style.height = `${cssH}px`;
     canvas.width = Math.round(cssW * dpr);
@@ -141,6 +171,11 @@ export function mount(root, app) {
     }
     offCtx.imageSmoothingEnabled = false;
     hint.classList.toggle('narrow', cssW < 900); // 캔버스 가로 900px 미만이면 조작 힌트 숨김
+    if (modeChanged) {
+      chatLog.setMobile(mobile);
+      // LOCAL MODE 칩: 데스크톱은 HUD 첫 줄, 모바일은 2줄째 (room.md 3.1, 4.1)
+      app.placeModeBadge(mobile ? modeSlot2 : modeSlot);
+    }
     if (connection === 'joining' || connection === 'fatal') paintLetterbox();
     else render(performance.now());
   }
@@ -152,31 +187,35 @@ export function mount(root, app) {
     c.fillRect(0, 0, canvas.width, canvas.height);
   }
 
-  // --- 상태/배너 -----------------------------------------------------------
+  // --- 상태/배너 (7장) ----------------------------------------------------------
   let bannerHideTimer = 0;
-  function setBanner(kind, text, button) {
+  let bannerAction = null;
+  function setBanner(kind, text, button, action) {
     cancel(bannerHideTimer);
     banner.classList.remove('fade-out');
+    bannerAction = action || null;
     if (!kind) { banner.hidden = true; return; }
     banner.hidden = false;
     banner.className = kind === 'error' ? 'hud-banner bk-banner bk-banner--error' : 'hud-banner bk-banner';
-    banner.setAttribute('role', kind === 'error' ? 'alert' : 'status');
+    banner.setAttribute('role', kind === 'error' && button ? 'alert' : 'status');
     setText(bannerText, text);
-    if (button) { setText(bannerBtn, button); bannerBtn.hidden = false; }
-    else bannerBtn.hidden = true;
+    if (button) { setText(bannerBtn, button); bannerBtn.hidden = false; bannerBtn.disabled = false; } else bannerBtn.hidden = true;
   }
 
   function setConnection(next) {
     const prev = connection;
     connection = next;
     root.dataset.connection = next;
-    const hudVisible = next !== 'joining' && next !== 'fatal';
-    hud.hidden = !hudVisible && next !== 'fatal';
-    countBadge.hidden = !hudVisible;
-    hint.hidden = !hudVisible;
-    modeSlot.hidden = !hudVisible;
-    chatRow.classList.toggle('is-hidden', !hudVisible);
-    touchRow.classList.toggle('is-hidden', !hudVisible);
+    const full = next === 'connected' || next === 'disconnected' || next === 'failed';
+    // 들어가는 중: 방 이름 + 나가기만 / 방 연결 끊김·치명적 오류: 나가기만
+    roomChip.hidden = next === 'lost' || next === 'fatal';
+    countChip.hidden = !full;
+    hint.hidden = !full;
+    modeSlot.hidden = !full;
+    row2.hidden = !full;
+    chatLog.el.classList.toggle('is-hidden-fatal', next === 'fatal');
+    chatRow.classList.toggle('is-hidden', !full);
+    touchRow.classList.toggle('is-hidden', !full);
     loadingDots.hidden = next !== 'joining';
     countDot.hidden = !(next === 'disconnected' || next === 'failed');
     const interactive = next === 'connected' || next === 'disconnected';
@@ -201,10 +240,13 @@ export function mount(root, app) {
         setBanner('error', M.DISCONNECTED);
         break;
       case 'failed':
-        setBanner('error', M.RECONNECT_FAILED, '다시 연결');
+        setBanner('error', M.RECONNECT_FAILED, '다시 연결', 'reconnect');
+        break;
+      case 'lost':
+        setBanner('error', M.NOT_MEMBER, '로비로', 'lobby');
         break;
       case 'fatal':
-        setBanner('error', M.FATAL, '다시 시도');
+        setBanner('error', M.FATAL, '다시 시도', 'retry');
         paintLetterbox();
         break;
       default:
@@ -213,8 +255,10 @@ export function mount(root, app) {
   }
 
   function updateCount() {
-    const n = players.size;
-    setText(countText, n >= 1000 ? '접속 중 999명+' : `접속 중 ${n}명`);
+    const n = Math.min(players.size, 999);
+    setText(countText, `${n}/${ROOM_CAPACITY}명`);
+    countChip.classList.toggle('is-full', n >= ROOM_CAPACITY);
+    countChip.setAttribute('aria-label', `접속 인원 ${n}명, 최대 ${ROOM_CAPACITY}명`);
   }
 
   // --- 플레이어 -------------------------------------------------------------
@@ -231,63 +275,86 @@ export function mount(root, app) {
     p.bubble = { text, at: performance.now(), layout: layoutBubble(canvas.getContext('2d'), text) };
   }
 
-  const handlersFor = (gen) => ({
-    onPresence(list) {
-      if (!alive || gen !== joinGen || !Array.isArray(list)) return;
-      const seen = new Set([me.user_id]);
-      for (const s of list) {
-        if (!s || typeof s !== 'object' || typeof s.user_id !== 'string' || !s.user_id || s.user_id.length > 64) continue;
-        if (s.user_id === me.user_id) continue;
-        seen.add(s.user_id);
-        const nickname = typeof s.nickname === 'string' && NICK_RE.test(s.nickname) ? s.nickname : '???';
-        const avatar = assets.sanitizeAvatar(s.avatar); // 7개 키 정규화 (옛 5키/eyes/없는 id → 기본값)
-        const existing = players.get(s.user_id);
-        if (existing) {
-          existing.nickname = nickname;
-          existing.avatar = avatar;
-        } else {
-          const x = isNum(s.x) ? clampX(s.x) : WORLD.minX;
-          players.set(s.user_id, makePlayer(s.user_id, nickname, avatar, x, false));
-        }
-      }
-      for (const uid of [...players.keys()]) if (!seen.has(uid)) players.delete(uid);
-      updateCount();
-    },
-    onMove(p) {
-      if (!alive || gen !== joinGen || !p || typeof p !== 'object') return;
-      const pl = typeof p.user_id === 'string' ? players.get(p.user_id) : null;
-      if (!pl || pl.isSelf || !isNum(p.x)) return; // Presence에 없는 user_id는 버린다
-      pl.targetX = clampX(p.x);
-      if (p.dir === 'left' || p.dir === -1) pl.dir = -1;
-      else if (p.dir === 'right' || p.dir === 1) pl.dir = 1;
-      pl.lastMoveAt = performance.now();
-    },
-    onChat(p) {
-      if (!alive || gen !== joinGen || !p || typeof p !== 'object') return;
-      const pl = typeof p.user_id === 'string' ? players.get(p.user_id) : null;
-      if (!pl || pl.isSelf || typeof p.text !== 'string') return;
-      if (p.text.length > CHAT_MAX) return; // 길이 제한 재검증: 초과 메시지는 버린다
-      const text = cleanText(p.text);
-      if (!text) return;
-      setBubble(pl, text);
-    },
-    onStatus(st) {
-      if (!alive || gen !== joinGen) return;
-      if (st === 'connected') {
-        if (connection === 'disconnected' || connection === 'failed') setConnection('connected');
-      } else if (st === 'disconnected') {
-        reconnect();
-      }
-    },
-  });
+  const nickOf = (s) => (s && typeof s.nickname === 'string' && NICK_RE.test(s.nickname) ? s.nickname : '???');
 
-  async function join() {
+  // 입장/퇴장 시스템 메시지 (5.3-6): 퇴장은 3초 미뤘다가 그 사이 재입장하면 둘 다 버린다
+  const pendingLeaves = new Map(); // user_id -> timer
+  function sysJoin(st) {
+    const t = pendingLeaves.get(st.user_id);
+    if (t) { cancel(t); pendingLeaves.delete(st.user_id); return; }
+    chatLog.addSystem(M.JOINED(nickOf(st)));
+  }
+  function sysLeave(st) {
+    if (pendingLeaves.has(st.user_id)) return;
+    const nick = nickOf(st);
+    pendingLeaves.set(st.user_id, later(() => {
+      pendingLeaves.delete(st.user_id);
+      if (alive) chatLog.addSystem(M.LEFT(nick));
+    }, SYS_LEAVE_DELAY_MS));
+  }
+
+  const handlersFor = (gen) => {
+    const live = () => alive && gen === joinGen && me;
+    return {
+      onSync(list) {
+        if (!live() || !Array.isArray(list)) return;
+        const seen = new Set([me.user_id]);
+        for (const s of list) {
+          if (!s || typeof s.user_id !== 'string' || !s.user_id || s.user_id.length > 64 || s.user_id === me.user_id) continue;
+          seen.add(s.user_id);
+          const nickname = nickOf(s);
+          const avatar = assets.sanitizeAvatar(s.avatar); // 7개 키 정규화 (옛 5키/eyes/없는 id → 기본값)
+          const existing = players.get(s.user_id);
+          if (existing) {
+            existing.nickname = nickname;
+            existing.avatar = avatar;
+          } else {
+            const x = isNum(s.x) ? clampX(s.x) : WORLD.minX;
+            players.set(s.user_id, makePlayer(s.user_id, nickname, avatar, x, false));
+          }
+        }
+        for (const uid of [...players.keys()]) if (!seen.has(uid)) players.delete(uid);
+        updateCount();
+      },
+      onJoin(st) { if (live() && st && st.user_id !== me.user_id) sysJoin(st); },
+      onLeave(st) { if (live() && st && st.user_id !== me.user_id) sysLeave(st); },
+      onMove(p) {
+        if (!live() || !p || typeof p !== 'object') return;
+        const pl = typeof p.user_id === 'string' ? players.get(p.user_id) : null;
+        if (!pl || pl.isSelf || !isNum(p.x)) return; // Presence에 없는 user_id는 버린다
+        pl.targetX = clampX(p.x);
+        if (p.dir === 'left' || p.dir === -1) pl.dir = -1;
+        else if (p.dir === 'right' || p.dir === 1) pl.dir = 1;
+        pl.lastMoveAt = performance.now();
+      },
+      /** 서버 chat (어댑터가 id로 중복 제거, sendChat 반환값도 이 경로). 로그 + 말풍선 */
+      onChat(msg) {
+        if (!live() || !msg) return;
+        const self = msg.user_id === me.user_id;
+        if (!chatLog.addChat(msg, self)) return; // 기록과 겹친 id
+        const pl = players.get(msg.user_id);
+        if (pl) setBubble(pl, msg.text);
+      },
+      onStatus(st) {
+        if (!live()) return;
+        if (st === 'connected') {
+          if (connection === 'disconnected' || connection === 'failed') reconnected();
+        } else if (st === 'disconnected') {
+          reconnect();
+        } else if (st === 'not_member') {
+          memberLost();
+        }
+      },
+    };
+  };
+
+  async function connect() {
     const gen = ++joinGen;
-    const self = { user_id: me.user_id, nickname: me.nickname, avatar: me.avatar, x: Math.round(me.x), y: me.y };
+    const self = { nickname: me.nickname, avatar: me.avatar, x: Math.round(me.x), y: me.y };
     let timeoutId = 0;
     const joined = await Promise.race([
-      app.backend.joinMap(handlersFor(gen), self),
-      new Promise((_, reject) => { timeoutId = later(() => reject(new Error('join timeout')), JOIN_TIMEOUT_MS); }),
+      app.backend.connectRoom(roomId, handlersFor(gen), self),
+      new Promise((_, reject) => { timeoutId = later(() => reject(toAppError(null, 'NETWORK')), CONNECT_TIMEOUT_MS); }),
     ]).finally(() => cancel(timeoutId));
     if (!alive || gen !== joinGen) {
       try { await joined.leave(); } catch { /* 무시 */ }
@@ -298,32 +365,60 @@ export function mount(root, app) {
     sentDir = me.dir;
   }
 
-  async function leaveMap() {
+  async function disconnect() {
     const m = link;
     link = null;
     joinGen++;
+    cancel(trackTimer);
     if (m) {
       try { await m.leave(); } catch { /* 무시 */ }
     }
   }
 
+  async function loadHistory(merge) {
+    if (!merge) chatLog.setLoading(true);
+    try {
+      const msgs = await app.backend.recentMessages(roomId);
+      if (!alive) return;
+      if (merge) chatLog.merge(msgs, me.user_id);
+      else {
+        chatLog.loadHistory(msgs, me.user_id);
+        chatLog.addSystem(M.JOINED(me.nickname)); // 기록 → 구분 줄 → 내 입장 (5.3-1, 2)
+      }
+    } catch {
+      if (!alive) return;
+      if (!merge) {
+        chatLog.historyFailed();
+        chatLog.addSystem(M.JOINED(me.nickname));
+      }
+    }
+  }
+
+  function reconnected() {
+    setConnection('connected');
+    chatLog.addSystem(M.LOG_RECONNECTED);
+    loadHistory(true); // 빠진 메시지를 id 순서대로 끼워 넣는다
+  }
+
   async function reconnect() {
-    if (reconnecting || !alive) return;
+    if (reconnecting || !alive || connection === 'lost') return;
     reconnecting = true;
+    if (connection !== 'disconnected') chatLog.addSystem(M.LOG_DISCONNECTED, 'error');
     setConnection('disconnected');
     for (const d of RECONNECT_DELAYS_MS) {
       await wait(d, ac.signal);
-      if (!alive) return;
+      if (!alive || connection === 'lost') { reconnecting = false; return; }
       if (connection === 'connected') { reconnecting = false; return; } // 어댑터가 스스로 복구함
       try {
-        await leaveMap();
-        await join();
+        await disconnect();
+        await connect();
         if (!alive) return;
-        setConnection('connected');
         reconnecting = false;
+        reconnected();
         return;
-      } catch {
-        /* 다음 시도 */
+      } catch (err) {
+        if (!alive) return;
+        if (toAppError(err).code === 'NOT_MEMBER') { reconnecting = false; memberLost(); return; }
       }
     }
     if (!alive) return;
@@ -331,16 +426,53 @@ export function mount(root, app) {
     setConnection('failed');
   }
 
+  // 방 연결 끊김 (NOT_MEMBER: 하트비트 만료, 닉네임 양보 등): 같은 닉네임으로 자동 재입장 (보관한 비밀번호 없음)
+  // 메인 결정 (2026-10-15, QA D-1): "자동 재입장 1회"는 세션당이 아니라 끊김이 생길 때마다 1회.
+  // - 끊김 하나에 재입장 시도는 1번. 그 시도가 실패하면 "방과 연결이 끊어졌어요" 배너(lost).
+  // - 재입장 성공(정상 연결 복구) 시 다음 끊김에서 다시 1회 시도할 수 있다.
+  // - 무한 루프 방지: 직전 시도 시작 후 REJOIN_MIN_GAP_MS(10초)가 지나기 전 새 끊김은 남은 시간만큼 기다렸다가 시도한다.
+  //   시도 중/대기 중에 들어온 추가 NOT_MEMBER 신호(하트비트, 전송 실패 등)는 같은 끊김으로 보고 무시한다.
+  const REJOIN_MIN_GAP_MS = 10000;
+  let rejoinBusy = false; // 시도 중 또는 대기 중
+  let lastRejoinAt = -Infinity;
+  let rejoinWait = 0;
+  function memberLost() {
+    if (!alive || connection === 'lost' || rejoinBusy) return;
+    rejoinBusy = true;
+    const gap = REJOIN_MIN_GAP_MS - (performance.now() - lastRejoinAt);
+    if (gap > 0) rejoinWait = later(() => { rejoinWait = 0; tryRejoin(); }, gap);
+    else tryRejoin();
+  }
+  async function tryRejoin() {
+    if (!alive) return;
+    lastRejoinAt = performance.now();
+    try {
+      await app.backend.joinRoom({ roomId, password: null, nickname: myNick });
+      if (!alive) return;
+      await disconnect();
+      await connect();
+      if (!alive) return;
+      if (connection !== 'connected') reconnected();
+      rejoinBusy = false; // 복구됨 → 다음 끊김에서 다시 1회 시도
+    } catch {
+      if (!alive) return;
+      await disconnect();
+      rejoinBusy = false;
+      setConnection('lost'); // 이 끊김의 재시도 실패 → 배너 "로비로"
+    }
+  }
+
   async function firstJoin() {
     setConnection('joining');
+    loadHistory(false); // 캔버스를 막지 않음 (1.1)
     try {
-      await join();
+      await connect();
       if (!alive) return;
       setConnection('connected');
       canvas.focus({ preventScroll: true });
     } catch (err) {
       if (!alive) return;
-      if (err && err.code === 'AUTH_REQUIRED') { app.forceLogout('SERVER'); return; }
+      if (toAppError(err).code === 'NOT_MEMBER') { memberLost(); return; }
       setConnection('fatal');
     }
   }
@@ -362,7 +494,10 @@ export function mount(root, app) {
         lastMoveSentAt = now;
         sentX = rx;
         sentDir = me.dir;
-        link.sendMove({ x: rx, y: WORLD.groundY, dir: me.dir < 0 ? 'left' : 'right' }).catch(() => {});
+        const l = link;
+        l.sendMove({ x: rx, y: WORLD.groundY, dir: me.dir < 0 ? 'left' : 'right' }).catch(() => {});
+        cancel(trackTimer);
+        trackTimer = later(() => { if (link === l) l.updateSelf({ x: Math.round(me.x), y: me.y }).catch(() => {}); }, TRACK_IDLE_MS);
       }
     } else if (me) {
       me.moving = false;
@@ -380,7 +515,6 @@ export function mount(root, app) {
         p.x += Math.sign(diff) * step;
         if (step > 0.01) p.lastMovedAt = now;
       }
-      // style-guide 5.11: 마지막 move 이후 위치가 바뀌고 있으면 walk
       p.moving = now - p.lastMovedAt < WALK_HOLD_MS;
       if (p.bubble && now - p.bubble.at >= BUBBLE.showMs) p.bubble = null;
     }
@@ -392,8 +526,7 @@ export function mount(root, app) {
   }
 
   function frameOf(p, now) {
-    const t = now - p.animSince;
-    return avatarR.frameAt(p.anim === 'walk' ? 'walk' : 'idle', t);
+    return avatarR.frameAt(p.anim === 'walk' ? 'walk' : 'idle', now - p.animSince);
   }
 
   // style-guide 6.3 파이프라인: 아트 해상도 오프스크린(맵 → 발 그림자 → 아바타) → 정수 배율 확대(스무딩 끔) → 화면 해상도 라벨/말풍선
@@ -441,10 +574,11 @@ export function mount(root, app) {
     render(now);
   }
 
-  // --- 채팅 -----------------------------------------------------------------
+  // --- 채팅 (6장) -------------------------------------------------------------
   let hintTimer = 0;
   let errorTimer = 0;
   let cooldownTimer = 0;
+  let sending = false;
 
   function updateCounter() {
     const n = chatInput.value.length;
@@ -452,23 +586,20 @@ export function mount(root, app) {
     setText(counter, `${n}/${CHAT_MAX}`);
     updateSendBtn();
   }
-
   function inCooldown() {
     return performance.now() - lastChatAt < CHAT_COOLDOWN_MS;
   }
-
   function updateSendBtn() {
     sendBtn.disabled = connection !== 'connected' || !chatInput.value.trim() || inCooldown();
   }
-
-  function showHint() {
+  function showHint(text = M.COOLDOWN) {
+    setText(chatHint, text);
     chatHint.hidden = false;
     cancel(hintTimer);
-    hintTimer = later(() => { chatHint.hidden = true; }, 800);
+    hintTimer = later(() => { chatHint.hidden = true; }, text === M.COOLDOWN ? 800 : 2000);
   }
-
-  function showSendError() {
-    setText(chatError, M.SEND_FAILED);
+  function showSendError(text) {
+    setText(chatError, text);
     chatError.hidden = false;
     cancel(errorTimer);
     errorTimer = later(() => { chatError.hidden = true; }, 2000);
@@ -477,20 +608,27 @@ export function mount(root, app) {
   function trySend() {
     if (connection !== 'connected' || !link) return;
     const raw = chatInput.value;
-    const text = cleanText(raw).slice(0, CHAT_MAX);
-    if (!text) return;
-    if (inCooldown()) { showHint(); return; }
+    const text = cleanChatText(cleanInput(raw));
+    if (!text) { if (raw.trim()) showSendError(M.TEXT_FORMAT); return; }
+    if (inCooldown() || sending) { showHint(); return; }
     lastChatAt = performance.now();
-    setBubble(me, text); // 서버 왕복 없이 즉시
+    sending = true;
     chatInput.value = '';
     updateCounter();
     cancel(cooldownTimer);
     cooldownTimer = later(updateSendBtn, CHAT_COOLDOWN_MS + 10);
-    const m = link;
-    m.sendChat(text).catch(() => {
+    // 서버 저장 성공 → 어댑터가 onChat으로 전달 (로그 + 말풍선). 실패하면 입력 복구 + 오류.
+    app.backend.sendChat(roomId, text).then(() => {
+      sending = false;
+    }, (err) => {
+      sending = false;
       if (!alive) return;
       if (!chatInput.value) { chatInput.value = raw; updateCounter(); }
-      showSendError();
+      const code = toAppError(err).code;
+      if (code === 'RATE_LIMITED') showHint(M.SEND_RATE_LIMITED);
+      else if (code === 'TEXT_FORMAT') showSendError(M.TEXT_FORMAT);
+      else if (code === 'NOT_MEMBER') memberLost();
+      else showSendError(M.SEND_FAILED);
     });
   }
 
@@ -524,7 +662,8 @@ export function mount(root, app) {
       return;
     }
     const dir = KEY_DIR[e.code];
-    if (dir && !isTypingTarget(document.activeElement)) {
+    // 로그 목록에 포커스가 있으면 방향키는 목록 스크롤에 양보한다
+    if (dir && !isTypingTarget(document.activeElement) && !chatLog.el.contains(document.activeElement)) {
       e.preventDefault();
       if (!e.repeat && connection === 'connected') input.press(`key:${e.code}`, dir);
     }
@@ -558,30 +697,43 @@ export function mount(root, app) {
   }
 
   on(bannerBtn, 'click', async () => {
+    const action = bannerAction;
     bannerBtn.disabled = true;
-    if (connection === 'fatal') {
+    if (action === 'lobby') { goLobby(); return; }
+    if (action === 'retry') {
+      await disconnect();
       await firstJoin();
-    } else if (connection === 'failed') {
+    } else if (action === 'reconnect') {
       setConnection('disconnected');
       try {
-        await leaveMap();
-        await join();
-        if (alive) setConnection('connected');
-      } catch {
-        if (alive) setConnection('failed');
+        await disconnect();
+        await connect();
+        if (alive) reconnected();
+      } catch (err) {
+        if (!alive) return;
+        if (toAppError(err).code === 'NOT_MEMBER') memberLost();
+        else setConnection('failed');
       }
     }
-    bannerBtn.disabled = false;
+    if (alive) bannerBtn.disabled = false;
   });
 
-  let loggingOut = false;
-  on(logoutBtn, 'click', async () => {
-    if (loggingOut) return;
-    loggingOut = true;
-    logoutBtn.disabled = true;
-    await cleanup();
-    await app.forceLogout();
-  });
+  // --- 나가기 (1.2): 확인 창 없음. leave_room 최대 1.5초 기다리고 실패해도 로비로 ------------
+  let leaving = false;
+  async function goLobby() {
+    if (leaving) return;
+    leaving = true;
+    leaveBtn.disabled = true;
+    leaveIcon.hidden = true;
+    leaveDots.hidden = false;
+    setText(leaveText, M.LEAVING);
+    const ch = disconnect();
+    const rpc = app.backend.leaveRoom(roomId).catch(() => {});
+    await Promise.race([Promise.all([ch, rpc]), wait(LEAVE_WAIT_MS)]);
+    clearRoomSession();
+    app.go('lobby');
+  }
+  on(leaveBtn, 'click', () => goLobby());
 
   let resizeQueued = false;
   const onResize = () => {
@@ -595,10 +747,13 @@ export function mount(root, app) {
   // --- 테스트 훅 상태 공급 -----------------------------------------------------
   const snap = (p) => ({
     user_id: p.user_id, nickname: p.nickname, avatar: { ...p.avatar }, x: Math.round(p.x * 10) / 10, y: p.y,
-    dir: p.dir < 0 ? 'left' : 'right', lastChat: p.lastChat, anim: p.anim,
+    dir: p.dir < 0 ? 'left' : 'right', lastChat: p.lastChat, bubble: p.bubble ? p.bubble.text : null, anim: p.anim,
     frame: avatarR ? frameOf(p, performance.now()) : null,
   });
-  app.gameStateProvider = () => ({
+  app.providers.room = () => ({
+    room: { id: roomId, name: roomName, locked, members: players.size, nickname: myNick },
+    chatLog: chatLog.snapshot(50),
+    log: chatLog.ui(),
     connection,
     assets: assets ? {
       source: assets.source, images: assets.imageCount, imageTotal: assets.imageTotal, background: !!(map && map.layerCount),
@@ -619,9 +774,11 @@ export function mount(root, app) {
     ac.abort();
     for (const t of timers) clearTimeout(t);
     timers.clear();
+    pendingLeaves.clear();
     input.clear();
-    if (app.gameStateProvider) app.gameStateProvider = null;
+    if (app.providers.room) app.providers.room = null;
     avatarR?.clear();
+    chatLog.destroy();
     cleaned = (async () => {
       const m = link;
       link = null;
@@ -643,12 +800,12 @@ export function mount(root, app) {
       return;
     }
     if (!alive) return;
-    if (!character) { app.forceLogout(); return; }
+    if (!profile || !roomId || !NICK_RE.test(myNick || '')) { clearRoomSession(); app.go('lobby'); return; }
     map = await app.mapAssets.catch(() => null);
     if (!alive) return;
     avatarR = createAvatarRenderer(assets);
     const startX = clampX(300 + Math.floor(Math.random() * 600));
-    me = makePlayer(character.user_id, character.nickname, assets.sanitizeAvatar(character.avatar), startX, true);
+    me = makePlayer(app.userId || 'me', myNick, assets.sanitizeAvatar(profile.avatar), startX, true);
     avatarR.warm(me.avatar);
     players.set(me.user_id, me);
     updateCount();

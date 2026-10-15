@@ -1,86 +1,94 @@
-// 맵 그리기 (ARCHITECTURE 블록 아트 계약 "맵", style-guide v3 6장). 모든 좌표는 아트 px 정수,
-// 아트 해상도 캔버스(스무딩 끔)에 그린다. assets/map/manifest.json 레이어가 있으면 패럴랙스로
-// (배열 앞쪽이 뒤, ox = -floor(camX * parallax)), 없으면 팔레트 단색 도형으로 그린다 (폴백).
-import { PAL, ART } from '../constants.js';
+// 맵 그리기 (ARCHITECTURE "복셀 아트 계약" 맵, art-20261015-voxel-map.md 4장).
+// 좌표는 월드 단위, 그리기는 백킹 해상도(장치 px) 컨텍스트에 변환 없이(setTransform 단위행렬) 한다.
+// k = 장치 px / 월드 1단위 = (P / 2) x dpr. 레이어 경계는 장치 px 정수로 반올림해 반복 타일 사이 틈을 없앤다.
+// 레이어: 배열 앞쪽이 뒤. x 오프셋 = -camX x parallax (월드). repeatX면 월드 너비(w = px / density) 주기로 시야 끝까지 반복.
+// stretchX(하늘)는 parallax와 상관없이 시야 전체 너비로 늘린다. 스무딩 켬(quality high).
+// 매니페스트가 없으면 팔레트 단색 도형으로 그린다 (폴백).
+import { PAL, WORLD, FOOT_SHADOW } from '../constants.js';
+import { smooth } from '../avatar.js';
 
-/** 레이어 하나를 그린다. ox = -floor(camX * parallax), repeatX면 시야 끝까지 반복. */
-export function drawLayer(ctx, layer, camX, camY, viewW) {
-  const ox = -Math.floor(camX * layer.parallax);
-  const y = layer.y - camY;
-  const w = layer.w;
+const R = Math.round;
+
+/** 레이어 하나를 그린다. */
+export function drawLayer(ctx, layer, camX, camY, k, Wd) {
+  const img = layer.img;
+  const iw = img.naturalWidth;
+  const ih = img.naturalHeight;
+  const y0 = R((layer.y - camY) * k);
+  const y1 = R((layer.y + layer.h - camY) * k);
+  if (y1 <= y0) return;
+  if (layer.stretchX) {
+    if (y0 > 0) ctx.drawImage(img, 0, 0, iw, 1, 0, 0, Wd, y0); // 시야가 월드 위로 넘치면 첫 행을 늘려 채운다
+    ctx.drawImage(img, 0, 0, iw, ih, 0, y0, Wd, y1 - y0);
+    return;
+  }
+  const tw = layer.w * k;
+  let start = -camX * layer.parallax * k;
   if (layer.repeatX) {
-    let x = ox % w;
-    if (x > 0) x -= w;
-    for (; x < viewW; x += w) ctx.drawImage(layer.img, x, y);
-  } else if (ox < viewW && ox + w > 0) {
-    ctx.drawImage(layer.img, ox, y);
+    start %= tw;
+    if (start > 0) start -= tw;
+    for (let i = 0; start + i * tw < Wd; i++) {
+      const xa = R(start + i * tw);
+      const xb = R(start + (i + 1) * tw);
+      if (xb > xa) ctx.drawImage(img, 0, 0, iw, ih, xa, y0, xb - xa, y1 - y0);
+    }
+  } else if (start < Wd && start + tw > 0) {
+    const xa = R(start);
+    ctx.drawImage(img, 0, 0, iw, ih, xa, y0, R(start + tw) - xa, y1 - y0);
   }
 }
 
-// 폴백: 하늘 밴드(6.2), 먼 언덕, 잔디/흙 (6.6 색만 따름)
-const SKY_BANDS = [[PAL.k1, 0, 60], [PAL.k2, 60, 105], [PAL.k3, 105, 140], [PAL.k4, 140, 170], [PAL.k5, 170, 220]];
+// 폴백: 하늘 밴드, 먼 언덕, 잔디/흙 (월드 단위)
+const SKY_BANDS = [[PAL.k1, -400, 120], [PAL.k2, 120, 210], [PAL.k3, 210, 280], [PAL.k4, 280, 340], [PAL.k5, 340, 440]];
 
-function hillY(x, base, a, b) {
-  // 정수 계단 언덕 (난수 없음 → 모든 클라이언트가 같은 풍경)
-  return Math.round(base + Math.sin(x / a) * 10 + Math.sin(x / b + 1.3) * 5);
-}
-
-export function drawFallbackMap(ctx, camX, camY, viewW, viewH) {
-  for (const [col, y0, y1] of SKY_BANDS) {
-    ctx.fillStyle = col;
-    ctx.fillRect(0, y0 - camY, viewW, y1 - y0);
-  }
-  // 먼 산 (parallax 0.2), 언덕 (0.3)
-  for (const [col, top, base, a, b, par] of [[PAL.m1, PAL.white, 160, 60, 23, 0.2], [PAL.m2, PAL.m1, 190, 45, 17, 0.3]]) {
-    const ox = Math.floor(camX * par);
-    for (let x = 0; x < viewW; x++) {
-      const hy = hillY(x + ox, base, a, b);
-      ctx.fillStyle = top;
-      ctx.fillRect(x, hy - camY, 1, 1);
-      ctx.fillStyle = col;
-      ctx.fillRect(x, hy + 1 - camY, 1, ART.groundY - hy);
+export function drawFallbackMap(ctx, camX, camY, k, Wd, Hd) {
+  const rect = (col, x, y, w, h) => { ctx.fillStyle = col; ctx.fillRect(R(x * k), R(y * k), Math.ceil(w * k), Math.ceil(h * k)); };
+  for (const [col, y0, y1] of SKY_BANDS) rect(col, 0, y0 - camY, Wd / k, y1 - y0);
+  for (const [col, base, a, b, par] of [[PAL.m1, 330, 120, 46, 0.2], [PAL.m2, 380, 90, 34, 0.3]]) {
+    const ox = camX * par;
+    for (let x = 0; x < Wd / k; x += 4) {
+      const hy = base + Math.sin((x + ox) / a) * 20 + Math.sin((x + ox) / b + 1.3) * 10;
+      rect(col, x, hy - camY, 4, WORLD.groundY - hy);
     }
   }
-  // 지면 (잔디 윗면 = y 220)
-  const g = ART.groundY - camY;
-  ctx.fillStyle = PAL.g1; ctx.fillRect(0, g, viewW, 1);
-  ctx.fillStyle = PAL.g2; ctx.fillRect(0, g + 1, viewW, 5);
-  ctx.fillStyle = PAL.g3; ctx.fillRect(0, g + 6, viewW, 1);
-  ctx.fillStyle = PAL.g4; ctx.fillRect(0, g + 7, viewW, 2);
-  ctx.fillStyle = PAL.w3; ctx.fillRect(0, g + 9, viewW, Math.max(0, viewH - (g + 9)));
-  // 흙 반점 (16px 격자)
-  ctx.fillStyle = PAL.w4;
-  const start = Math.floor(camX / 16) * 16;
-  for (let wx = start; wx < camX + viewW + 16; wx += 16) {
-    const k = (wx / 16) | 0;
-    ctx.fillRect(wx - camX + (k * 7) % 12, g + 14 + (k * 5) % 9, 2, 1);
-    ctx.fillRect(wx - camX + (k * 11) % 13, g + 30 + (k * 3) % 8, 2, 1);
-  }
+  const g = WORLD.groundY - camY;
+  rect(PAL.g1, 0, g, Wd / k, 2);
+  rect(PAL.g2, 0, g + 2, Wd / k, 10);
+  rect(PAL.g4, 0, g + 12, Wd / k, 4);
+  rect(PAL.w3, 0, g + 16, Wd / k, Math.max(0, Hd / k - (g + 16)));
 }
 
 /**
- * 시야 전체를 그린다: k1 채움 → 맵 레이어(또는 폴백).
+ * 시야 전체를 그린다: 바탕 채움 → 맵 레이어(또는 폴백).
  * @param map loadMapAssets() 결과
+ * @param camX,camY 시야 왼쪽 위 (월드)
+ * @param k 장치 px / 월드 단위
+ * @param Wd,Hd 캔버스 백킹 크기 (장치 px)
  */
-export function drawMap(ctx, map, camX, camY, viewW, viewH) {
+export function drawMap(ctx, map, camX, camY, k, Wd, Hd) {
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  smooth(ctx);
   ctx.fillStyle = PAL.k1;
-  ctx.fillRect(0, 0, viewW, viewH);
+  ctx.fillRect(0, 0, Wd, Hd);
   if (map && map.layers.length) {
-    for (const layer of map.layers) drawLayer(ctx, layer, camX, camY, viewW);
+    for (const layer of map.layers) drawLayer(ctx, layer, camX, camY, k, Wd);
   } else {
-    drawFallbackMap(ctx, camX, camY, viewW, viewH);
+    drawFallbackMap(ctx, camX, camY, k, Wd, Hd);
   }
 }
 
-/** style-guide 6.3-3: 발 그림자. 지면선(기준점 y) 한 줄, x ax-7 ~ ax+6, g3 */
-export function drawFootShadow(ctx, ax, groundY) {
-  ctx.fillStyle = PAL.g3;
-  ctx.fillRect(ax - 7, groundY, 14, 1);
+/** 발 그림자: 기준점 아래 반투명 타원 (월드 rx 22, ry 5, 알파 0.25). x, y, k는 ctx 단위. */
+export function drawFootShadow(ctx, x, y, k) {
+  ctx.fillStyle = FOOT_SHADOW.color;
+  ctx.beginPath();
+  ctx.ellipse(x, y, FOOT_SHADOW.rx * k, FOOT_SHADOW.ry * k, 0, 0, Math.PI * 2);
+  ctx.fill();
 }
 
-/** style-guide 6.2 카메라: 화면 아래 끝 = 아트 y 250 */
-export function cameraFor(playerArtX, viewW, viewH) {
-  const camX = Math.min(Math.max(Math.round(playerArtX - viewW / 2), 0), Math.max(0, ART.width - viewW));
-  const camY = ART.bottomY - viewH;
+/** 카메라 (월드 단위): 플레이어를 가로 가운데, 화면 아래 끝 = 월드 bottomY(540). k로 장치 px 정수에 맞춘다. */
+export function cameraFor(playerX, viewW, viewH, k) {
+  let camX = Math.min(Math.max(playerX - viewW / 2, 0), Math.max(0, WORLD.width - viewW));
+  let camY = WORLD.bottomY - viewH;
+  if (k > 0) { camX = R(camX * k) / k; camY = R(camY * k) / k; }
   return { camX, camY };
 }

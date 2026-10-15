@@ -1,19 +1,22 @@
-// 아트 에셋 로더 (ARCHITECTURE "블록 아트 계약", 사이클 3).
-// - assets/avatar/manifest.json + outline.json + 레이어 PNG 시트 (336x64, 7프레임). hair는 hair_back/hair_front 두 장.
-// - assets/map/manifest.json + 레이어 PNG
-// PNG UI 스킨은 없다(CSS 블록 UI). 매니페스트나 개별 PNG가 없거나 깨지면 그 부분만 빼거나 단색으로 그린다.
+// 아트 에셋 로더 (ARCHITECTURE "복셀 아트 계약", 사이클 5).
+// - assets/avatar/manifest.json: frame/anchor/density/frames/animations/layerOrder({layer,part,blend})/parts/presets.
+//   레이어 시트(1152x192, 8프레임)는 부팅 때 받지 않고, 실제로 그릴 조합의 레이어만 필요할 때 받는다(getLayer).
+//   레이어 파일 존재는 manifest `files`({layer: [id...]}, art handoff 10절)로만 판단한다(hasLayer, 404 0건).
+//   files가 없거나 깨졌으면 필수 레이어(REQUIRED_LAYERS)만 요청한다(그림자/뒷 레이어 생략, 404 없음).
+// - assets/map/manifest.json: density/groundY/width + layers(src .png/.webp, parallax, y 월드, repeatX, stretchX)
+// PNG UI 스킨은 없다(CSS 블록 UI). 매니페스트나 개별 이미지가 없거나 깨지면 그 부분만 빼거나 단색으로 그린다.
 // 경로는 모두 이 모듈 기준 상대 경로라 GitHub Pages 하위 경로에서도 동작한다.
 import {
-  AVATAR, PART_KEYS, PART_ID_RE, DEFAULT_LAYER_ORDER, LAYER_PART, DEFAULT_AVATAR, HAT_NONE, ART,
+  AVATAR, PART_KEYS, PART_ID_RE, DEFAULT_LAYER_ORDER, LAYER_BLENDS, REQUIRED_LAYERS, DEFAULT_AVATAR, HAT_NONE, WORLD,
 } from './constants.js';
 import { normalizeAvatar } from './avatar-data.js';
 
 const REPO_ROOT = new URL('../../', import.meta.url);
 const ASSET_ROOT = new URL('assets/', REPO_ROOT);
-const IMAGE_TIMEOUT_MS = 8000;
-// 매니페스트가 가리키는 파일은 assets/ 아래 PNG만 허용한다
-const SRC_RE = /^assets\/[a-z0-9_\-/]+\.png$/i;
-const HEX_RE = /^#[0-9A-Fa-f]{6}$/;
+const IMAGE_TIMEOUT_MS = 15000;
+// 매니페스트가 가리키는 파일은 assets/ 아래 PNG/WebP만 허용한다
+const SRC_RE = /^assets\/[a-z0-9_\-/]+\.(png|webp)$/i;
+const LAYER_RE = /^[a-z][a-z0-9_]{0,31}$/;
 
 const warned = new Set();
 export function warnOnce(key, ...args) {
@@ -22,6 +25,7 @@ export function warnOnce(key, ...args) {
   console.warn('[버섯마을 에셋]', ...args);
 }
 
+/** 이미지를 받아 디코드까지 끝낸다. 실패(네트워크, 디코드, 시간 초과)는 null (예외 없음). */
 export function loadImage(url) {
   return new Promise((resolve) => {
     const img = new Image();
@@ -35,7 +39,7 @@ export function loadImage(url) {
     };
     const timer = setTimeout(() => finish(false), IMAGE_TIMEOUT_MS);
     img.onload = () => {
-      if (typeof img.decode === 'function') img.decode().then(() => finish(true), () => finish(true));
+      if (typeof img.decode === 'function') img.decode().then(() => finish(true), () => finish(false));
       else finish(true);
     };
     img.onerror = () => finish(false);
@@ -59,20 +63,25 @@ function resolveSrc(src) {
   return new URL(src, REPO_ROOT);
 }
 
-const posInt = (v, d) => (Number.isInteger(v) && v > 0 && v <= 256 ? v : d);
+const posInt = (v, d, max = 1024) => (Number.isInteger(v) && v > 0 && v <= max ? v : d);
 const num = (v, d) => (typeof v === 'number' && Number.isFinite(v) ? v : d);
+const posNum = (v, d) => (typeof v === 'number' && Number.isFinite(v) && v > 0 && v <= 16 ? v : d);
 
 // ---------------------------------------------------------------------------
 // 아바타
 
+const ANIM_NAMES = Object.keys(AVATAR.animations);
+
 function normalizeAnimations(raw, frameCount) {
   const out = {};
-  for (const name of ['idle', 'walk']) {
+  for (const name of ANIM_NAMES) {
     const a = raw && raw[name];
     const frames = a && Array.isArray(a.frames) ? a.frames.filter((f) => Number.isInteger(f) && f >= 0 && f < frameCount) : [];
+    const d = AVATAR.animations[name];
     out[name] = frames.length
-      ? { frames, ms: posInt(a.ms, AVATAR.animations[name].ms) }
-      : { frames: [...AVATAR.animations[name].frames], ms: AVATAR.animations[name].ms };
+      ? { frames, ms: posInt(a.ms, d.ms, 10000) }
+      : { frames: d.frames.filter((f) => f < frameCount), ms: d.ms };
+    if (!out[name].frames.length) out[name].frames = [0];
   }
   return out;
 }
@@ -87,6 +96,35 @@ function normalizeAliases(raw) {
     for (const [from, to] of Object.entries(v)) {
       if (PART_ID_RE.test(from) && typeof to === 'string' && PART_ID_RE.test(to)) out[p][from] = to;
     }
+  }
+  return out;
+}
+
+/** layerOrder: [{ layer, part, blend }]. 항목 하나라도 형식이 틀리면 전체를 기본 순서로. */
+function normalizeLayerOrder(raw) {
+  if (!Array.isArray(raw) || !raw.length || raw.length > 32) return DEFAULT_LAYER_ORDER;
+  const seen = new Set();
+  const out = [];
+  for (const e of raw) {
+    if (!e || typeof e !== 'object' || typeof e.layer !== 'string' || !LAYER_RE.test(e.layer) || seen.has(e.layer)
+      || !PART_KEYS.includes(e.part) || !LAYER_BLENDS.includes(e.blend)) return DEFAULT_LAYER_ORDER;
+    seen.add(e.layer);
+    out.push(Object.freeze({ layer: e.layer, part: e.part, blend: e.blend }));
+  }
+  return Object.freeze(out);
+}
+
+/**
+ * manifest files ({ layer: [id...] }) = 레이어별 실제 파일 목록 (art handoff 10절, 정본).
+ * layerOrder의 모든 레이어 키가 배열이고 모든 원소가 id 형식이어야 유효. 아니면 null(깨짐/없음).
+ */
+function normalizeFiles(raw, layerOrder) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const out = new Map();
+  for (const { layer } of layerOrder) {
+    const list = raw[layer];
+    if (!Array.isArray(list) || list.length > 64 || !list.every((id) => typeof id === 'string' && PART_ID_RE.test(id))) return null;
+    out.set(layer, new Set(list));
   }
   return out;
 }
@@ -109,17 +147,18 @@ function normalizeAvatarManifest(raw) {
   const frameNames = Array.isArray(raw.frames) && raw.frames.length && raw.frames.length <= 16 && raw.frames.every((f) => typeof f === 'string')
     ? [...raw.frames] : [...AVATAR.frames];
   const frameCount = frameNames.length;
-  const lo = Array.isArray(raw.layerOrder) ? raw.layerOrder.filter((l) => Object.prototype.hasOwnProperty.call(LAYER_PART, l)) : [];
-  const layerOrder = lo.length === DEFAULT_LAYER_ORDER.length && new Set(lo).size === lo.length ? lo : [...DEFAULT_LAYER_ORDER];
-  const frame = { w: posInt(raw.frame && raw.frame.w, AVATAR.frameW), h: posInt(raw.frame && raw.frame.h, AVATAR.frameH) };
+  const layerOrder = normalizeLayerOrder(raw.layerOrder);
+  const frame = { w: posInt(raw.frame && raw.frame.w, AVATAR.frameW, 512), h: posInt(raw.frame && raw.frame.h, AVATAR.frameH, 512) };
   const anchor = {
-    x: Math.round(num(raw.anchor && raw.anchor.x, AVATAR.anchorX)),
-    y: Math.round(num(raw.anchor && raw.anchor.y, AVATAR.anchorY)),
+    x: num(raw.anchor && raw.anchor.x, AVATAR.anchorX),
+    y: num(raw.anchor && raw.anchor.y, AVATAR.anchorY),
   };
   return {
     parts, layerOrder, frame, anchor, frameNames, frameCount,
+    density: posNum(raw.density, AVATAR.density),
     animations: normalizeAnimations(raw.animations, frameCount),
     aliases: normalizeAliases(raw.aliases),
+    files: normalizeFiles(raw.files, layerOrder),
     rawPresets: Array.isArray(raw.presets) ? raw.presets.slice(0, 12) : [],
   };
 }
@@ -128,73 +167,67 @@ function fallbackManifest() {
   const parts = Object.fromEntries(PART_KEYS.map((p) => [p, [{ id: DEFAULT_AVATAR[p], label: DEFAULT_AVATAR[p] }]]));
   return {
     parts,
-    layerOrder: [...DEFAULT_LAYER_ORDER],
+    layerOrder: DEFAULT_LAYER_ORDER,
     frame: { w: AVATAR.frameW, h: AVATAR.frameH },
     anchor: { x: AVATAR.anchorX, y: AVATAR.anchorY },
+    density: AVATAR.density,
     frameNames: [...AVATAR.frames],
     frameCount: AVATAR.frames.length,
     animations: normalizeAnimations(null, AVATAR.frames.length),
     aliases: normalizeAliases(null),
+    files: null,
     rawPresets: [],
   };
 }
 
-/** outline.json → Map<0xRRGGBB, [r,g,b]> */
-function parseOutline(raw) {
-  const map = new Map();
-  if (!raw || typeof raw !== 'object') return map;
-  for (const [k, v] of Object.entries(raw)) {
-    if (!HEX_RE.test(k) || typeof v !== 'string' || !HEX_RE.test(v)) continue;
-    const n = parseInt(v.slice(1), 16);
-    map.set(parseInt(k.slice(1), 16), [(n >> 16) & 255, (n >> 8) & 255, n & 255]);
-  }
-  return map;
-}
-
-/** 파츠 id 하나가 쓰는 레이어 목록 (hair → hair_back, hair_front / hat none → 없음) */
-export function layersOfPart(part, id, layerOrder = DEFAULT_LAYER_ORDER) {
-  if (part === 'hat' && id === HAT_NONE) return [];
-  return layerOrder.filter((l) => LAYER_PART[l] === part);
-}
-
 /**
  * @returns Promise<{
- *   source: 'manifest'|'fallback', parts, layerOrder, frame, anchor, frameNames, frameCount, frameIndex,
- *   animations, outline: Map, images: Map<'layer/id', HTMLImageElement>, imageCount, imageTotal,
- *   defaultAvatar, presets: [{label, avatar}], sanitizeAvatar(avatar), labelOf(part, id)
+ *   source: 'manifest'|'fallback', parts, layerOrder, frame, anchor, density, frameNames, frameCount, frameIndex,
+ *   animations, hasLayer(layer, id), getLayer(layer, id) → Promise<img|null>, peekLayer(layer, id) → img|null|undefined,
+ *   imageCount, imageTotal, defaultAvatar, presets: [{label, avatar}], sanitizeAvatar(avatar), labelOf(part, id)
  * }>
+ * 부팅 때는 manifest만 받는다. 레이어 PNG는 getLayer로 필요할 때(그릴 조합이 생겼을 때) 받는다.
  */
 export async function loadAvatarAssets() {
-  const [rawManifest, rawOutline] = await Promise.all([
-    fetchJson(new URL('avatar/manifest.json', ASSET_ROOT)),
-    fetchJson(new URL('avatar/outline.json', ASSET_ROOT)),
-  ]);
+  const rawManifest = await fetchJson(new URL('avatar/manifest.json', ASSET_ROOT));
   const manifest = normalizeAvatarManifest(rawManifest);
   if (!manifest) warnOnce('avatar:manifest', 'assets/avatar/manifest.json이 없거나 계약 형식이 아닙니다 (단색 대체 아바타로 그립니다)');
   const base = manifest || fallbackManifest();
-  const outline = parseOutline(rawOutline);
-  if (manifest && !outline.size) warnOnce('avatar:outline', 'assets/avatar/outline.json이 없습니다 (외곽선 색은 RGB x0.45로 계산합니다)');
+  const ids = Object.fromEntries(PART_KEYS.map((p) => [p, new Set(base.parts[p].map((o) => o.id))]));
 
-  const images = new Map();
-  let imageTotal = 0;
-  if (manifest) {
-    // 매니페스트에 있는 파일만 요청한다
-    const jobs = [];
-    for (const part of PART_KEYS) {
-      for (const { id } of base.parts[part]) {
-        for (const layer of layersOfPart(part, id, base.layerOrder)) {
-          imageTotal++;
-          jobs.push(loadImage(new URL(`avatar/${layer}/${id}.png`, ASSET_ROOT)).then((img) => {
-            if (img && img.naturalWidth >= base.frame.w && img.naturalHeight >= base.frame.h) images.set(`${layer}/${id}`, img);
-            else warnOnce(`avatar:${layer}/${id}`, `파츠 시트를 불러오지 못했습니다: ${layer}/${id}.png (이 레이어는 빼고 그립니다)`);
-          }));
-        }
-      }
-    }
-    await Promise.all(jobs);
+  // 레이어 파일 존재 판단: manifest files만 믿는다. files가 없거나 깨졌으면 필수 레이어만 요청(그림자/뒷 레이어는 생략).
+  if (manifest && !base.files) warnOnce('avatar:files', 'manifest files가 없거나 형식이 아닙니다 (필수 레이어만 그립니다: 그림자/뒷 레이어 생략)');
+  const required = new Set(REQUIRED_LAYERS);
+  const layerPart = new Map(base.layerOrder.map((e) => [e.layer, e.part]));
+  function hasLayer(layer, id) {
+    if (!manifest) return false;
+    const part = layerPart.get(layer);
+    if (!part || typeof id !== 'string' || !ids[part].has(id)) return false;
+    if (part === 'hat' && id === HAT_NONE) return false;
+    return base.files ? base.files.get(layer).has(id) : required.has(layer);
   }
 
-  const ids = Object.fromEntries(PART_KEYS.map((p) => [p, new Set(base.parts[p].map((o) => o.id))]));
+  const imgs = new Map(); // 'layer/id' -> { promise, img }
+  let loaded = 0;
+  function getLayer(layer, id) {
+    if (!hasLayer(layer, id)) return Promise.resolve(null);
+    const key = `${layer}/${id}`;
+    let e = imgs.get(key);
+    if (!e) {
+      e = { img: undefined, promise: null };
+      e.promise = loadImage(new URL(`avatar/${layer}/${id}.png`, ASSET_ROOT)).then((img) => {
+        const ok = img && img.naturalWidth >= base.frame.w && img.naturalHeight >= base.frame.h;
+        // 경고는 files가 있을 때만 (대체 모드는 시작 때 경고 1회만 남긴다)
+        if (!ok && base.files) warnOnce(`avatar:${key}`, `파츠 시트를 불러오지 못했습니다: ${key}.png (이 레이어는 빼고 그립니다)`);
+        else loaded++;
+        e.img = ok ? img : null;
+        return e.img;
+      });
+      imgs.set(key, e);
+    }
+    return e.promise;
+  }
+
   const defaultAvatar = Object.fromEntries(PART_KEYS.map((p) => [p, base.parts[p][0].id]));
   const sanitizeAvatar = (avatar) => normalizeAvatar(avatar, { ids, defaults: defaultAvatar, aliases: base.aliases });
   const presets = [];
@@ -203,7 +236,7 @@ export async function loadAvatarAssets() {
     const label = typeof pr.label === 'string' && pr.label.trim() ? pr.label.trim().slice(0, 20) : `조합 ${presets.length + 1}`;
     presets.push(Object.freeze({ label, avatar: Object.freeze(sanitizeAvatar(pr.avatar)) }));
   }
-  const fi = (name, d) => { const i = base.frameNames.indexOf(name); return i >= 0 ? i : d; };
+  const fi = (name, d) => { const i = base.frameNames.indexOf(name); return i >= 0 ? i : Math.min(d, base.frameCount - 1); };
 
   return Object.freeze({
     source: manifest ? 'manifest' : 'fallback',
@@ -211,14 +244,18 @@ export async function loadAvatarAssets() {
     layerOrder: base.layerOrder,
     frame: base.frame,
     anchor: base.anchor,
+    density: base.density,
     frameNames: base.frameNames,
     frameCount: base.frameCount,
-    frameIndex: Object.freeze({ front: fi('front', 0), side: fi('side_idle', 1), back: fi('back', base.frameCount - 1) }),
+    frameIndex: Object.freeze({ front: fi('front', 0), side: fi('side', 2), back: fi('back', base.frameCount - 1) }),
     animations: base.animations,
-    outline,
-    images,
-    imageCount: images.size,
-    imageTotal,
+    hasLayer,
+    getLayer,
+    /** 이미 받은 레이어: img, 실패: null, 아직: undefined */
+    peekLayer(layer, id) { const e = imgs.get(`${layer}/${id}`); return e ? e.img : undefined; },
+    /** 지금까지 받은 레이어 수 / 요청한 레이어 수 */
+    get imageCount() { return loaded; },
+    get imageTotal() { return imgs.size; },
     defaultAvatar: Object.freeze(defaultAvatar),
     presets: Object.freeze(presets),
     /** 네트워크/DB에서 온 아바타를 manifest에 있는 id 7개로 맞춘다 (avatar-data.js 규칙). */
@@ -234,18 +271,21 @@ export async function loadAvatarAssets() {
 // 맵
 
 /**
- * @returns Promise<{ source: 'manifest'|'fallback', layers: [{ img, parallax, y, repeatX, w, h }], groundImg, groundY, layerCount }>
- * 실패한 레이어는 빠진다 (그 레이어만 빼고 그린다, screens/game.md 7.1).
+ * @returns Promise<{ source: 'manifest'|'fallback', layers: [{ img, parallax, y, w, h, repeatX, stretchX, name }],
+ *   ground, groundY, width, density, layerCount }>
+ * 레이어의 y, w, h는 월드 단위 (w, h = 이미지 px / density). 실패한 레이어는 빠진다 (그 레이어만 빼고 그린다).
  */
 export async function loadMapAssets() {
   const raw = await fetchJson(new URL('map/manifest.json', ASSET_ROOT));
   const list = raw && Array.isArray(raw.layers) ? raw.layers : null;
   if (!list || !list.length) {
     warnOnce('map:manifest', 'assets/map/manifest.json이 없습니다 (단색 맵으로 그립니다)');
-    return Object.freeze({ source: 'fallback', layers: [], groundImg: null, groundY: ART.groundY, layerCount: 0 });
+    return Object.freeze({ source: 'fallback', layers: [], ground: null, groundY: WORLD.groundY, width: WORLD.width, density: 1.5, layerCount: 0 });
   }
-  const groundY = Number.isInteger(raw.groundY) ? raw.groundY : ART.groundY;
-  if (groundY !== ART.groundY) warnOnce('map:groundY', `맵 groundY(${groundY})가 계약 값(${ART.groundY})과 다릅니다`);
+  const density = posNum(raw.density, 1.5);
+  const groundY = num(raw.groundY, WORLD.groundY);
+  if (groundY !== WORLD.groundY) warnOnce('map:groundY', `맵 groundY(${groundY})가 계약 값(${WORLD.groundY})과 다릅니다`);
+  const width = num(raw.width, WORLD.width);
   const specs = list.slice(0, 16).map((l) => {
     const url = l && resolveSrc(l.src);
     if (!url) return null;
@@ -253,25 +293,31 @@ export async function loadMapAssets() {
       url,
       name: l.src,
       parallax: Math.min(1, Math.max(0, num(l.parallax, 1))),
-      y: Math.round(num(l.y, 0)),
+      y: num(l.y, 0),
       repeatX: l.repeatX === true,
+      stretchX: l.stretchX === true,
     };
   });
   const loaded = await Promise.all(specs.map(async (s) => {
     if (!s) return null;
     const img = await loadImage(s.url);
     if (!img) { warnOnce(`map:${s.name}`, `맵 레이어를 불러오지 못했습니다: ${s.name}`); return null; }
-    return { img, parallax: s.parallax, y: s.y, repeatX: s.repeatX, w: img.naturalWidth, h: img.naturalHeight, name: s.name };
+    return Object.freeze({
+      img, parallax: s.parallax, y: s.y, repeatX: s.repeatX, stretchX: s.stretchX, name: s.name,
+      w: img.naturalWidth / density, h: img.naturalHeight / density,
+    });
   }));
   const layers = loaded.filter(Boolean);
-  // 지면 레이어 = parallax 1.0 이면서 반복하지 않는 마지막 레이어 (계약: 마지막 지면 레이어, 너비 1200)
-  const ground = [...layers].reverse().find((l) => l.parallax === 1 && !l.repeatX) || null;
+  // 지면 레이어 = parallax 1.0 이면서 반복/늘이기 하지 않는 마지막 레이어
+  const ground = [...layers].reverse().find((l) => l.parallax === 1 && !l.repeatX && !l.stretchX) || null;
   return Object.freeze({
     source: layers.length ? 'manifest' : 'fallback',
     layers,
-    groundImg: ground ? ground.img : null,
-    groundLayerY: ground ? ground.y : 0,
+    ground,
+    sky: layers.find((l) => l.stretchX) || null,
     groundY,
+    width,
+    density,
     layerCount: layers.length,
   });
 }

@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""버섯마을 local 모드 E2E 테스트 (Python Playwright, Chromium headless). 사이클 4 계약 기준.
+"""버섯마을 local 모드 E2E 테스트 (Python Playwright, Chromium headless). 사이클 5 계약 기준 (복셀 아트).
 
 - 로그인 없음. 프로필(localStorage) -> 로비 -> 방 흐름. 사용자는 `?as=<이름>`으로 탭마다 나눈다
   (docs/handoff/frontend-20261015-rooms.md 4장). 같은 browser context의 페이지들은 같은 localStorage(= 같은 "서버")와
@@ -10,7 +10,8 @@
   --only      : 번호만 실행 (쉼표 구분)
   --shots DIR : 로비/방 스크린샷(데스크톱 1280x800, 모바일 360x640)만 저장하고 종료
 환경 변수:
-  QA_SCRATCH  : 스크래치 디렉터리. 항목 24가 저장소 사본을 여기에 만든다 (없으면 시스템 임시 폴더).
+  QA_SCRATCH  : 스크래치 디렉터리. 항목 24~25가 저장소 사본을 여기에 만든다 (없으면 시스템 임시 폴더).
+  QA_FULL_BUILD=1 : 전체 결정성 재빌드(복셀 아바타 check 무옵션, 맵 build 후 md5 비교)를 함께 실행.
 
 - 저장소 루트에서 `python3 -m http.server`를 빈 포트로 띄우고 끝나면 반드시 종료한다.
 - 외부 네트워크(Supabase, CDN)에 접속하지 않는다. local 모드만 검증한다.
@@ -19,6 +20,7 @@
 - 시간 조작(방 만료, 실패 창, 20명 정원)은 localStorage DB(`mushroom.local.v4.db`)를 직접 고쳐 만든다. 각 항목에 방법을 적었다.
 """
 import argparse
+import base64
 import hashlib
 import json
 import math
@@ -31,6 +33,7 @@ import sys
 import tempfile
 import time
 import traceback
+import urllib.parse
 from pathlib import Path
 
 from playwright.sync_api import expect, sync_playwright
@@ -55,7 +58,8 @@ LEGACY_ROW = {"skin": "skin-light", "hair": "hair-round-black", "eyes": "eyes-do
               "top": "top-tee-red", "bottom": "bottom-shorts-navy"}
 LEGACY_EXPECT = {"skin": "light", "hair": "black-short", "face": "basic", "top": "tee-stripe-red",
                  "bottom": "pants-navy", "shoes": "sneakers-white", "hat": "none"}
-WALK_FRAMES = {2, 3, 4, 5}
+WALK_FRAMES = {3, 4, 5, 6}  # 사이클 5: walk = [3,4,5,6]
+FULL_BUILD = os.environ.get('QA_FULL_BUILD') == '1'  # 전체 결정성 재빌드(항목 24, 25): 약 12~15분, 한 번만
 PALETTE_COLORS = 42
 
 # 화면 문구 (errors.js / profile.js / lobby.js / room.js 원문)
@@ -1308,19 +1312,50 @@ def t20(browser, col):
     return verdict(checks)
 
 
-# 방 화면 픽셀 검사 (캔버스 스크린샷). 글자(라벨, 말풍선) 영역은 마스크한다.
-FILLTEXT_HOOK = """
+# ---------------------------------------------------------------------------
+# 복셀 아트(사이클 5) 그리기 검사 헬퍼: 캔버스 호출 기록 훅, 캐릭터 마스크, 텍스트 위치
+# 게임 동작은 바꾸지 않는다. 그리기 호출을 기록하고, __qaNoSprite일 때만 캐릭터 프레임 그리기를 건너뛴다.
+# ---------------------------------------------------------------------------
+RENDER_HOOK = """
 (() => {
-  window.__qaFill = {};
-  const orig = CanvasRenderingContext2D.prototype.fillText;
+  const isGame = (cv) => !!(cv && cv.getAttribute && cv.getAttribute('data-testid') === 'game-canvas');
+  window.__qaFill = {};         // 텍스트 -> {x, y, w, align, t}: 게임 캔버스 fillText의 마지막 호출
+  window.__qaSprite = null;     // 마지막 캐릭터 프레임 그리기: {dx, dy, dw, dh, smooth, quality, t} (장치 px)
+  window.__qaSpriteCount = 0;
+  window.__qaSmoothBad = 0;     // 스무딩이 꺼진 상태로 그린 캐릭터 프레임 수
+  window.__qaNoSprite = false;  // true면 캐릭터 프레임 그리기만 건너뛴다 (마스크 측정용)
+  window.__qaFirstSprite = null;
+  window.__qaFirstDraw = null;  // 게임 캔버스에 처음 그린 이미지 시각 (맵 포함)
+  const ft = CanvasRenderingContext2D.prototype.fillText;
   CanvasRenderingContext2D.prototype.fillText = function (text, x, y, ...rest) {
     try {
-      window.__qaFill[String(text)] = { x: x, y: y, w: this.measureText(String(text)).width, align: this.textAlign };
+      if (isGame(this.canvas)) {
+        window.__qaFill[String(text)] = { x: x, y: y, w: this.measureText(String(text)).width, align: this.textAlign, t: performance.now() };
+      }
     } catch (e) { /* 기록 실패가 그리기를 막으면 안 된다 */ }
-    return orig.call(this, text, x, y, ...rest);
+    return ft.call(this, text, x, y, ...rest);
+  };
+  const di = CanvasRenderingContext2D.prototype.drawImage;
+  CanvasRenderingContext2D.prototype.drawImage = function (img, ...args) {
+    try {
+      if (isGame(this.canvas)) {
+        const t = performance.now();
+        if (window.__qaFirstDraw === null) window.__qaFirstDraw = t;
+        // 캐릭터 프레임: drawImage(img, sx, sy, 144, 192, dx, dy, dw, dh)
+        if (args.length === 8 && args[2] === 144 && args[3] === 192) {
+          if (window.__qaNoSprite) return;
+          window.__qaSpriteCount++;
+          if (!this.imageSmoothingEnabled) window.__qaSmoothBad++;
+          window.__qaSprite = { dx: args[4], dy: args[5], dw: args[6], dh: args[7], smooth: this.imageSmoothingEnabled, quality: this.imageSmoothingQuality, t: t };
+          if (window.__qaFirstSprite === null) window.__qaFirstSprite = t;
+        }
+      }
+    } catch (e) { /* 기록 실패가 그리기를 막으면 안 된다 */ }
+    return di.call(this, img, ...args);
   };
 })();
 """
+FILLTEXT_HOOK = RENDER_HOOK  # 이전 이름 호환 (꾸미기/방 공용 훅)
 
 HIDE_ROOM_JS = """() => {
   for (const s of ['.hud', '.hud-row2', '.room-log', '.hud-room', '.bk-count', '.chat-float', '.hint-desktop',
@@ -1329,51 +1364,153 @@ HIDE_ROOM_JS = """() => {
   }
 }"""
 
+# 사이클 5 계약 상수 (ARCHITECTURE "복셀 아트 계약", art-20261015-voxel-final.md 10절)
+REQUIRED_LAYERS = ["skin", "face", "hair_front", "top", "bottom", "shoes", "hat"]  # 프런트 constants.js와 같음
+AVATAR_FILES = MANIFEST.get("files") or {}
+GROUND_Y = 440
+WORLD_W = 2400
+WORLD_BOTTOM = 540
+CONFIGS_ROOM = [
+    ("데스크톱 1280x800 dpr1 (P2)", 1280, 800, 1, False, 2),
+    ("큰 데스크톱 1920x1080 dpr1 (P3)", 1920, 1080, 1, False, 3),
+    ("모바일 360x640 dpr2 (P2)", 360, 640, 2, True, 2),
+]
 
-def canvas_text_boxes(pg):
-    recs = pg.evaluate("window.__qaFill || {}")
-    boxes = []
-    for text, v in recs.items():
-        if v.get("align") == "left":
-            l, r = v["x"] - 8, v["x"] + v["w"] + 8
-        else:
-            half = v["w"] / 2 + 8
-            l, r = v["x"] - half, v["x"] + half
-        boxes.append((l, v["y"] - 8, r, v["y"] + 18, text))
-    return boxes
+
+def even(v):
+    """프런트 overlay.js even(): 올림해서 짝수."""
+    return math.ceil(v / 2) * 2
 
 
-def pixel_check(png, k, boxes_css, dsf, band_frac=0.35):
+def fresh_text(pg, max_age_ms=400):
+    """최근 프레임(max_age_ms 이내)에 게임 캔버스에 그린 텍스트 기록만 돌려준다 (라벨/말풍선 위치)."""
+    return pg.evaluate("""(age) => { const now = performance.now(); const out = {};
+      for (const [k, v] of Object.entries(window.__qaFill || {})) { if (now - v.t <= age) out[k] = v; }
+      return out; }""", max_age_ms)
+
+
+def sprite_info(pg):
+    return pg.evaluate("() => window.__qaSprite")
+
+
+def wait_sprite(pg, timeout=8.0):
+    return wait_until(lambda: pg.evaluate("() => !!window.__qaSprite"), timeout)
+
+
+def spread(mover, min_gap=130):
+    """mover를 같은 방의 다른 사람과 min_gap(월드 단위) 이상 떨어지게 좌우로 옮긴다 (스폰 위치는 300~900 무작위)."""
+    for _ in range(30):
+        st = state(mover)
+        me_x = st["me"]["x"]
+        close = [p["x"] for p in st["players"] if p["user_id"] != st["me"]["user_id"] and abs(p["x"] - me_x) < min_gap]
+        if not close:
+            return True
+        near = min(close, key=lambda ox: abs(ox - me_x))
+        hold_key(mover, "ArrowRight" if me_x >= near else "ArrowLeft", 220)
+        time.sleep(0.1)
+    return False
+
+
+def sprite_stats(with_png, without_png, sp):
+    """캐릭터 마스크 = (캐릭터 있음 - 캐릭터 없음) 차이 픽셀 중 캐릭터 프레임 사각형 안.
+    - 고유 색: 마스크 내부(가장자리에서 2px 안쪽)의 RGB 종류 수
+    - 경계 블렌딩: 마스크 가장자리 픽셀 중 내부 팔레트에 없는 색(계단이면 0, 스무딩이면 많음)의 비율
+    """
     import io
     import numpy as np
     from PIL import Image
 
-    arr = np.asarray(Image.open(io.BytesIO(png)).convert("RGB"))
-    H, W, _ = arr.shape
-    if H % k or W % k:
-        return {"error": f"스크린샷 {W}x{H}가 블록 {k}의 배수가 아님"}
-    mask = np.zeros((H, W), dtype=bool)
-    for l, t, r, b, _ in boxes_css:
-        mask[max(0, int(t * dsf)):min(H, int(b * dsf) + 1), max(0, int(l * dsf)):min(W, int(r * dsf) + 1)] = True
-    bh, bw = H // k, W // k
-    blocks = arr.reshape(bh, k, bw, k, 3)
-    uniform = (blocks == blocks[:, :1, :, :1, :]).all(axis=(1, 3, 4))
-    bmask = mask.reshape(bh, k, bw, k).any(axis=(1, 3))
-    band_rows = max(1, int(bh * band_frac))
-    h_px = band_rows * k
-    band = arr[:h_px]
-    m = mask[:h_px]
-    cx = (band[:, 1:] != band[:, :-1]).any(axis=2) & ~(m[:, 1:] | m[:, :-1])
-    cy = (band[1:] != band[:-1]).any(axis=2) & ~(m[1:] | m[:-1])
-    mis_x = int(cx[:, np.arange(1, W) % k != 0].sum())
-    mis_y = int(cy[np.arange(1, h_px) % k != 0, :].sum())
-    return {
-        "size": (W, H), "blocks": int(uniform.size),
-        "bad_outside": int(np.count_nonzero(~uniform & ~bmask)),
-        "band_bad": int(np.count_nonzero(~uniform[:band_rows] & ~bmask[:band_rows])),
-        "mis_x": mis_x, "mis_y": mis_y,
-        "band_colors": int(len(np.unique(band[~m].reshape(-1, 3), axis=0))),
-    }
+    A = np.asarray(Image.open(io.BytesIO(with_png)).convert("RGB")).astype(int)
+    Bg = np.asarray(Image.open(io.BytesIO(without_png)).convert("RGB")).astype(int)
+    if A.shape != Bg.shape:
+        return {"error": f"스크린샷 크기가 다름 {A.shape} / {Bg.shape}"}
+    H, W, _ = A.shape
+    box = np.zeros((H, W), dtype=bool)
+    x0, y0 = max(0, int(sp["dx"])), max(0, int(sp["dy"]))
+    x1, y1 = min(W, int(sp["dx"] + sp["dw"])), min(H, int(sp["dy"] + sp["dh"]))
+    box[y0:y1, x0:x1] = True
+    mask = (np.abs(A - Bg).sum(-1) > 9) & box
+    res = {"mask": int(mask.sum())}
+    if res["mask"] < 1500:
+        return res
+    inner = mask.copy()
+    for _ in range(2):
+        inner = inner & np.roll(inner, 1, 0) & np.roll(inner, -1, 0) & np.roll(inner, 1, 1) & np.roll(inner, -1, 1)
+    border = np.argwhere(mask & ~inner)
+    inner_cols = set(map(tuple, A[inner].tolist()))
+    crisp = sum(1 for yy, xx in border if tuple(A[yy, xx].tolist()) in inner_cols)
+    res.update(colors=len(inner_cols), border=len(border),
+               blend=round(1 - crisp / max(1, len(border)), 3))
+    return res
+
+
+def avatar_key(url):
+    """'.../assets/avatar/<layer>/<id>.png' -> (layer, id). 아바타 PNG가 아니면 None."""
+    parts = urllib.parse.urlparse(url).path.split("/")
+    if len(parts) >= 3 and parts[-3] == "avatar" and parts[-1].endswith(".png"):
+        return (parts[-2], parts[-1][:-4])
+    return None
+
+
+def asset_bytes(pg):
+    return pg.evaluate("""() => { const es = performance.getEntriesByType('resource').filter((e) => e.name.includes('/assets/'));
+      return { bytes: es.reduce((s, e) => s + (e.transferSize || 0), 0), n: es.length,
+               png: es.filter((e) => e.name.endsWith('.png')).length }; }""")
+
+
+def sample_frames(pg, secs):
+    seen = set()
+    t0 = time.time()
+    while time.time() - t0 < secs:
+        f = state(pg)["create"].get("frame")
+        if f is not None:
+            seen.add(f)
+        time.sleep(0.03)
+    return seen
+
+
+COMPOSITE_JS = """async (presets) => {
+  const A = await import('./src/client/avatar.js');
+  const S = await import('./src/client/assets.js');
+  const assets = await S.loadAvatarAssets();
+  const r = A.createAvatarRenderer(assets, {});
+  const out = [];
+  for (const av of presets) {
+    const e = await r.ready(av);
+    if (!e || !e.normal) { out.push(null); continue; }
+    const cv = e.normal;
+    const d = cv.getContext('2d').getImageData(0, 0, cv.width, cv.height).data;
+    let s = '';
+    for (let i = 0; i < d.length; i += 0x8000) s += String.fromCharCode.apply(null, d.subarray(i, i + 0x8000));
+    out.push({ w: cv.width, h: cv.height, b64: btoa(s), headTop: e.headTop });
+  }
+  return out;
+}"""
+
+HEADTOP_JS = """async (avatars) => {
+  const A = await import('./src/client/avatar.js');
+  const S = await import('./src/client/assets.js');
+  const assets = await S.loadAvatarAssets();
+  const r = A.createAvatarRenderer(assets, {});
+  const out = [];
+  for (const av of avatars) { const e = await r.ready(av); out.push(e ? e.headTop : null); }
+  return out;
+}"""
+
+
+def diff_stats(a, b):
+    """assets/_src/voxel/build.py diff_stats와 같은 식 (프리멀티 RGB 평균 절대차 /255, 알파 MAE)."""
+    import numpy as np
+
+    a = a.astype(float)
+    b = b.astype(float)
+    pa = a[..., :3] * a[..., 3:4] / 255
+    pb = b[..., :3] * b[..., 3:4] / 255
+    d = np.abs(pa - pb).mean(-1)
+    w = np.maximum(a[..., 3], b[..., 3]) / 255
+    return dict(mean_abs_rgb=round(float((d * w).sum() / max(w.sum(), 1)), 3),
+                p95=round(float(np.percentile(d[w > 0.05], 95)), 2),
+                alpha_mae=round(float(np.abs(a[..., 3] - b[..., 3]).mean()), 3))
 
 
 @case(21, "모바일 360x640 + 데스크톱: 방/로비/프로필 가로 스크롤 없음, 모드 칩 비겹침, 터치 버튼으로 이동")
@@ -1436,48 +1573,54 @@ def t21(browser, col):
     return verdict(checks)
 
 
-@case(22, "픽셀 선명도: 방 캔버스 스크린샷에서 아트 픽셀이 배율 P의 균일 정사각 블록 (HUD 숨김, 라벨 마스크)")
+@case(22, "스무딩 렌더 품질: 캐릭터 그리기마다 imageSmoothingEnabled=true(quality high), image-rendering 계단 아님, 캐릭터 영역 비어 있지 않음, 경계가 블렌딩됨(계단/블록 아님)")
 def t22(browser, col):
     try:
         import numpy  # noqa: F401
         import PIL  # noqa: F401
     except ImportError as e:
         return ("UNVERIFIED", f"numpy/Pillow가 없어 픽셀 검사를 하지 못함: {e}", [("픽셀 검사 라이브러리", None)])
-    configs = [("데스크톱 1280x800 dpr1", 1280, 800, 1, False, 2),
-               ("큰 데스크톱 1920x1080 dpr1", 1920, 1080, 1, False, 3),
-               ("모바일 360x640 dpr2", 360, 640, 2, True, 2)]
     checks = []
-    for label, vw, vh, dsf, mob, P in configs:
+    for label, vw, vh, dsf, mob, _P in CONFIGS_ROOM:
         ctx = new_ctx(browser, viewport={"width": vw, "height": vh}, device_scale_factor=dsf, is_mobile=mob, has_touch=mob)
-        ctx.add_init_script(FILLTEXT_HOOK)
+        ctx.add_init_script(RENDER_HOOK)
         try:
             page = open_as(ctx, col, label, "a")
-            create_profile(page, "픽셀방")
-            ui_create_room(page, "픽셀")
-            time.sleep(0.6)
-            c = page.get_by_test_id("game-canvas")
-            lay = page.evaluate("""() => { const c = document.querySelector('[data-testid="game-canvas"]'); return { bufW: c.width, bufH: c.height }; }""")
+            create_profile(page, "스무딩방", pick=PICK)
+            ui_create_room(page, "스무딩")
+            if wait_sprite(page) is None:
+                raise AssertionError("캐릭터 프레임이 그려지지 않음")
+            time.sleep(0.3)
+            sp = sprite_info(page)
+            bad = page.evaluate("() => window.__qaSmoothBad")
+            rend = page.evaluate("() => getComputedStyle(document.querySelector('[data-testid=\"game-canvas\"]')).imageRendering")
             page.evaluate(HIDE_ROOM_JS)
             time.sleep(0.1)
-            png = c.screenshot()
-            res = pixel_check(png, P * dsf, canvas_text_boxes(page), dsf)
+            cv = page.get_by_test_id("game-canvas")
+            with_png = cv.screenshot()
+            page.evaluate("() => { window.__qaNoSprite = true; }")
+            time.sleep(0.25)
+            without_png = cv.screenshot()
+            page.evaluate("() => { window.__qaNoSprite = false; }")
         finally:
             ctx.close()
-        k = P * dsf
+        res = sprite_stats(with_png, without_png, sp)
         if "error" in res:
             checks.append((f"{label}: {res['error']}", False))
             continue
         checks += [
-            (f"{label}: 스크린샷 {res['size'][0]}x{res['size'][1]} = 캔버스 버퍼 {lay['bufW']}x{lay['bufH']}", tuple(res["size"]) == (lay["bufW"], lay["bufH"])),
-            (f"{label}: 블록 {k}px 격자 위에서만 색 전환 (비정렬 {res['mis_x'] + res['mis_y']}건)", res["mis_x"] == 0 and res["mis_y"] == 0),
-            (f"{label}: 글자/라벨 밖 블록 전부 균일 (불균일 {res['bad_outside']}/{res['blocks']})", res["bad_outside"] == 0),
-            (f"{label}: 상단 35% 밴드 블록 균일 (불균일 {res['band_bad']})", res["band_bad"] == 0),
-            (f"{label}: 상단 밴드 색 {res['band_colors']}가지 (팔레트 {PALETTE_COLORS}색 이내)", res["band_colors"] <= PALETTE_COLORS),
+            (f"{label}: 캐릭터 그리기 전부 스무딩 켬 (스무딩 꺼진 호출 {bad}, smooth={sp['smooth']}, quality={sp['quality']})",
+             bad == 0 and sp["smooth"] is True and sp["quality"] == "high"),
+            (f"{label}: 캔버스 image-rendering={rend} (pixelated/crisp-edges 아님)", rend not in ("pixelated", "crisp-edges")),
+            (f"{label}: 캐릭터 영역 비어 있지 않음 (마스크 픽셀 {res['mask']}, 기준 1500 이상)", res["mask"] >= 1500),
+            (f"{label}: 캐릭터 고유 색 {res.get('colors')}가지 (기준 100 이상; 블록 팔레트 {PALETTE_COLORS}색 초과)",
+             res.get("colors", 0) >= 100),
+            (f"{label}: 경계 블렌딩 비율 {res.get('blend')} (기준 0.25 이상; 계단 아트면 0 근처)", res.get("blend", 0) >= 0.25),
         ]
     return verdict(checks)
 
 
-@case(23, "에셋 로드: 4xx/5xx 0건, 요청 실패 0, manifest 2종 + outline 200, 아바타 레이어 43, 맵 5, PNG 고유 48")
+@case(23, "에셋 로드: 4xx/5xx 0, 요청 실패 0, outline.json 요청 0, manifest 2종 200, 요청 PNG는 전부 manifest files 안, 조합에 필요한 레이어 전부 로드, 맵 5 레이어, 콘솔 경고 0")
 def t23(browser, col):
     ctx = new_ctx(browser)
     page = ctx.new_page()
@@ -1490,22 +1633,34 @@ def t23(browser, col):
     try:
         page.goto(f"{BASE}?as=ast")
         wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10)
-        create_profile(page, "에셋방")
+        create_profile(page, "에셋방", pick=PICK)
         ui_create_room(page, "에셋")
-        time.sleep(1.0)
+        wait_sprite(page)
+        time.sleep(0.8)
         st = state(page)
+        avatar = st["profile"]["avatar"]
         bad = [(s, u) for s, u in ev["resp"] if s >= 400]
-        png_ok = {u for s, u in ev["resp"] if s == 200 and u.endswith(".png")}
+        ok_png = {avatar_key(u) for s, u in ev["resp"] if s == 200 and avatar_key(u)}
+        outline = [u for _, u in ev["resp"] if "outline.json" in u]
+        allowed = {(L, i) for L, ids in AVATAR_FILES.items() for i in ids}
+        need = set()
+        for e in MANIFEST["layerOrder"]:
+            i = avatar[e["part"]]
+            if i in AVATAR_FILES.get(e["layer"], []) and not (e["part"] == "hat" and i == "none"):
+                need.add((e["layer"], i))
+        a = st.get("assets") or {}
         checks.append((f"assets 응답 4xx/5xx 0건 (전체 {len(ev['resp'])}건, 실패 {bad[:3]})", not bad))
         checks.append((f"assets 요청 실패 0건 (실제 {len(ev['failed'])})", not ev["failed"]))
-        for m in ("avatar/manifest.json", "avatar/outline.json", "map/manifest.json"):
+        checks.append((f"outline.json 요청 0건 (폐기 파일, 실제 {len(outline)})", not outline))
+        for m in ("avatar/manifest.json", "map/manifest.json"):
             checks.append((f"{m} 200 응답", any(s == 200 and u.endswith(m) for s, u in ev["resp"])))
-        a = st.get("assets") or {}
-        checks.append((f"아바타 로드: source=manifest, 레이어 43 (실제 {a.get('source')}, {a.get('images')}/{a.get('imageTotal')})",
-                       a.get("source") == "manifest" and a.get("images") == 43 and a.get("imageTotal") == 43))
+        checks.append((f"요청한 아바타 PNG {len(ok_png)}장 전부 manifest files 목록 안 (목록 밖 {sorted(ok_png - allowed)[:3]})",
+                       ok_png <= allowed))
+        checks.append((f"이 조합의 필요 레이어 {len(need)}장 전부 200 (누락 {sorted(need - ok_png)[:3]})", need <= ok_png))
+        checks.append((f"아바타 로드: source=manifest, images = imageTotal ({a.get('images')}/{a.get('imageTotal')})",
+                       a.get("source") == "manifest" and a.get("images") == a.get("imageTotal") and a.get("images", 0) > 0))
         checks.append((f"맵 로드: mapLayers=5, background=True (실제 {a.get('mapLayers')}, {a.get('background')})",
                        a.get("mapLayers") == 5 and a.get("background") is True))
-        checks.append((f"PNG 고유 200 응답 {len(png_ok)}건 (기대 48)", len(png_ok) == 48))
         checks.append((f"콘솔 경고 0건 (실제 {len(ev['warn'])}: {ev['warn'][:2]})", not ev["warn"]))
     finally:
         ctx.close()
@@ -1513,19 +1668,19 @@ def t23(browser, col):
 
 
 def repo_tree(base):
+    """assets/ 아래 모든 파일의 sha256 (원본 불변 확인용, __pycache__ 제외)."""
     out = {}
-    for sub in ("avatar", "map"):
-        d = base / "assets" / sub
-        if not d.is_dir():
-            continue
-        for p in sorted(d.rglob("*")):
-            if p.is_file():
-                out[str(p.relative_to(base))] = hashlib.sha256(p.read_bytes()).hexdigest()
+    d = base / "assets"
+    if not d.is_dir():
+        return out
+    for p in sorted(d.rglob("*")):
+        if p.is_file() and "__pycache__" not in p.parts:
+            out[str(p.relative_to(base))] = hashlib.sha256(p.read_bytes()).hexdigest()
     return out
 
 
 def copy_repo(name):
-    dst = SCRATCH / "qa4-copies" / name
+    dst = SCRATCH / "qa5-copies" / name
     if dst.exists():
         shutil.rmtree(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
@@ -1533,51 +1688,66 @@ def copy_repo(name):
     return dst
 
 
-@case(24, "에셋 빌드 재현성: 저장소 사본(산출물 삭제 후)에서 build.py -> avatar/map 바이트 동일 (2회 결정성)")
+def run_py(args, cwd, timeout):
+    """사본 안에서 python3 -B 로 실행한다. (원본 저장소에서는 실행하지 않는다)"""
+    p = subprocess.run([sys.executable, "-B", *args], cwd=cwd, capture_output=True, text=True, timeout=timeout)
+    lines = p.stdout.strip().splitlines()
+    tail = " / ".join(lines[-2:]) if lines else p.stderr.strip()[-160:]
+    return p, tail
+
+
+@case(24, "복셀 아바타 검사 (사본): voxel/check.py --fast 통과, manifest files 합 = PNG 65장, 원본 assets 불변. 전체 결정성 재빌드는 QA_FULL_BUILD=1일 때만")
 def t24(browser, col):
     before = repo_tree(ROOT)
-    checks = []
-    png_repo = sorted(k for k in before if k.endswith(".png"))
-    checks.append((f"원본 PNG 개수 = 48 (실제 {len(png_repo)})", len(png_repo) == 48))
-
-    def build_copy(name):
-        dst = copy_repo(name)
-        for sub in ("avatar", "map"):
-            shutil.rmtree(dst / "assets" / sub)
-        p = subprocess.run([sys.executable, "-B", str(dst / "assets" / "_src" / "block" / "build.py")],
-                           cwd=dst, capture_output=True, text=True, timeout=300)
-        return dst, p
-
-    d1, p1 = build_copy("build-1")
-    last1 = (p1.stdout.strip().splitlines() or [p1.stderr.strip()[-160:]])[-1]
-    checks.append((f"build.py 종료 코드 0 ('{last1}')", p1.returncode == 0))
-    t1 = repo_tree(d1)
-    checks.append((f"생성 파일 집합 = 원본 ({len(t1)}개)", set(t1) == set(before)))
-    diff = [k for k in before if t1.get(k) != before[k]]
-    checks.append((f"avatar/map 전체 바이트 동일 {len(before) - len(diff)}/{len(before)} (불일치 {diff[:4]})", not diff))
-    d2, p2 = build_copy("build-2")
-    t2 = repo_tree(d2)
-    checks.append(("두 번째 독립 빌드도 첫 번째와 바이트 동일", p2.returncode == 0 and t2 == t1))
+    manifest = json.loads((ROOT / "assets/avatar/manifest.json").read_text(encoding="utf-8"))
+    n_listed = sum(len(v) for v in manifest["files"].values())
+    n_disk = sum(1 for k in before if k.startswith("assets/avatar/") and k.endswith(".png"))
+    checks = [(f"manifest files 합 {n_listed}장 = 디스크 PNG {n_disk}장", n_listed == n_disk == 65)]
+    dst = copy_repo("voxel-fast")
+    p, tail = run_py([str(dst / "assets/_src/voxel/check.py"), "--fast"], dst, 900)
+    checks.append((f"voxel/check.py --fast 종료 0 (출력 끝: {tail})", p.returncode == 0))
+    checks.append(("출력에 '결과: 통과'", "결과: 통과" in p.stdout))
+    if FULL_BUILD:
+        dfull = copy_repo("voxel-full")
+        pf, tailf = run_py([str(dfull / "assets/_src/voxel/check.py")], dfull, 2400)
+        checks.append((f"전체 결정성 재빌드 voxel/check.py (무옵션, 임시 폴더 재빌드 포함) 종료 0 (출력 끝: {tailf})",
+                       pf.returncode == 0 and "결과: 통과" in pf.stdout))
+    else:
+        checks.append(("전체 결정성 재빌드 voxel/check.py (약 6분): 이번 실행은 생략, QA_FULL_BUILD=1로 한 번 실행", None))
     after = repo_tree(ROOT)
     changed = sorted(k for k in set(before) | set(after) if before.get(k) != after.get(k))
-    checks.append((f"저장소 원본 assets 전후 해시 동일 (변경 {len(changed)}건)", not changed))
+    checks.append((f"원본 assets 전후 해시 동일 (변경 {len(changed)}건 {changed[:3]})", not changed))
     return verdict(checks)
 
 
-@case(25, "정적 검사 스크립트: assets/_src/block/check.py 통과 (저장소 사본에서 실행)")
+@case(25, "복셀 맵 검사 (사본): voxel_map/check.py 통과 (manifest 5 레이어, 파일 일치, 용량, 이음매). QA_FULL_BUILD=1이면 맵 전체 재빌드 md5 비교")
 def t25(browser, col):
-    dst = copy_repo("check")
-    p = subprocess.run([sys.executable, "-B", str(dst / "assets" / "_src" / "block" / "check.py")],
-                       cwd=dst, capture_output=True, text=True, timeout=300)
-    tail = " / ".join(p.stdout.strip().splitlines()[-3:]) or p.stderr.strip()[-200:]
-    checks = [
-        (f"check.py 종료 코드 0 (출력 끝: {tail})", p.returncode == 0),
-        ("출력에 'ALL CHECKS PASSED'", "ALL CHECKS PASSED" in p.stdout),
-    ]
+    dst = copy_repo("map-check")
+    p, tail = run_py([str(dst / "assets/_src/voxel_map/check.py")], dst, 900)
+    last = p.stdout.strip().splitlines()[-1:] or [""]
+    checks = [(f"voxel_map/check.py 종료 0 (출력 끝: {tail})", p.returncode == 0),
+              ("마지막 줄 'OK'", last == ["OK"])]
+    if FULL_BUILD:
+        # 맵 전체 재빌드: 사본의 assets/map을 지우고 build.py로 다시 구운 뒤 원본 assets/map과 바이트 비교
+        map_dst = dst / "assets" / "map"
+        shutil.rmtree(map_dst)
+        pb, tailb = run_py([str(dst / "assets/_src/voxel_map/build.py")], dst, 1800)
+        same = {}
+        if pb.returncode == 0:
+            for f in sorted((ROOT / "assets/map").iterdir()):
+                g = map_dst / f.name
+                same[f.name] = g.exists() and hashlib.sha256(g.read_bytes()).hexdigest() == hashlib.sha256(f.read_bytes()).hexdigest()
+        checks.append((f"맵 전체 재빌드 build.py (사본) 종료 0 (출력 끝: {tailb})", pb.returncode == 0))
+        checks.append((f"맵 전체 재빌드 결과 원본과 바이트 동일 ({sum(same.values())}/{len(same)}, 다른 파일 {[k for k, v in same.items() if not v]})",
+                       bool(same) and all(same.values())))
+        pd, taild = run_py([str(dst / "assets/_src/voxel_map/check.py"), "--determinism"], dst, 1500)
+        checks.append((f"voxel_map/check.py --determinism (구름/하늘/지면 타일 2회 md5) 종료 0 (출력 끝: {taild})", pd.returncode == 0))
+    else:
+        checks.append(("맵 전체 재빌드 md5 비교 (약 5분) + --determinism: 이번 실행은 생략, QA_FULL_BUILD=1로 한 번 실행", None))
     return verdict(checks)
 
 
-@case(26, "꾸미기 화면(1280x800): 탭 7개, 슬롯 반영, 프리셋 6종, 앞/옆/뒤, 걷기, 탭/슬롯 키보드")
+@case(26, "꾸미기 화면(1280x800): 탭 7개, 슬롯 반영, 프리셋 6종, 앞(숨쉬기 0/1)/옆(2)/뒤(7), 걷기(3..6), 탭/슬롯 키보드")
 def t26(browser, col):
     ctx = new_ctx(browser)
     checks = []
@@ -1605,21 +1775,17 @@ def t26(browser, col):
         checks.append(("프리셋 6종", len(MANIFEST["presets"]) == 6 and page.get_by_test_id("preset-6").count() == 0))
         page.get_by_test_id("view-side").click()
         cs = state(page)["create"]
-        checks.append(("옆: view=side, frame=1, 걷기 꺼짐", cs.get("view") == "side" and cs.get("frame") == 1 and cs.get("walking") is False))
+        checks.append((f"옆: view=side, frame={cs.get('frame')} (기대 2), 걷기 꺼짐",
+                       cs.get("view") == "side" and cs.get("frame") == 2 and cs.get("walking") is False))
         page.get_by_test_id("view-back").click()
         cs = state(page)["create"]
-        checks.append(("뒤: view=back, frame=6", cs.get("view") == "back" and cs.get("frame") == 6))
+        checks.append((f"뒤: view=back, frame={cs.get('frame')} (기대 7)", cs.get("view") == "back" and cs.get("frame") == 7))
         page.get_by_test_id("view-front").click()
-        cs = state(page)["create"]
-        checks.append(("앞: view=front, frame=0", cs.get("view") == "front" and cs.get("frame") == 0))
+        front = sample_frames(page, 1.4)
+        checks.append((f"앞: 숨쉬기 프레임 {sorted(front)} (기대 0과 1 둘 다 관측, 그 밖 없음)", front == {0, 1}))
         page.get_by_test_id("preview-walk").click()
-        time.sleep(0.05)
-        frames = set()
-        t0 = time.time()
-        while time.time() - t0 < 1.2:
-            frames.add(state(page)["create"].get("frame"))
-            time.sleep(0.03)
-        checks.append((f"걷기 프레임 {sorted(f for f in frames if f is not None)} = 2..5 순환", frames - {None} <= WALK_FRAMES and len(frames - {None}) >= 3))
+        walk = sample_frames(page, 1.2)
+        checks.append((f"걷기 프레임 {sorted(walk)} = 3..6 순환 (3종 이상, 그 밖 없음)", walk <= WALK_FRAMES and len(walk) >= 3))
         page.get_by_test_id("view-front").click()
         checks.append(("앞 누르면 걷기 꺼짐", state(page)["create"].get("walking") is False))
         page.get_by_test_id("tab-skin").click()
@@ -1629,6 +1795,12 @@ def t26(browser, col):
         checks.append(("탭 키보드: End -> shoes", state(page)["create"].get("tab") == "shoes"))
         page.keyboard.press("Home")
         checks.append(("탭 키보드: Home -> skin", state(page)["create"].get("tab") == "skin"))
+        thumbs = page.evaluate("""() => Array.from(document.querySelectorAll('#slot-grid canvas, .bk-presets canvas')).map((c) => {
+          try { const d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data; let n = 0;
+                for (let i = 3; i < d.length; i += 4) if (d[i] > 8) n++; return n; } catch (e) { return -1; } })""")
+        empty = [i for i, n in enumerate(thumbs) if n <= 0]
+        checks.append((f"썸네일 캔버스 {len(thumbs)}개 전부 그려짐 (불투명 픽셀 0인 것 {len(empty)}개, 색인 {empty[:4]})",
+                       len(thumbs) >= 6 + 3 and not empty))
     finally:
         ctx.close()
     return verdict(checks)
@@ -1687,7 +1859,7 @@ def t27(browser, col):
     return verdict(checks)
 
 
-@case(28, "애니메이션: 이동 중 walk(frame 2..5), 정지 후 idle(frame 1), 왼쪽 dir=left (로컬과 원격)")
+@case(28, "애니메이션: 이동 중 walk(frame 3..6), 정지 후 idle(frame 2, 인게임 정지), 왼쪽 dir=left (로컬과 원격)")
 def t28(browser, col):
     ctx = new_ctx(browser)
     checks = []
@@ -1701,9 +1873,9 @@ def t28(browser, col):
         wait_until(lambda: find_player(b, "애니A") and find_player(a, "애니B"), 6)
         time.sleep(0.6)
         me_a = state(a)["me"]
-        checks.append((f"정지: 로컬 idle, frame 1 (실제 {me_a['anim']}, {me_a['frame']})", me_a["anim"] == "idle" and me_a["frame"] == 1))
+        checks.append((f"정지: 로컬 idle, frame 2 (실제 {me_a['anim']}, {me_a['frame']})", me_a["anim"] == "idle" and me_a["frame"] == 2))
         rp = find_player(b, "애니A")
-        checks.append((f"정지: 원격 idle, frame 1 (실제 {rp and rp['anim']}, {rp and rp['frame']})", rp is not None and rp["anim"] == "idle" and rp["frame"] == 1))
+        checks.append((f"정지: 원격 idle, frame 2 (실제 {rp and rp['anim']}, {rp and rp['frame']})", rp is not None and rp["anim"] == "idle" and rp["frame"] == 2))
 
         def sample(key, secs):
             loc, rem = [], []
@@ -1730,19 +1902,364 @@ def t28(browser, col):
         wf_l = {s[2] for s in loc if s[1] == "walk" and s[0] >= 0.15}
         wf_r = {s[2] for s in rem if s[1] == "walk" and s[0] >= 0.3}
         checks.append((f"오른쪽 이동: 로컬 walk 비율 {lf:.2f} (기준 0.95)", lf >= 0.95))
-        checks.append((f"오른쪽 이동: 로컬 walk 프레임 {sorted(wf_l)} = 2..5 이하, dir 오른쪽", wf_l <= WALK_FRAMES and share(loc, 3, lambda v: v == "right", 0.15) == 1.0))
+        checks.append((f"오른쪽 이동: 로컬 walk 프레임 {sorted(wf_l)} = 3..6 이하, dir 오른쪽",
+                       wf_l <= WALK_FRAMES and share(loc, 3, lambda v: v == "right", 0.15) == 1.0))
         checks.append((f"오른쪽 이동: 원격 walk 비율 {rf:.2f} (기준 0.85)", rf >= 0.85))
-        checks.append((f"오른쪽 이동: 원격 walk 프레임 {sorted(wf_r)} = 2..5 이하", wf_r <= WALK_FRAMES and wf_r != set()))
+        checks.append((f"오른쪽 이동: 원격 walk 프레임 {sorted(wf_r)} = 3..6 이하", wf_r <= WALK_FRAMES and wf_r != set()))
         time.sleep(0.6)
         me_a = state(a)["me"]
         rp = find_player(b, "애니A")
-        checks.append(("정지 후 로컬 idle frame 1", me_a["anim"] == "idle" and me_a["frame"] == 1))
-        checks.append(("정지 후 원격 idle frame 1", rp is not None and rp["anim"] == "idle" and rp["frame"] == 1))
+        checks.append((f"정지 후 로컬 idle frame 2 (실제 {me_a['frame']})", me_a["anim"] == "idle" and me_a["frame"] == 2))
+        checks.append((f"정지 후 원격 idle frame 2 (실제 {rp and rp['frame']})", rp is not None and rp["anim"] == "idle" and rp["frame"] == 2))
         loc, rem = sample("ArrowLeft", 0.6)
         checks.append((f"왼쪽 이동: 로컬 dir=left 비율 {share(loc, 3, lambda v: v == 'left', 0.15):.2f} (기준 1.0)",
                        share(loc, 3, lambda v: v == "left", 0.15) == 1.0))
         rl = share(rem, 3, lambda v: v == "left", 0.3)
         checks.append((f"왼쪽 이동: 원격 dir=left 비율 {rl:.2f} (기준 0.85)", rl >= 0.85))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+# ---------------------------------------------------------------------------
+# 사이클 5 신규 (복셀 아트 계약): (a) 파일 목록 대체, (b) 발 위치, (c) 프리셋 정답 근사,
+# (d) 라벨/말풍선 배치, (e) 로딩 성능
+# ---------------------------------------------------------------------------
+@case(32, "(a) manifest files 대체 동작: files 키 없음/객체 아님/레이어 누락 -> 필수 레이어만 요청, 404 0. 깨진 PNG 1장이면 그 레이어만 빠짐 (콘솔 error 0, 경고 1회)")
+def t32(browser, col):
+    checks = []
+    variants = [("files 키 없음", "del"), ("files가 객체가 아님", "bad"), ("files에 hat 키 누락", "partial")]
+    for label, kind in variants:
+        ctx = new_ctx(browser)
+        ctx.add_init_script(RENDER_HOOK)
+        ev = {"resp": [], "failed": [], "warn": [], "err": []}
+
+        def handler(route, kind=kind):
+            resp = route.fetch()
+            body = resp.json()
+            if kind == "del":
+                body.pop("files", None)
+            elif kind == "bad":
+                body["files"] = "깨짐"
+            else:
+                body.get("files", {}).pop("hat", None)
+            route.fulfill(response=resp, body=json.dumps(body, ensure_ascii=False), headers={"content-type": "application/json"})
+
+        ctx.route("**/assets/avatar/manifest.json", handler)
+        page = ctx.new_page()
+        page.on("response", lambda r: ev["resp"].append((r.status, r.url)) if "/assets/" in r.url else None)
+        page.on("requestfailed", lambda r: ev["failed"].append(r.url) if "/assets/" in r.url else None)
+
+        def on_console(m, ev=ev):
+            if m.type == "warning":
+                ev["warn"].append(m.text)
+            elif m.type == "error":
+                ev["err"].append(m.text)
+
+        page.on("console", on_console)
+        try:
+            page.goto(f"{BASE}?as=fb")
+            wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10)
+            create_profile(page, "폴백방", pick=PICK)
+            ui_create_room(page, "폴백")
+            wait_sprite(page)
+            time.sleep(0.6)
+            st = state(page)
+            bad = [(s, u) for s, u in ev["resp"] if s >= 400]
+            req = {avatar_key(u) for s, u in ev["resp"] if s == 200 and avatar_key(u)}
+            layers = {L for L, _ in req}
+            exp = set()
+            for L in REQUIRED_LAYERS:
+                part = next(e["part"] for e in MANIFEST["layerOrder"] if e["layer"] == L)
+                i = PICK[part]
+                if not (part == "hat" and i == "none"):
+                    exp.add((L, i))
+            warn_files = [w for w in ev["warn"] if "manifest files" in w]
+            checks.append((f"[{label}] 아바타 로드 source=manifest (실제 {st['assets'].get('source')})", st["assets"].get("source") == "manifest"))
+            checks.append((f"[{label}] 4xx/5xx 0건 (실제 {len(bad)}: {bad[:2]})", not bad))
+            checks.append((f"[{label}] 요청 실패 0건 (실제 {len(ev['failed'])})", not ev["failed"]))
+            checks.append((f"[{label}] 요청 레이어가 필수 목록 안 (밖 {sorted(layers - set(REQUIRED_LAYERS))})", layers <= set(REQUIRED_LAYERS)))
+            checks.append((f"[{label}] 그림자/뒷 레이어(shade_*, *_back) 요청 없음 (실제 {sorted(layers & {'shade_top', 'shade_hair', 'shade_hat', 'hair_back', 'top_back', 'hat_back'})})",
+                           not (layers & {"shade_top", "shade_hair", "shade_hat", "hair_back", "top_back", "hat_back"})))
+            checks.append((f"[{label}] 이 조합의 필수 레이어 {len(exp)}장 전부 200 (누락 {sorted(exp - req)[:3]})", exp <= req))
+            checks.append((f"[{label}] 캐릭터 그리기 발생 (__qaSpriteCount {page.evaluate('() => window.__qaSpriteCount')}) 그리고 콘솔 error 0",
+                           page.evaluate("() => window.__qaSpriteCount") > 0 and not ev["err"]))
+            checks.append((f"[{label}] 대체 경고 1회 (실제 {len(warn_files)})", len(warn_files) == 1))
+        finally:
+            ctx.close()
+    # 깨진 PNG 1장: manifest는 정상. hair_front/pink-long.png 한 장만 손상 -> 그 레이어만 빠지고 콘솔 error 0, 경고 1회
+    ctx = new_ctx(browser)
+    ctx.add_init_script(RENDER_HOOK)
+    ctx.route("**/assets/avatar/hair_front/pink-long.png",
+              lambda r: r.fulfill(status=200, body=b"not-a-png", headers={"content-type": "image/png"}))
+    ev = {"resp": [], "failed": [], "warn": [], "err": []}
+    page = ctx.new_page()
+    col.attach(page, "BROKEN")
+    page.on("response", lambda r: ev["resp"].append((r.status, r.url)) if "/assets/" in r.url else None)
+    page.on("requestfailed", lambda r: ev["failed"].append(r.url) if "/assets/" in r.url else None)
+
+    def on_console_b(m):
+        if m.type == "warning":
+            ev["warn"].append(m.text)
+        elif m.type == "error":
+            ev["err"].append(m.text)
+
+    page.on("console", on_console_b)
+    try:
+        page.goto(f"{BASE}?as=brk")
+        wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10)
+        create_profile(page, "깨짐방", pick=PICK)
+        ui_create_room(page, "깨짐")
+        wait_sprite(page)
+        time.sleep(0.6)
+        bad = [(st_, u) for st_, u in ev["resp"] if st_ >= 400]
+        broken_warn = [w for w in ev["warn"] if "hair_front/pink-long.png" in w]
+        checks += [
+            (f"[깨진 PNG 1장] 캐릭터 그리기 발생 (__qaSpriteCount {page.evaluate('() => window.__qaSpriteCount')}), 나머지 레이어로 합성",
+             page.evaluate("() => window.__qaSpriteCount") > 0),
+            (f"[깨진 PNG 1장] 4xx/5xx 0건, 요청 실패 0건 (실제 {len(bad)} / {len(ev['failed'])})", not bad and not ev["failed"]),
+            (f"[깨진 PNG 1장] 콘솔 error 0건 (실제 {len(ev['err'])}: {ev['err'][:2]})", not ev["err"]),
+            (f"[깨진 PNG 1장] 경고 1회: 파츠 시트 불러오기 실패 hair_front/pink-long (실제 {len(broken_warn)})", len(broken_warn) == 1),
+        ]
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(33, "(b) 발 위치: 기준점(발 중앙)이 지면선 y=440에 놓이고, 발 아래 1~8단위는 잔디, 앞 가장자리는 8단위 이후, 흙/돌은 22단위 이후 (getState + 장치 좌표 + 화면 픽셀)")
+def t33(browser, col):
+    import io
+    import numpy as np
+    from PIL import Image
+
+    checks = []
+    for label, vw, vh, dsf, mob, _P in CONFIGS_ROOM:
+        ctx = new_ctx(browser, viewport={"width": vw, "height": vh}, device_scale_factor=dsf, is_mobile=mob, has_touch=mob)
+        ctx.add_init_script(RENDER_HOOK)
+        try:
+            page = open_as(ctx, col, label, "a")
+            create_profile(page, "발위치", pick=PICK)
+            ui_create_room(page, "발")
+            wait_sprite(page)
+            time.sleep(0.3)
+            st = state(page)
+            me = st["me"]
+            lay = st["assets"]["layout"]
+            sp = sprite_info(page)
+            page.evaluate(HIDE_ROOM_JS)
+            time.sleep(0.1)
+            png = page.get_by_test_id("game-canvas").screenshot()
+            # 왼쪽으로 조금 이동 -> 반전 시트. 기준점 x는 같은 규칙(round((x - camX) x k))을 따라야 한다.
+            x_pre, sp_pre, dir_pre = me["x"], sp, me["dir"]
+            hold_key(page, "ArrowLeft", 350)
+            time.sleep(0.4)
+            st2 = state(page)
+            x_flip, sp_flip, dir_flip = st2["me"]["x"], sprite_info(page), st2["me"]["dir"]
+        finally:
+            ctx.close()
+        P, dpr = lay["P"], dsf
+        k = (P / 2) * dpr  # 장치 px / 월드
+        s = k / 1.5  # 장치 px / 시트 px (밀도 1.5)
+        fy_dev = round((GROUND_Y - (WORLD_BOTTOM - lay["viewH"])) * k)  # 프런트 render(): 지면선 장치 y
+        anchor_dev = sp["dy"] + 180 * s  # 프레임 기준점(시트 y 180)의 장치 y
+        A = np.asarray(Image.open(io.BytesIO(png)).convert("RGB")).astype(int)
+        H, W, _ = A.shape
+        green = lambda px: (px[..., 1] > px[..., 0] + 8) & (px[..., 1] > px[..., 2] + 8)  # noqa: E731
+        cx = sp["dx"] + 72 * s  # 기준점 x (시트 x 72)
+        xs = sorted({int(round(cx + f * sp["dw"])) for f in (-0.45, -0.38, 0.38, 0.45)})
+        xs = [x for x in xs if 0 <= x < W]
+        # 발바닥 선 아래 행마다 녹색 비율 (xs: 발 좌우 0.38~0.45 dw, 그림자 타원 밖). 단위 = 월드(=CSS px at P2)
+        frac = {}
+        for d in range(1, int(60 * k) + 1):
+            y = fy_dev + d
+            if y >= H:
+                break
+            frac[d] = float(green(A[y][xs]).mean()) if xs else 0.0
+
+        def band(w0, w1):
+            ds = [d for d in frac if w0 * k <= d <= w1 * k]
+            return float(np.mean([frac[d] for d in ds])) if ds else float("nan")
+
+        edge = next((d for d in sorted(frac) if frac[d] < 0.5), None)  # 잔디 -> 흙 첫 행
+        edge_w = (edge / k) if edge is not None else float("nan")
+        g_grass = band(1, 8)
+        g_face = band(22, 26)
+        k_w = lay["viewW"]
+
+        def anchor_expect(xw):
+            # cameraFor 와 동일: camX 를 장치 px 격자에 맞춘 뒤 (x - camX) * k
+            cam = min(max(xw - k_w / 2, 0), max(0, WORLD_W - k_w))
+            cam = round(cam * k) / k
+            return (xw - cam) * k
+
+        def is_left(d):
+            return d in (-1, "left")
+
+        checks += [
+            (f"{label}: 오른쪽 보기 기준점 x 장치 {sp_pre['dx'] + 72 * s:.1f} = 기대 {anchor_expect(x_pre)} (x {x_pre:.0f}, 허용 1px)",
+             abs(sp_pre["dx"] + 72 * s - anchor_expect(x_pre)) <= 1),
+            (f"{label}: 왼쪽 보기(반전) 기준점 x 장치 {sp_flip['dx'] + 72 * s:.1f} = 기대 {anchor_expect(x_flip)} (dir {dir_flip}, x {x_flip:.0f}, 허용 1px)",
+             is_left(dir_flip) and not is_left(dir_pre) and abs(sp_flip["dx"] + 72 * s - anchor_expect(x_flip)) <= 1),
+            (f"{label}: 상태 me.y = {me['y']} (기대 440)", me["y"] == GROUND_Y),
+            (f"{label}: 기준점 장치 y {anchor_dev:.1f} = 지면선 장치 y {fy_dev} (차 {abs(anchor_dev - fy_dev):.1f}px, 허용 1px)",
+             abs(anchor_dev - fy_dev) <= 1),
+            (f"{label}: 발 아래 1~8단위 잔디(녹색) 비율 {g_grass:.2f} (기대 0.80 이상)", g_grass >= 0.8),
+            (f"{label}: 잔디 앞 가장자리 실측 발 아래 +{edge_w:.1f}단위 (기대 8 이상: 발이 앞 가장자리 안쪽 잔디 위)",
+             edge_w >= 8),
+            (f"{label}: 22~26단위 아래 흙/돌 앞면 녹색 비율 {g_face:.2f} (기대 0.20 이하)", g_face <= 0.2),
+        ]
+    return verdict(checks)
+
+
+@case(34, "(c) 프리셋 6종: 프런트 합성 시트 vs 아트 정답(assets/_src/voxel/out/truth/presetN.png) 근사 일치 (art check.py 허용치: 프리멀티 RGB 평균 <= 6.0, 알파 MAE <= 2.0)")
+def t34(browser, col):
+    import numpy as np
+    from PIL import Image
+
+    TOL_MEAN, TOL_ALPHA = 6.0, 2.0  # assets/_src/voxel/build.py TOL_MEAN / TOL_ALPHA
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        page = open_as(ctx, col, "C", "c")
+        wait_screen(page, "profile")
+        out = page.evaluate(COMPOSITE_JS, [pr["avatar"] for pr in MANIFEST["presets"]])
+    finally:
+        ctx.close()
+    for i, (pr, res) in enumerate(zip(MANIFEST["presets"], out)):
+        tag = f"preset{i + 1} {pr['label']}"
+        truth_path = ROOT / "assets/_src/voxel/out/truth" / f"preset{i + 1}.png"
+        if res is None or not truth_path.exists():
+            checks.append((f"{tag}: 프런트 합성 또는 정답 파일 없음", False))
+            continue
+        fe = np.frombuffer(base64.b64decode(res["b64"]), dtype=np.uint8).reshape(res["h"], res["w"], 4)
+        truth = np.asarray(Image.open(truth_path).convert("RGBA"))
+        if fe.shape != truth.shape:
+            checks.append((f"{tag}: 크기 다름 {fe.shape} / {truth.shape}", False))
+            continue
+        st = diff_stats(fe, truth)
+        opaque = int((fe[..., 3] > 8).sum())
+        checks.append((f"{tag}: 평균 {st['mean_abs_rgb']:.2f} (<= {TOL_MEAN}), p95 {st['p95']}, 알파 MAE {st['alpha_mae']:.2f} (<= {TOL_ALPHA}), 불투명 {opaque}px",
+                       st["mean_abs_rgb"] <= TOL_MEAN and st["alpha_mae"] <= TOL_ALPHA and opaque > 1000))
+        ht = res.get("headTop")
+        checks.append((f"{tag}: 머리 맨 위 headTop {ht:.1f} (키 약 월드 85~106; 문서 90~105 근사)",
+                       ht is not None and 85 <= ht <= 106))
+    return verdict(checks)
+
+
+CONFIGS_LAYOUT = CONFIGS_ROOM
+
+
+@case(35, "(d) 라벨/말풍선: 라벨은 발 아래(발바닥 선 +6), 말풍선 꼬리는 머리 위(머리 맨 위 + 4, 꼬리 -4 = 8px 간격), 라벨/말풍선끼리 겹침 없음, 캔버스 안 (P2/P3/모바일)")
+def t35(browser, col):
+    checks = []
+    for label, vw, vh, dsf, mob, _P in CONFIGS_LAYOUT:
+        ctx = new_ctx(browser, viewport={"width": vw, "height": vh}, device_scale_factor=dsf, is_mobile=mob, has_touch=mob)
+        ctx.add_init_script(RENDER_HOOK)
+        try:
+            a = open_as(ctx, col, label + " A", "a")
+            create_profile(a, "라벨가", pick=PICK)
+            ui_create_room(a, "라벨방")
+            b = open_as(ctx, col, label + " B", "b")
+            create_profile(b, "라벨나", pick={"hair": "pink-long"})
+            enter_from_lobby(b, "라벨방")
+            sep = spread(b, 130)
+            wait_sprite(a)
+            send_chat(a, "안녕하세요")
+            send_chat(b, "반가워요")
+            time.sleep(0.25)
+            st = state(a)
+            lay = st["assets"]["layout"]
+            u = lay["P"] / 2  # CSS px / 월드
+            fy = (GROUND_Y - (WORLD_BOTTOM - lay["viewH"])) * u  # 발바닥 선 (CSS px)
+            rec = fresh_text(a)
+            me = st["me"]
+            pb = next(p for p in st["players"] if p["nickname"] == "라벨나")
+            heads = a.evaluate(HEADTOP_JS, [me["avatar"], pb["avatar"]])
+            rects = []
+            for who, p, msg, head in (("A", me, "안녕하세요", heads[0]), ("B", pb, "반가워요", heads[1])):
+                lr = rec.get(p["nickname"])
+                br = rec.get(msg)
+                if lr is None or br is None:
+                    checks.append((f"{label} {who}: 라벨/말풍선 텍스트 기록 없음", False))
+                    continue
+                ltop = lr["y"] - 4  # 라벨 박스 위 = 텍스트 y - (textTop 2 + (lineH-font)/2 2)
+                lw = max(24, even(math.ceil(lr["w"]) + 12))
+                lrect = (lr["x"] - lw / 2, ltop, lr["x"] + lw / 2, ltop + 20)
+                bx, by = br["x"] - 10, br["y"] - 8  # 말풍선 박스 = 텍스트 x - padX(10), 텍스트 y - padTop(6) - 2
+                bw = min(200, max(40, even(math.ceil(br["w"]) + 20)))
+                bh = 18 + 6 + 8
+                ty = by + bh + 8  # 꼬리 끝 = 박스 아래 + tailH 8
+                brect = (bx, by, bx + bw, by + bh)
+                gap = (fy - head * u) - ty  # 머리 맨 위 ~ 꼬리 끝 (CSS px)
+                exp_gap = 4 * u + 4  # HEAD.gap(4) x u + tipGap(4)
+                rects += [(f"{who} 라벨", lrect), (f"{who} 말풍선", brect)]
+                checks += [
+                    (f"{label} {who}: 라벨 위 {ltop:.1f} = 발바닥 선 {fy:.1f}+6 (기대 {round(fy) + 6}, 허용 1px)",
+                     abs(ltop - (round(fy) + 6)) <= 1.5),
+                    (f"{label} {who}: 말풍선 꼬리 간격 {gap:.1f}px (머리 맨 위 {head:.1f}w, 기대 {exp_gap:.1f} +-1.5px)",
+                     abs(gap - exp_gap) <= 1.5),
+                    (f"{label} {who}: 말풍선 캔버스 안 (x {bx:.0f}..{bx + bw:.0f} / 폭 {lay['cssW']}, y {by:.0f} >= 0)",
+                     bx >= -0.5 and bx + bw <= lay["cssW"] + 0.5 and by >= 0),
+                ]
+            overl = []
+            for i in range(len(rects)):
+                for j in range(i + 1, len(rects)):
+                    (n1, r1), (n2, r2) = rects[i], rects[j]
+                    if min(r1[2], r2[2]) - max(r1[0], r2[0]) > 0 and min(r1[3], r2[3]) - max(r1[1], r2[1]) > 0:
+                        overl.append(f"{n1}~{n2}")
+            checks.append((f"{label}: 라벨/말풍선 사이 겹침 0건 (실제 {overl or '없음'}; 발 간격 {'확보' if sep else '미확보'})", not overl and sep))
+        finally:
+            ctx.close()
+    return verdict(checks)
+
+
+@case(36, "(e) 로딩 성능: 콜드 = 새 페이지 + HTTP 캐시 끔 (열기 -> 로비 -> 방 입장 -> 첫 캐릭터 프레임), 웜 = 같은 페이지 재입장. 실패 기준: 15초 초과 또는 전송 10MB 초과")
+def t36(browser, col):
+    checks = []
+    ctx = new_ctx(browser)  # 같은 컨텍스트 = 같은 localStorage 서버 (방/프로필 공유)
+    ctx.add_init_script(RENDER_HOOK)
+    try:
+        h = open_as(ctx, col, "H", "h")
+        create_profile(h, "성능호스트", pick=PICK)
+        ui_create_room(h, "성능방")
+        w = open_as(ctx, col, "W", "p")  # 프로필 준비용 페이지 (닫는다)
+        create_profile(w, "성능나", pick=PICK)
+        w.close()
+        # 콜드: 새 페이지를 HTTP 캐시 끈 상태로 연다 (CDP Network.setCacheDisabled). 프로필은 저장돼 있다.
+        p = ctx.new_page()
+        col.attach(p, "P")
+        cdp = ctx.new_cdp_session(p)
+        cdp.send("Network.enable")
+        cdp.send("Network.setCacheDisabled", {"cacheDisabled": True})
+        p.goto(f"{BASE}?as=p")
+        wait_until(lambda: sc(p) in ("profile", "lobby", "room"), 10)
+        lobby_ready(p)
+        rid = wait_row(p, "성능방")
+        p.evaluate("() => { window.__qaT0 = performance.now(); }")
+        row_locator(p, rid).get_by_test_id("room-enter").click()
+        wait_screen(p, "room", 20)
+        wait_conn(p, timeout=20)
+        wait_until(lambda: p.evaluate("() => window.__qaFirstSprite") is not None, 20)
+        t = p.evaluate("() => ({ t0: window.__qaT0, fs: window.__qaFirstSprite, fd: window.__qaFirstDraw })")
+        cold_nav = t["fs"] / 1000  # performance.now()는 문서 시작 기준 -> 열기부터 첫 캐릭터 프레임까지
+        cold_click = (t["fs"] - t["t0"]) / 1000  # 입장 클릭부터
+        cold_first_draw = (t["fd"] - t["t0"]) / 1000
+        cold_bytes = asset_bytes(p)
+        leave_room(p)
+        p.evaluate("() => { window.__qaFirstSprite = null; window.__qaT0 = performance.now(); }")
+        row_locator(p, rid).get_by_test_id("room-enter").click()
+        wait_screen(p, "room", 20)
+        wait_conn(p, timeout=20)
+        wait_until(lambda: p.evaluate("() => window.__qaFirstSprite") is not None, 20)
+        t2 = p.evaluate("() => ({ t0: window.__qaT0, fs: window.__qaFirstSprite })")
+        warm_click = (t2["fs"] - t2["t0"]) / 1000
+        mb = cold_bytes["bytes"] / 1048576
+        checks += [
+            (f"콜드 열기 -> 첫 캐릭터 프레임 {cold_nav:.2f}s (열기, 로비, 입장 포함; 기준 15s 이하)", cold_nav <= 15),
+            (f"콜드 입장 클릭 -> 첫 캐릭터 프레임 {cold_click:.2f}s (첫 맵/이미지 그리기 {cold_first_draw:.2f}s; 기준 15s 이하)", cold_click <= 15),
+            (f"콜드 자산 전송 {mb:.2f}MB, 요청 {cold_bytes['n']}건 (PNG {cold_bytes['png']}건; 기준 10MB 이하)", cold_bytes["bytes"] <= 10 * 1048576),
+            (f"웜 재입장 클릭 -> 첫 캐릭터 프레임 {warm_click:.2f}s (참고; 기준 15s 이하)", warm_click <= 15),
+        ]
     finally:
         ctx.close()
     return verdict(checks)
@@ -1877,52 +2394,71 @@ def static_client():
 # 스크린샷 (--shots): 로비 3~4개 방(공개/잠금/가득 참), 방 3명 이상 + 말풍선 + 로그
 # ---------------------------------------------------------------------------
 def build_scene(browser, out_dir, prefix, viewport, mobile, dsf):
+    """--shots: 로비(방 4개 이상)와 방 화면(4명, 서로 다른 프리셋, 말풍선, 채팅 로그)을 찍는다."""
     ctx = browser.new_context(viewport=viewport, is_mobile=mobile, has_touch=mobile, device_scale_factor=dsf)
     col = Collector()
-    ctx.add_init_script(FILLTEXT_HOOK)
+    ctx.add_init_script(RENDER_HOOK)
     a = open_as(ctx, col, "A", "a")
     create_profile(a, "버섯친구", pick=PICK)
-    rid_pub = ui_create_room(a, "버섯 공개방")
-    b = open_as(ctx, col, "B", "b")
-    create_profile(b, "분홍소녀", pick={"hair": "pink-long"})
-    enter_from_lobby(b, "버섯 공개방")
-    c = open_as(ctx, col, "C", "c")
-    create_profile(c, "버섯꼬마", pick={"hat": "mushroom-red"})
-    enter_from_lobby(c, "버섯 공개방")
+    ui_create_room(a, "버섯 공개방")
     adapter(a, "createRoom", {"name": "비밀 정원", "password": "garden12", "nickname": "버섯친구"})
     full = adapter(a, "createRoom", {"name": "하늘 마법 학교", "password": None, "nickname": "버섯친구"})
     inject_fakes(a, full["value"]["roomId"], 19, "ss")  # 방장 1 + 가짜 19 = 20명 (가득 참)
+    b = open_as(ctx, col, "B", "b")
+    create_profile(b, "분홍소녀", pick={"hair": "pink-long", "top": "blouse-white", "bottom": "skirt-pink", "shoes": "maryjane-red"})
+    enter_from_lobby(b, "버섯 공개방")
+    c = open_as(ctx, col, "C", "c")
+    create_profile(c, "버섯꼬마", pick={"hat": "mushroom-red", "top": "overalls-green", "bottom": "jeans-blue", "shoes": "boots-brown"})
+    enter_from_lobby(c, "버섯 공개방")
     d = open_as(ctx, col, "D", "d")
-    create_profile(d, "하늘마법")
+    create_profile(d, "하늘마법", pick=MANIFEST["presets"][4]["avatar"])
     lobby_ready(d)
-    time.sleep(0.5)
     wait_until(lambda: len(rooms_of(d)) >= 3, 6)
     d.get_by_test_id("room-refresh").click()
     time.sleep(1.2)
     d.screenshot(path=str(out_dir / f"lobby-{prefix}.png"))
-    # 방 화면
+    enter_from_lobby(d, "버섯 공개방")
+    # 위치를 떨어뜨린다 (스폰은 300~900 무작위). 라벨이 겹치지 않도록 다른 사람과 130 이상 간격.
+    for pg in (b, c, d):
+        spread(pg, 130)
     send_chat(b, "안녕하세요! 반가워요 :)")
     send_chat(c, "같이 놀아요")
     send_chat(a, "어서 와요")
-    time.sleep(0.5)
+    send_chat(d, "여기 좋다!")
+    time.sleep(0.4)
     if mobile:
         a.get_by_test_id("log-toggle").click()
-    time.sleep(0.4)
+    time.sleep(0.3)
     a.screenshot(path=str(out_dir / f"room-{prefix}.png"))
     ctx.close()
-    return ctx
+
+
+def profile_shot(browser, out: Path):
+    """꾸미기 화면 (1280x800): 프리셋 하나를 골라 파츠 탭과 미리보기가 보이는 상태."""
+    ctx = browser.new_context(viewport={"width": 1280, "height": 800})
+    col = Collector()
+    page = open_as(ctx, col, "P", "pf")
+    wait_screen(page, "profile")
+    for p, v in MANIFEST["presets"][2]["avatar"].items():
+        pick_slot(page, p, v)
+    page.get_by_test_id("nickname-input").fill("모자소년")
+    time.sleep(0.8)
+    page.screenshot(path=str(out / "profile-desktop.png"))
+    ctx.close()
 
 
 def capture(browser, out: Path):
     out.mkdir(parents=True, exist_ok=True)
     build_scene(browser, out, "desktop", {"width": 1280, "height": 800}, False, 1)
     build_scene(browser, out, "mobile", {"width": 360, "height": 640}, True, 2)
+    profile_shot(browser, out)
     print(f"스크린샷 저장: {out}")
     for f in sorted(out.glob("*.png")):
         print("  ", f)
 
 
 # ---------------------------------------------------------------------------
+
 def print_result(num, title, status, detail, checks):
     print(f"[{status}] {num}. {title}  ({detail})", flush=True)
     for name, ok in checks or []:

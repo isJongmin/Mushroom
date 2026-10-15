@@ -1,17 +1,22 @@
-// 아바타 렌더러 (ARCHITECTURE "블록 아트 계약", 사이클 3).
+// 아바타 렌더러 (ARCHITECTURE "복셀 아트 계약", 사이클 5).
 // 파이프라인:
-//   1. 합성: manifest layerOrder(hair_back → skin → face → bottom → shoes → top → hair_front → hat) 순서로
-//      레이어 PNG 시트(48x64 x 7프레임 = 336x64)를 한 장에 겹친다. hat "none"과 불러오지 못한 레이어는 뺀다.
-//   2. 외곽선: 합성 결과의 투명 픽셀 중 4방향 이웃(아래, 왼쪽, 오른쪽, 위 순)에 불투명 픽셀이 있으면
-//      그 이웃 색을 outline.json 으로 바꾼 색(없으면 RGB x0.45)으로 칠한다. 이웃은 같은 프레임 안에서만 본다.
-//   3. 반전: 왼쪽 보기용으로 프레임마다 좌우 반전한 시트를 만든다(외곽선까지 끝난 결과를 뒤집는다).
-//   외형 조합(7개 id)마다 1회 계산해 LRU 캐시에 둔다. 썸네일(생성 화면)은 같은 1~2단계를 front 프레임 하나에만 한다.
-// 그리기는 아트 해상도 컨텍스트(1px = 아트 1px, 스무딩 끔)에 한다. 확대는 호출 쪽이 정수 배율로 한다.
-import { PAL, PART_KEYS, LAYER_PART, HAT_NONE } from './constants.js';
+//   1. 지연 로드: 조합(7개 id)이 처음 필요할 때 manifest layerOrder의 레이어 중 파일이 있는 것만
+//      assets.getLayer로 받는다(파일 존재는 assets.hasLayer, 404 없음). 실패한 레이어는 빼고 합성한다.
+//   2. 합성: 조합 전용 투명 오프스크린(1152x192 = 8프레임)에 layerOrder 순서로 시트를 통째로 그린다.
+//      entry.blend = 'source-over' | 'source-atop'(shade_* 그림자: 지금까지 그린 픽셀에만 덮임).
+//      기준 구현은 assets/_src/voxel/build.py composite() (프런트 결과와 픽셀 비교, handoff 참고).
+//   3. 반전(왼쪽 보기): 프레임마다 좌우 반전한 시트를 처음 필요할 때 만든다(프레임 중심 x = 기준점 x).
+//   4. 머리 위 높이: idle 프레임의 맨 위 불투명 행 → 기준점에서 월드 몇 단위 위인지(headTop, 말풍선 위치).
+//   외형 조합마다 1회 계산해 LRU 캐시에 둔다. 썸네일은 front 프레임 하나에 지정 파츠만 합성한다(별도 LRU).
+// 그리기: 호출 쪽 컨텍스트(백킹 해상도)에 고품질 스무딩으로 바로 그린다. 크기 = 시트 px / density x 배율.
+// 외곽선 없음 (이전 1px 실루엣 외곽선과 outline.json은 폐기).
+import { PAL, PART_KEYS, HEAD } from './constants.js';
 
-const SHEET_CACHE_MAX = 64;
-const THUMB_CACHE_MAX = 256;
-const DARKEN = 0.45;
+// 1152x192 RGBA ≈ 0.88MB. 반전 시트까지 최대 약 1.8MB/조합. 방 최대 20명 + 프로필/로비 미리보기 여유.
+const SHEET_CACHE_MAX = 48;
+// 썸네일 캔버스는 프레임 1장(144x192 ≈ 0.1MB). 슬롯 최대 8 x 탭 7 + 프리셋 6 + 로비 1.
+const THUMB_CACHE_MAX = 72;
+const ALPHA_TOP = 8; // 머리 위 높이 계산 때 불투명으로 보는 알파
 
 export function makeCanvas(w, h) {
   if (typeof OffscreenCanvas !== 'undefined') return new OffscreenCanvas(w, h);
@@ -21,198 +26,235 @@ export function makeCanvas(w, h) {
   return c;
 }
 
-function ctx2d(cv, readback) {
-  const c = cv.getContext('2d', readback ? { willReadFrequently: true } : undefined);
-  c.imageSmoothingEnabled = false;
-  return c;
+/** 고품질 스무딩 설정 (복셀 계약: imageSmoothingEnabled = true, quality 'high') */
+export function smooth(ctx) {
+  ctx.imageSmoothingEnabled = true;
+  ctx.imageSmoothingQuality = 'high';
+  return ctx;
 }
 
-/**
- * 합성 결과에 바깥 실루엣 1px 외곽선을 그린다 (제자리 수정).
- * @param cv 프레임을 가로로 이어 붙인 캔버스 (프레임 폭 fw)
- * @param outline Map<0xRRGGBB, [r,g,b]>
- */
-export function applySilhouetteOutline(cv, fw, outline) {
-  const W = cv.width;
-  const H = cv.height;
-  const c = ctx2d(cv, true);
-  const img = c.getImageData(0, 0, W, H);
-  const src = img.data;
-  const dst = new Uint8ClampedArray(src); // 원본(src)만 보고 판단한다 (새로 칠한 외곽선은 이웃으로 보지 않음)
-  const frames = Math.floor(W / fw);
-  const DIRS = [[0, 1], [-1, 0], [1, 0], [0, -1]]; // 아래, 왼쪽, 오른쪽, 위
-  for (let f = 0; f < frames; f++) {
-    const x0 = f * fw;
-    for (let y = 0; y < H; y++) {
-      for (let x = 0; x < fw; x++) {
-        const i = (y * W + x0 + x) * 4;
-        if (src[i + 3] !== 0) continue;
-        for (const [dx, dy] of DIRS) {
-          const nx = x + dx;
-          const ny = y + dy;
-          if (nx < 0 || nx >= fw || ny < 0 || ny >= H) continue;
-          const j = (ny * W + x0 + nx) * 4;
-          if (src[j + 3] === 0) continue;
-          const key = (src[j] << 16) | (src[j + 1] << 8) | src[j + 2];
-          const line = outline.get(key);
-          if (line) {
-            dst[i] = line[0]; dst[i + 1] = line[1]; dst[i + 2] = line[2];
-          } else {
-            dst[i] = Math.floor(src[j] * DARKEN); dst[i + 1] = Math.floor(src[j + 1] * DARKEN); dst[i + 2] = Math.floor(src[j + 2] * DARKEN);
-          }
-          dst[i + 3] = 255;
-          break;
-        }
-      }
-    }
-  }
-  img.data.set(dst);
-  c.putImageData(img, 0, 0);
-}
-
-// ---------------------------------------------------------------------------
-// 대체 아바타: 매니페스트가 아예 없을 때만 쓰는 단순 블록 인형 (프레임 48x64, 기준점 24,60 기준)
-
-function drawFallbackFrame(c, fi, frameNames) {
-  const name = frameNames[fi] || 'side_idle';
-  const walk = /^side_walk(\d)$/.exec(name);
-  const step = walk ? [2, 0, -2, 0][Number(walk[1]) % 4] : 0;
-  c.fillStyle = PAL.u4; // 다리
-  c.fillRect(19 - step, 48, 4, 12);
-  c.fillRect(25 + step, 48, 4, 12);
-  c.fillStyle = PAL.hb2; // 몸통
-  c.fillRect(17, 34, 14, 15);
-  c.fillStyle = PAL.s1; // 머리
-  c.fillRect(14, 14, 20, 20);
-  c.fillStyle = PAL.hb2; // 머리카락
-  c.fillRect(13, 10, 22, 6);
-  if (name !== 'back') {
-    c.fillStyle = PAL.ink;
-    const ex = name === 'front' ? 19 : 25;
-    c.fillRect(ex, 23, 2, 3);
-    c.fillRect(ex + 7, 23, 2, 3);
-  } else {
-    c.fillStyle = PAL.hb2;
-    c.fillRect(14, 16, 20, 12);
-  }
-}
-
-// ---------------------------------------------------------------------------
-
-/** 아바타의 레이어 목록 [[layer, id], ...] (layerOrder 순서). onlyParts가 있으면 그 파츠만. */
+/** 아바타의 레이어 목록 [{layer, part, blend, id}] (layerOrder 순서, 파일이 있는 것만). onlyParts가 있으면 그 파츠만. */
 export function layersOf(assets, avatar, onlyParts) {
   const out = [];
-  for (const layer of assets.layerOrder) {
-    const part = LAYER_PART[layer];
-    if (onlyParts && !onlyParts.includes(part)) continue;
-    const id = avatar[part];
-    if (typeof id !== 'string' || (part === 'hat' && id === HAT_NONE)) continue;
-    out.push([layer, id]);
+  for (const e of assets.layerOrder) {
+    if (onlyParts && !onlyParts.includes(e.part)) continue;
+    const id = avatar[e.part];
+    if (!assets.hasLayer(e.layer, id)) continue;
+    out.push({ layer: e.layer, part: e.part, blend: e.blend, id });
   }
   return out;
 }
 
-export function createAvatarRenderer(assets) {
+/**
+ * @param assets loadAvatarAssets() 결과
+ * @param opts.onUpdate 합성이 끝날 때마다(여러 개는 한 번으로 묶어) 부른다. 화면이 다시 그리는 용도.
+ */
+export function createAvatarRenderer(assets, opts = {}) {
   const fw = assets.frame.w;
   const fh = assets.frame.h;
   const ax = assets.anchor.x;
   const ay = assets.anchor.y;
+  const density = assets.density;
   const frameCount = assets.frameCount;
   const anims = assets.animations;
-  const sheetCache = new Map(); // key -> { normal, flipped }
-  const thumbCache = new Map(); // key -> canvas (fw x fh, front 프레임 1장)
+  const idleFrame = (anims.idle && anims.idle.frames[0]) || 0;
+  const sheetCache = new Map(); // key -> entry { state: 'loading'|'ready', normal, flipped, headTop }
+  const thumbCache = new Map(); // key -> entry { state, canvas }
+  let gen = 0; // clear() 이후 끝난 합성은 버린다
+  let onUpdate = typeof opts.onUpdate === 'function' ? opts.onUpdate : null;
+  let notifyQueued = false;
+  const stats = { composites: 0, totalMs: 0, maxMs: 0, lastMs: 0 };
 
-  const lru = (map, max, key, make) => {
-    let v = map.get(key);
-    if (v) { map.delete(key); map.set(key, v); return v; }
-    v = make();
-    map.set(key, v);
-    if (map.size > max) map.delete(map.keys().next().value);
+  function notify() {
+    if (notifyQueued || !onUpdate) return;
+    notifyQueued = true;
+    queueMicrotask(() => { notifyQueued = false; if (onUpdate) onUpdate(); });
+  }
+
+  const touch = (map, key) => {
+    const v = map.get(key);
+    if (v) { map.delete(key); map.set(key, v); }
     return v;
   };
+  const evict = (map, max) => {
+    while (map.size > max) map.delete(map.keys().next().value);
+  };
 
-  /** layers를 frames(프레임 번호 배열) 위치에 합성 + 외곽선 */
-  function composeLayers(layers, frames) {
+  /** 레이어를 frames 위치(프레임 번호 배열)에 합성. 레이어 받기가 끝나야 resolve. */
+  async function compose(layers, frames) {
+    const imgs = await Promise.all(layers.map((l) => assets.getLayer(l.layer, l.id)));
+    const t0 = performance.now();
+    const all = frames.length === frameCount && frames.every((f, i) => f === i);
     const cv = makeCanvas(fw * frames.length, fh);
-    const c = ctx2d(cv, true);
-    if (assets.source === 'fallback') {
-      frames.forEach((f, k) => {
-        c.save();
-        c.translate(k * fw, 0);
-        drawFallbackFrame(c, f, assets.frameNames);
-        c.restore();
-      });
-    } else {
-      for (const [layer, id] of layers) {
-        const img = assets.images.get(`${layer}/${id}`);
-        if (!img) continue; // 실패한 레이어는 빼고 그린다
+    const c = cv.getContext('2d');
+    c.imageSmoothingEnabled = false; // 1:1 복사
+    for (let i = 0; i < layers.length; i++) {
+      const img = imgs[i];
+      if (!img) continue; // 받지 못한 레이어는 빼고 그린다
+      c.globalCompositeOperation = layers[i].blend;
+      if (all && img.naturalWidth >= fw * frameCount) {
+        c.drawImage(img, 0, 0, fw * frameCount, fh, 0, 0, fw * frameCount, fh);
+      } else {
         const have = Math.max(1, Math.floor(img.naturalWidth / fw));
         frames.forEach((f, k) => c.drawImage(img, (f % have) * fw, 0, fw, fh, k * fw, 0, fw, fh));
       }
+      c.globalCompositeOperation = 'source-over';
     }
-    applySilhouetteOutline(cv, fw, assets.outline);
-    return cv;
+    return { cv, ms: performance.now() - t0 };
   }
 
-  function buildSheets(avatar) {
-    const all = Array.from({ length: frameCount }, (_, i) => i);
-    const normal = composeLayers(layersOf(assets, avatar), all);
+  function headTopOf(cv) {
+    try {
+      const c = cv.getContext('2d');
+      const data = c.getImageData(idleFrame * fw, 0, fw, fh).data;
+      for (let y = 0; y < fh; y++) {
+        for (let x = 0; x < fw; x++) if (data[(y * fw + x) * 4 + 3] > ALPHA_TOP) return (ay - y) / density;
+      }
+    } catch { /* 읽기 실패: 기본값 */ }
+    return HEAD.fallback;
+  }
+
+  function flipSheet(normal) {
     const flipped = makeCanvas(normal.width, fh);
-    const fc = ctx2d(flipped);
+    const c = flipped.getContext('2d');
+    c.imageSmoothingEnabled = false;
     for (let f = 0; f < frameCount; f++) {
-      fc.save();
-      fc.translate((f + 1) * fw, 0);
-      fc.scale(-1, 1);
-      fc.drawImage(normal, f * fw, 0, fw, fh, 0, 0, fw, fh);
-      fc.restore();
+      c.setTransform(-1, 0, 0, 1, (f + 1) * fw, 0);
+      c.drawImage(normal, f * fw, 0, fw, fh, 0, 0, fw, fh);
     }
-    return { normal, flipped };
+    c.setTransform(1, 0, 0, 1, 0, 0);
+    return flipped;
   }
 
   const keyOf = (avatar) => PART_KEYS.map((p) => avatar[p]).join('|');
 
-  function sheets(avatar) {
-    return lru(sheetCache, SHEET_CACHE_MAX, keyOf(avatar), () => buildSheets(avatar));
+  /** 조합 시트 엔트리 (없으면 합성 시작) */
+  function request(avatar) {
+    const key = keyOf(avatar);
+    let e = touch(sheetCache, key);
+    if (e) return e;
+    e = { state: 'loading', normal: null, flipped: null, headTop: HEAD.fallback, promise: null };
+    sheetCache.set(key, e);
+    evict(sheetCache, SHEET_CACHE_MAX);
+    if (assets.source !== 'manifest') {
+      e.state = 'ready';
+      e.promise = Promise.resolve(e);
+      return e;
+    }
+    const g = gen;
+    const all = Array.from({ length: frameCount }, (_, i) => i);
+    e.promise = compose(layersOf(assets, avatar), all).then(({ cv, ms }) => {
+      if (g !== gen) return e;
+      e.normal = cv;
+      e.headTop = headTopOf(cv);
+      e.state = 'ready';
+      stats.composites++;
+      stats.totalMs += ms;
+      stats.lastMs = ms;
+      stats.maxMs = Math.max(stats.maxMs, ms);
+      notify();
+      return e;
+    }, () => {
+      e.state = 'ready'; // 그릴 것 없음
+      return e;
+    });
+    return e;
+  }
+
+  // 매니페스트가 아예 없을 때만 쓰는 단순 인형 (월드 단위, 기준점 원점)
+  function drawFallback(ctx, frame, k) {
+    const name = assets.frameNames[frame] || 'side';
+    const walk = /^walk(\d)$/.exec(name);
+    const step = walk ? [4, 0, -4, 0][Number(walk[1]) % 4] : 0;
+    const r = (col, x, y, w, h) => { ctx.fillStyle = col; ctx.fillRect(x * k, y * k, w * k, h * k); };
+    r(PAL.u4, -10 - step, -24, 8, 24);
+    r(PAL.u4, 2 + step, -24, 8, 24);
+    r(PAL.hb2, -14, -50, 28, 28);
+    r(PAL.s1, -22, -92, 44, 42);
+    r(PAL.hb2, -24, -98, 48, 12);
   }
 
   return {
     frameW: fw,
     frameH: fh,
-    anchorX: ax,
-    anchorY: ay,
+    density,
+    /** 프레임 크기(월드 단위) */
+    worldW: fw / density,
+    worldH: fh / density,
     frameIndex: assets.frameIndex,
+    stats,
     /** 애니메이션 이름과 경과 시간(ms)으로 시트 프레임 번호를 고른다. */
     frameAt(anim, elapsedMs) {
       const a = anims[anim] || anims.idle;
       const i = Math.floor(Math.max(0, elapsedMs) / a.ms) % a.frames.length;
       return a.frames[i];
     },
-    /** 미리 합성해 둔다(첫 그리기 끊김 방지). */
-    warm(avatar) {
-      sheets(avatar);
+    /** 합성을 미리 시작한다. 합성이 끝나면 resolve (실패해도 resolve). */
+    ready(avatar) {
+      return request(avatar).promise;
+    },
+    isReady(avatar) {
+      const e = sheetCache.get(keyOf(avatar));
+      return !!e && e.state === 'ready';
+    },
+    /** 머리(모자 포함) 맨 위가 기준점에서 몇 월드 단위 위인지. 합성 전이면 기본값. */
+    headTop(avatar) {
+      const e = sheetCache.get(keyOf(avatar));
+      return e && e.state === 'ready' ? e.headTop : HEAD.fallback;
     },
     /**
-     * 아트 해상도 컨텍스트에 그린다.
-     * @param x,y 기준점(두 발 사이 바닥 중앙)의 아트 px 정수 좌표
+     * 기준점(발 중앙 바닥)을 (x, y)에 두고 그린다. 좌표 단위는 ctx의 현재 단위, k = 그 단위 / 월드 1단위.
+     * 합성이 아직이면 합성을 시작하고 false (그리지 않음).
      * @param facingLeft true면 반전 시트 (기준점 x 기준 좌우 반전)
      */
-    draw(ctx, avatar, x, y, frame, facingLeft) {
-      const s = sheets(avatar);
+    draw(ctx, avatar, x, y, k, frame, facingLeft) {
+      const e = request(avatar);
+      if (e.state !== 'ready') return false;
       const f = Math.min(frameCount - 1, Math.max(0, frame | 0));
-      const left = facingLeft ? x - (fw - ax) : x - ax;
-      ctx.drawImage(facingLeft ? s.flipped : s.normal, f * fw, 0, fw, fh, left, y - ay, fw, fh);
+      if (assets.source !== 'manifest') {
+        ctx.save();
+        ctx.translate(x, y);
+        if (facingLeft) ctx.scale(-1, 1);
+        drawFallback(ctx, f, k);
+        ctx.restore();
+        return true;
+      }
+      if (!e.normal) return false;
+      if (facingLeft && !e.flipped) e.flipped = flipSheet(e.normal);
+      const s = k / density; // ctx 단위 / 시트 px
+      const ox = facingLeft ? fw - ax : ax; // 반전 시트에서 기준점 x
+      smooth(ctx);
+      ctx.drawImage(facingLeft ? e.flipped : e.normal, f * fw, 0, fw, fh, x - ox * s, y - ay * s, fw * s, fh * s);
+      return true;
     },
     /**
-     * 썸네일용: front 프레임에 지정 파츠 레이어만 합성 + 외곽선한 fw x fh 캔버스 (캐시).
-     * @param avatar 7개 키 아바타
-     * @param onlyParts 합성할 파츠 목록 (style-guide 5.12 표)
+     * 썸네일용: front 프레임에 지정 파츠 레이어만 합성한 fw x fh 캔버스 (캐시). 아직이면 합성을 시작하고 null.
+     * @param onlyParts 합성할 파츠 목록
      */
-    thumb(avatar, onlyParts) {
+    thumb(avatar, onlyParts, frame = assets.frameIndex.front) {
       const layers = layersOf(assets, avatar, onlyParts);
-      const key = `${assets.frameIndex.front}:${layers.map((l) => l.join('/')).join('|')}`;
-      return lru(thumbCache, THUMB_CACHE_MAX, key, () => composeLayers(layers, [assets.frameIndex.front]));
+      const key = `${frame}:${layers.map((l) => `${l.layer}/${l.id}`).join('|')}`;
+      let e = touch(thumbCache, key);
+      if (!e) {
+        e = { state: 'loading', canvas: null };
+        thumbCache.set(key, e);
+        evict(thumbCache, THUMB_CACHE_MAX);
+        const g = gen;
+        compose(layers, [frame]).then(({ cv }) => {
+          if (g !== gen) return;
+          e.canvas = cv;
+          e.state = 'ready';
+          notify();
+        }, () => { e.state = 'ready'; });
+      }
+      return e.canvas;
+    },
+    setOnUpdate(fn) {
+      onUpdate = typeof fn === 'function' ? fn : null;
     },
     clear() {
+      gen++;
+      onUpdate = null;
       sheetCache.clear();
       thumbCache.clear();
     },

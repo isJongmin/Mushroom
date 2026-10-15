@@ -1,48 +1,113 @@
 {
   "frame": {
-    "w": 48,
-    "h": 64
+    "w": 144,
+    "h": 192
   },
   "anchor": {
-    "x": 24,
-    "y": 60
+    "x": 72,
+    "y": 180
   },
-  "scale": 2,
+  "density": 1.5,
   "frames": [
     "front",
-    "side_idle",
-    "side_walk0",
-    "side_walk1",
-    "side_walk2",
-    "side_walk3",
+    "front_b",
+    "side",
+    "walk0",
+    "walk1",
+    "walk2",
+    "walk3",
     "back"
   ],
   "animations": {
-    "idle": {
+    "idle_front": {
       "frames": [
+        0,
         1
       ],
-      "ms": 500
+      "ms": 600
+    },
+    "idle": {
+      "frames": [
+        2
+      ],
+      "ms": 600
     },
     "walk": {
       "frames": [
-        2,
         3,
         4,
-        5
+        5,
+        6
       ],
       "ms": 150
     }
   },
   "layerOrder": [
-    "hair_back",
-    "skin",
-    "face",
-    "bottom",
-    "shoes",
-    "top",
-    "hair_front",
-    "hat"
+    {
+      "layer": "hair_back",
+      "part": "hair",
+      "blend": "source-over"
+    },
+    {
+      "layer": "top_back",
+      "part": "top",
+      "blend": "source-over"
+    },
+    {
+      "layer": "skin",
+      "part": "skin",
+      "blend": "source-over"
+    },
+    {
+      "layer": "face",
+      "part": "face",
+      "blend": "source-over"
+    },
+    {
+      "layer": "bottom",
+      "part": "bottom",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shoes",
+      "part": "shoes",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shade_top",
+      "part": "top",
+      "blend": "source-atop"
+    },
+    {
+      "layer": "top",
+      "part": "top",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shade_hair",
+      "part": "hair",
+      "blend": "source-atop"
+    },
+    {
+      "layer": "hat_back",
+      "part": "hat",
+      "blend": "source-over"
+    },
+    {
+      "layer": "hair_front",
+      "part": "hair",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shade_hat",
+      "part": "hat",
+      "blend": "source-atop"
+    },
+    {
+      "layer": "hat",
+      "part": "hat",
+      "blend": "source-over"
+    }
   ],
   "parts": {
     "skin": [
@@ -57,6 +122,24 @@
       {
         "id": "dark",
         "label": "진한 피부"
+      }
+    ],
+    "face": [
+      {
+        "id": "basic",
+        "label": "기본"
+      },
+      {
+        "id": "smile",
+        "label": "웃음"
+      },
+      {
+        "id": "wink",
+        "label": "윙크"
+      },
+      {
+        "id": "sleepy",
+        "label": "졸린 눈"
       }
     ],
     "hair": [
@@ -91,24 +174,6 @@
       {
         "id": "mint-curly",
         "label": "민트 곱슬"
-      }
-    ],
-    "face": [
-      {
-        "id": "basic",
-        "label": "기본"
-      },
-      {
-        "id": "smile",
-        "label": "웃음"
-      },
-      {
-        "id": "wink",
-        "label": "윙크"
-      },
-      {
-        "id": "sleepy",
-        "label": "졸린 눈"
       }
     ],
     "top": [
@@ -277,5 +342,98 @@
         "hat": "explorer-brown"
       }
     }
-  ]
+  ],
+  "files": {
+    "hair_back": [
+      "black-twintail",
+      "pink-long"
+    ],
+    "top_back": [
+      "blouse-white",
+      "cape-blue",
+      "hoodie-black",
+      "hoodie-white",
+      "overalls-green",
+      "tee-stripe-red"
+    ],
+    "skin": [
+      "dark",
+      "light",
+      "medium"
+    ],
+    "face": [
+      "basic",
+      "sleepy",
+      "smile",
+      "wink"
+    ],
+    "bottom": [
+      "jeans-blue",
+      "pants-black",
+      "pants-navy",
+      "shorts-brown",
+      "skirt-pink"
+    ],
+    "shoes": [
+      "boots-brown",
+      "maryjane-red",
+      "sneakers-black",
+      "sneakers-white"
+    ],
+    "shade_top": [
+      "blouse-white",
+      "cape-blue",
+      "hoodie-black",
+      "hoodie-white",
+      "overalls-green",
+      "tee-stripe-red"
+    ],
+    "top": [
+      "blouse-white",
+      "cape-blue",
+      "hoodie-black",
+      "hoodie-white",
+      "overalls-green",
+      "tee-stripe-red"
+    ],
+    "shade_hair": [
+      "black-short",
+      "black-twintail",
+      "blonde-spiky",
+      "brown-short",
+      "mint-curly",
+      "pink-long",
+      "sky-bob",
+      "tan-ponytail"
+    ],
+    "hat_back": [
+      "beanie-yellow",
+      "cap-white",
+      "ribbon-pink"
+    ],
+    "hair_front": [
+      "black-short",
+      "black-twintail",
+      "blonde-spiky",
+      "brown-short",
+      "mint-curly",
+      "pink-long",
+      "sky-bob",
+      "tan-ponytail"
+    ],
+    "shade_hat": [
+      "beanie-yellow",
+      "cap-white",
+      "explorer-brown",
+      "mushroom-red",
+      "ribbon-pink"
+    ],
+    "hat": [
+      "beanie-yellow",
+      "cap-white",
+      "explorer-brown",
+      "mushroom-red",
+      "ribbon-pink"
+    ]
+  }
 }

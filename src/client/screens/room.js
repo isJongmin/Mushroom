@@ -5,11 +5,11 @@
 // 사용자 문자열은 Canvas fillText / textContent로만 넣는다.
 import { h, setText, wait } from '../dom.js';
 import {
-  WORLD, ART, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, MOBILE_MIN_CANVAS_H, DESKTOP_RESERVED_H, NICK_RE,
+  WORLD, HEAD, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, MOBILE_MIN_CANVAS_H, DESKTOP_RESERVED_H, NICK_RE,
   CHAT_MAX, CHAT_COOLDOWN_MS, MOVE_INTERVAL_MS, RECONNECT_DELAYS_MS, ROOM_CAPACITY, LEAVE_WAIT_MS, SYS_LEAVE_DELAY_MS, pixelScale,
 } from '../constants.js';
 import { ROOM_MESSAGES as M, toAppError } from '../errors.js';
-import { createAvatarRenderer, makeCanvas } from '../avatar.js';
+import { createAvatarRenderer, smooth } from '../avatar.js';
 import { drawMap, drawFootShadow, cameraFor } from '../game/world.js';
 import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overlay.js';
 import { createMoveInput, KEY_DIR } from '../game/input.js';
@@ -22,7 +22,7 @@ const REMOTE_SNAP_DIST = 400; // 이보다 멀면 순간 이동
 const REMOTE_CATCHUP = 32; // 뒤처진 거리(월드 단위)마다 속도를 1배씩 더한다
 const WALK_HOLD_MS = 200; // 원격 아바타: 마지막으로 움직인 뒤 200ms 안이면 walk (패킷 간격 100ms 흡수)
 const TRACK_IDLE_MS = 600; // 정지 후 Presence 좌표 갱신
-const toArt = (wx) => Math.round(wx / 2);
+const DESKTOP_MAX_VIEW_W = 1280; // 데스크톱 시야 가로 최대 (월드): P=2 → 1280px, P=3 → 1920px
 
 const clampX = (x) => Math.min(WORLD.maxX, Math.max(WORLD.minX, x));
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -58,10 +58,8 @@ export function mount(root, app, opts = {}) {
   const players = new Map();
   let me = null;
 
-  // 레이아웃 (style-guide 6.1): P = 정수 픽셀 배율, view = 아트 px 시야
-  let layout = { mobile: false, cssW: 2, cssH: 2, viewW: 1, viewH: 1, P: 2, dpr: 1 };
-  let off = makeCanvas(1, 1); // 아트 해상도 오프스크린
-  let offCtx = off.getContext('2d');
+  // 레이아웃 (style-guide 6.1): P = 표시 배율 (CSS px / 월드 = P/2), view = 월드 단위 시야, k = 장치 px / 월드
+  let layout = { mobile: false, cssW: 2, cssH: 2, viewW: 1, viewH: 1, P: 2, dpr: 1, k: 1 };
 
   // 네트워크 송신 상태
   let lastMoveSentAt = 0;
@@ -139,23 +137,24 @@ export function mount(root, app, opts = {}) {
     let P;
     let cssW;
     let cssH;
+    // CSS 크기는 P의 배수(기존 규칙 유지), 시야(월드) = CSS / (P/2)
     if (mobile) {
       P = 2;
       cssW = Math.floor(vw / P) * P;
       cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor((vh - MOBILE_CONTROLS_H) / P) * P);
     } else {
       P = pixelScale(vw, vh);
-      cssW = Math.min(Math.floor(vw / P) * P, 640 * P); // 1280 (P=2), 1920 (P=3)
-      cssH = Math.min(ART.height * P, Math.floor((vh - DESKTOP_RESERVED_H) / P) * P);
+      cssW = Math.min(Math.floor(vw / P) * P, (DESKTOP_MAX_VIEW_W * P) / 2); // 1280 (P=2), 1920 (P=3)
+      cssH = Math.min((WORLD.height * P) / 2, Math.floor((vh - DESKTOP_RESERVED_H) / P) * P);
     }
-    let viewW = Math.max(1, cssW / P);
-    let viewH = cssH / P;
-    if (viewH < ART.minViewH) { viewH = ART.minViewH; cssH = viewH * P; }
-    viewW = Math.max(1, Math.floor(viewW));
-    cssW = viewW * P;
+    cssW = Math.max(P, cssW);
+    let viewH = (cssH * 2) / P;
+    if (viewH < WORLD.minViewH) { viewH = WORLD.minViewH; cssH = (viewH * P) / 2; }
+    const viewW = (cssW * 2) / P;
     const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const k = (P / 2) * dpr;
     const modeChanged = layout.mobile !== mobile || !root.dataset.layout;
-    layout = { mobile, cssW, cssH, viewW, viewH, P, dpr };
+    layout = { mobile, cssW, cssH, viewW, viewH, P, dpr, k };
     root.dataset.layout = mobile ? 'mobile' : 'desktop';
     root.style.setProperty('--canvas-w', `${cssW}px`);
     // .game-stage는 캔버스와 같은 CSS 크기 (로그 패널 clamp의 % 기준, design handoff 5-11)
@@ -165,11 +164,6 @@ export function mount(root, app, opts = {}) {
     canvas.style.height = `${cssH}px`;
     canvas.width = Math.round(cssW * dpr);
     canvas.height = Math.round(cssH * dpr);
-    if (off.width !== viewW || off.height !== viewH) {
-      off = makeCanvas(viewW, viewH);
-      offCtx = off.getContext('2d');
-    }
-    offCtx.imageSmoothingEnabled = false;
     hint.classList.toggle('narrow', cssW < 900); // 캔버스 가로 900px 미만이면 조작 힌트 숨김
     if (modeChanged) {
       chatLog.setMobile(mobile);
@@ -529,41 +523,43 @@ export function mount(root, app, opts = {}) {
     return avatarR.frameAt(p.anim === 'walk' ? 'walk' : 'idle', now - p.animSince);
   }
 
-  // style-guide 6.3 파이프라인: 아트 해상도 오프스크린(맵 → 발 그림자 → 아바타) → 정수 배율 확대(스무딩 끔) → 화면 해상도 라벨/말풍선
+  // 그리기 파이프라인 (복셀 계약, 사이클 5): 메인 캔버스 백킹(CSS x dpr)에 바로, 고품질 스무딩.
+  //   맵 레이어 → 발 그림자 → 아바타 (장치 px, k = P/2 x dpr) → 라벨/말풍선 (CSS px, setTransform(dpr))
   function render(now) {
     if (!me || !avatarR) return;
     if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
-    const { cssW, viewW, viewH, P, dpr } = layout;
-    const { camX, camY } = cameraFor(toArt(me.x), viewW, viewH);
-    const c = offCtx;
-    c.imageSmoothingEnabled = false;
-    drawMap(c, map, camX, camY, viewW, viewH);
+    const { cssW, viewW, viewH, P, dpr, k } = layout;
+    const { camX, camY } = cameraFor(me.x, viewW, viewH, k);
+    const ctx = canvas.getContext('2d');
+    drawMap(ctx, map, camX, camY, k, canvas.width, canvas.height);
 
-    const groundY = ART.groundY - camY;
+    const gy = WORLD.groundY - camY; // 지면선 (시야 기준 월드)
     const order = [];
     for (const p of players.values()) if (!p.isSelf) order.push(p);
     order.sort((a, b) => a.x - b.x);
     order.push(me); // 내 캐릭터는 마지막
     const visible = [];
+    const margin = avatarR.worldW;
     for (const p of order) {
-      const ax = toArt(p.x) - camX;
-      if (ax < -avatarR.frameW || ax > viewW + avatarR.frameW) continue;
-      visible.push([p, ax]);
+      const sx = p.x - camX;
+      if (sx < -margin || sx > viewW + margin) continue;
+      visible.push([p, sx]);
     }
-    for (const [, ax] of visible) drawFootShadow(c, ax, groundY);
-    for (const [p, ax] of visible) avatarR.draw(c, p.avatar, ax, groundY, frameOf(p, now), p.dir < 0);
-
-    const ctx = canvas.getContext('2d');
-    ctx.setTransform(1, 0, 0, 1, 0, 0);
-    ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(off, 0, 0, viewW, viewH, 0, 0, canvas.width, canvas.height);
+    const fyD = Math.round(gy * k);
+    for (const [, sx] of visible) drawFootShadow(ctx, sx * k, fyD, k);
+    smooth(ctx);
+    for (const [p, sx] of visible) avatarR.draw(ctx, p.avatar, Math.round(sx * k), fyD, k, frameOf(p, now), p.dir < 0);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    const fy = groundY * P; // 발바닥 선 (CSS px)
-    for (const [p, ax] of visible) drawLabel(ctx, p.nickname, ax * P, fy, p.isSelf, cssW);
-    // 말풍선: 먼저 받은 것부터 그려 최신이 위 (style-guide 6.3-6)
+    const u = P / 2; // CSS px / 월드
+    const fy = fyD / dpr; // 발바닥 선 (CSS px)
+    for (const [p, sx] of visible) drawLabel(ctx, p.nickname, sx * u, fy, p.isSelf, cssW);
+    // 말풍선: 먼저 받은 것부터 그려 최신이 위 (style-guide 6.3-6). 꼬리 끝 = 머리(모자) 맨 위 + HEAD.gap
     const talking = visible.filter(([p]) => p.bubble).sort((a, b) => a[0].bubble.at - b[0].bubble.at);
-    for (const [p, ax] of talking) drawBubble(ctx, p.bubble.layout, ax * P, fy, P, cssW, bubbleAlpha(now - p.bubble.at));
+    for (const [p, sx] of talking) {
+      const head = (avatarR.headTop(p.avatar) + HEAD.gap) * u;
+      drawBubble(ctx, p.bubble.layout, sx * u, fy, head, cssW, bubbleAlpha(now - p.bubble.at));
+    }
   }
 
   function frame(now) {
@@ -758,7 +754,8 @@ export function mount(root, app, opts = {}) {
     assets: assets ? {
       source: assets.source, images: assets.imageCount, imageTotal: assets.imageTotal, background: !!(map && map.layerCount),
       mapLayers: map ? map.layerCount : 0, sheets: avatarR ? avatarR.cacheSize : 0,
-      layout: { P: layout.P, cssW: layout.cssW, cssH: layout.cssH, viewW: layout.viewW, viewH: layout.viewH },
+      composite: avatarR ? { count: avatarR.stats.composites, avgMs: avatarR.stats.composites ? Math.round((avatarR.stats.totalMs / avatarR.stats.composites) * 10) / 10 : 0, maxMs: Math.round(avatarR.stats.maxMs * 10) / 10 } : null,
+      layout: { P: layout.P, cssW: layout.cssW, cssH: layout.cssH, viewW: layout.viewW, viewH: layout.viewH, k: layout.k },
     } : null,
     me: me ? snap(me) : null,
     players: [...players.values()].map(snap),
@@ -806,7 +803,8 @@ export function mount(root, app, opts = {}) {
     avatarR = createAvatarRenderer(assets);
     const startX = clampX(300 + Math.floor(Math.random() * 600));
     me = makePlayer(app.userId || 'me', myNick, assets.sanitizeAvatar(profile.avatar), startX, true);
-    avatarR.warm(me.avatar);
+    await avatarR.ready(me.avatar); // 내 조합의 레이어만 받고 합성 (다른 사람 조합은 그릴 때 지연 로드)
+    if (!alive) return;
     players.set(me.user_id, me);
     updateCount();
     raf = requestAnimationFrame(frame);

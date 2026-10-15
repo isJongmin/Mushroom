@@ -126,3 +126,7 @@ body[data-screen="room"] { background: var(--letterbox); }
 @media (max-width: 719px) {
   .game-stage .room-log { top: 88px; height: clamp(96px, calc(100% - 268px), 320px); }
 }
+
+/* 사이클 5 복셀 아트: 캔버스는 백킹(CSS x dpr)에 고품질 스무딩으로 직접 그린다. 브라우저 확대 보간도 계단 대신 부드럽게
+   (ui-kit.css의 canvas { image-rendering: pixelated }를 캐릭터/맵 캔버스에서만 되돌린다). 디자인 handoff로 ui-kit 반영 요청. */
+.game-canvas, .bk-preview__stage canvas, .bk-slot canvas, .bk-presets .bk-btn canvas, .bk-thumb canvas { image-rendering: auto; }

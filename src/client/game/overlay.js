@@ -1,7 +1,8 @@
 // 닉네임 라벨(style-guide v3 7장)과 말풍선(8장) Canvas 레시피.
 // 화면 해상도 컨텍스트(setTransform(dpr)로 CSS px 단위)에 fillRect 와 fillText 만으로 그린다.
-// 위치 기준은 기준점 화면 좌표(ax, fy)와 머리 위 기준선(아트 52px)뿐이다. 사용자 문자열은 fillText로만 그린다.
-import { BUBBLE, LABEL, PAL, FONT_UI, ART } from '../constants.js';
+// 위치 기준은 기준점 화면 좌표(ax, fy)와 머리 위 높이(head, CSS px)뿐이다. 사용자 문자열은 fillText로만 그린다.
+// (사이클 5) head = (조합별 머리/모자 맨 위 월드 높이 + HEAD.gap) x P/2. 라벨은 발 아래.
+import { BUBBLE, LABEL, PAL, FONT_UI } from '../constants.js';
 
 const LABEL_FONT = `700 ${LABEL.font}px ${FONT_UI}`;
 const BUBBLE_FONT = `700 ${BUBBLE.font}px ${FONT_UI}`;
@@ -80,16 +81,16 @@ export function bubbleAlpha(ageMs) {
 
 /**
  * 말풍선 (8.2 위치, 8.1 모양).
- * @param ax 기준점 화면 x (CSS px) = (artX - camX) * P
- * @param fy 발바닥 선 화면 y (CSS px) = (220 - camY) * P
- * @param P  아트 배율
+ * @param ax 기준점 화면 x (CSS px) = (x - camX) * P/2
+ * @param fy 발바닥 선 화면 y (CSS px) = (440 - camY) * P/2
+ * @param head 발바닥 선에서 머리 위 기준선까지 (CSS px)
  * @param canvasW 캔버스 CSS 폭
  * @returns 그린 박스 {bx, by, w, h, tx, ty, tail} (검증용)
  */
-export function drawBubble(ctx, layout, ax, fy, P, canvasW, alpha) {
+export function drawBubble(ctx, layout, ax, fy, head, canvasW, alpha) {
   if (alpha <= 0) return null;
   const { lines, w, h } = layout;
-  const ty = fy - ART.headLine * P - BUBBLE.tipGap; // 꼬리 끝
+  const ty = Math.round(fy - head) - BUBBLE.tipGap; // 꼬리 끝
   let by = ty - BUBBLE.tailH - h;
   let tail = true;
   if (by - 2 < BUBBLE.topMin) { by = BUBBLE.topClamp; tail = false; }

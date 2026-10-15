@@ -1,16 +1,17 @@
 # 테스트
 
-## E2E (local 모드, 사이클 4 계약: 로그인 없음, 프로필 -> 로비 -> 방)
+## E2E (local 모드, 사이클 5 계약: 로그인 없음, 프로필 -> 로비 -> 방, 복셀 아트)
 
 ```sh
 # 저장소 루트에서. 항목 24의 사본은 QA_SCRATCH 아래에 만든다 (없으면 시스템 임시 폴더)
 QA_SCRATCH=/경로/스크래치 python3 -B tests/e2e_local.py          # 전체 실행 (약 6~8분)
+QA_SCRATCH=/경로/스크래치 QA_FULL_BUILD=1 python3 -B tests/e2e_local.py --only 24,25   # 전체 결정성 재빌드 (약 15분, 한 번만)
 python3 -B tests/e2e_local.py -v                                 # 실패 항목의 traceback 포함
 python3 -B tests/e2e_local.py --only 1,8,16                      # 번호만 실행
-python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/방 스크린샷 4장 (데스크톱 1280x800, 모바일 360x640)
+python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/방 스크린샷 + 꾸미기 (데스크톱 1280x800, 모바일 360x640)
 ```
 
-- 요구: Python Playwright와 Chromium이 설치되어 있어야 한다. 테스트는 설치를 하지 않는다. numpy, Pillow는 항목 22, 24, 25에 필요하다.
+- 요구: Python Playwright와 Chromium이 설치되어 있어야 한다. 테스트는 설치를 하지 않는다. numpy, Pillow는 항목 22, 33, 34에 필요하다.
 - 저장소 루트를 `python3 -m http.server`로 빈 포트에 띄우고, 종료 시 반드시 멈춘다.
 - 외부 네트워크(Supabase, CDN)에 접속하지 않는다. local 모드(localStorage DB, BroadcastChannel)로 동작한다.
 - 저장소 원본 `assets/`는 건드리지 않는다. build.py와 check.py는 사본에서만 실행한다.
@@ -28,7 +29,7 @@ python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/�
 | 20명 정원 | 항목 7: 활성 가짜 멤버 18명 주입 (방장 1 + 18 + 테스트 탭 B = 20). 가짜는 Presence가 없고 `last_seen`을 40초 뒤로 두어 테스트 동안 활성 유지 |
 | 멤버 행 강제 삭제 (연결 끊김) | 항목 16: 서버가 멤버를 잃은 상황을 만든다 -> 하트비트 NOT_MEMBER 경로 |
 
-## 항목 (31개)
+## 항목 (36개)
 
 | 번호 | 내용 |
 |---|---|
@@ -53,16 +54,29 @@ python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/�
 | 19 | 채팅 80자 제한, 1초 쿨다운, 서버 TEXT_FORMAT/RATE_LIMITED |
 | 20 | 방 입퇴장 3회 후 BroadcastChannel/setInterval/rAF/.screen 잔여 0 (로비 기준값과 비교) |
 | 21 | 레이아웃: 프로필/로비/방 가로 스크롤, 모드 칩 비겹침, 360 터치 이동 |
-| 22 | 픽셀 선명도 (방 캔버스, 1280x800 / 1920x1080 / 360x640 dpr2) |
-| 23 | 에셋 로드: 4xx/5xx 0, manifest 2종, 아바타 43, 맵 5, PNG 48 |
-| 24 | 에셋 빌드 재현성 (사본에서 build.py 2회, 바이트 동일) |
-| 25 | `assets/_src/block/check.py` 통과 (사본) |
-| 26 | 꾸미기 화면: 탭 7, 슬롯 반영, 프리셋 6, 앞/옆/뒤, 걷기, 키보드 |
+| 22 | 스무딩 렌더 품질: imageSmoothingEnabled 켬(high), 캐릭터 영역 비어 있지 않음, 고유 색 100 이상, 경계 블렌딩 0.25 이상 (계단 아님) |
+| 23 | 에셋 로드: 4xx/5xx 0, 요청 실패 0, outline.json 요청 0, 요청 PNG는 manifest files 안, 조합 필요 레이어 전부 200, 맵 5 레이어 |
+| 24 | 복셀 아바타 검사 (사본): `voxel/check.py --fast`, files 합 = PNG 65장, 원본 assets 불변. `QA_FULL_BUILD=1`이면 무옵션 재빌드까지 |
+| 25 | 복셀 맵 검사 (사본): `voxel_map/check.py` 통과. `QA_FULL_BUILD=1`이면 맵 build 후 원본과 바이트 비교 + `--determinism` |
+| 26 | 꾸미기 화면: 탭 7, 슬롯 반영, 프리셋 6, 앞(0/1 숨쉬기)/옆(2)/뒤(7), 걷기(3..6), 키보드 |
 | 27 | 아바타 저장 7키, 기본값, 사이클 1 형식 정규화(저장값 유지), Presence 옛/깨진 값 |
-| 28 | 애니메이션: walk 2..5, idle 1, 왼쪽 dir (로컬과 원격) |
+| 28 | 애니메이션: walk 3..6, 인게임 idle 2, 왼쪽 dir (로컬과 원격) |
 | 29 | 콘솔/페이지 에러 0 (전체 수집) |
 | 30 | 정적 점검: 마이그레이션 (테이블 권한, RLS, password_hash 노출, RPC definer/search_path/anon, realtime 정책) |
 | 31 | 정적 점검: 클라이언트 (innerHTML/eval, 비밀 값, private 채널, chat 송신, 프로필 저장 내용) |
+| 32 | (a) manifest files 대체: files 키 없음/객체 아님/키 누락 -> 필수 레이어만 요청, 404 0, 캐릭터 정상, 경고 1회 (라우트 가로채기) |
+| 33 | (b) 발 위치: me.y = 440, 장치 기준점 = 지면선, 발 아래 1~8단위 잔디, 잔디 앞 가장자리 8단위 이후, 22~26단위 흙 (화면 픽셀) |
+| 34 | (c) 프리셋 6종: 프런트 합성 시트 vs `assets/_src/voxel/out/truth/presetN.png` (art check.py 허용치: 평균 6.0, 알파 MAE 2.0) |
+| 35 | (d) 라벨/말풍선: 라벨 위 = 발바닥 선 +6, 꼬리 간격 = 4u+4 (머리 맨 위 기준), 라벨/말풍선 겹침 0, 캔버스 안 (P2/P3/모바일) |
+| 36 | (e) 로딩 성능: 콜드 열기 -> 첫 캐릭터 프레임, 입장 클릭 -> 첫 프레임, 전송 바이트, 웜 재입장. 실패 기준 15s 초과 / 10MB 초과 |
+
+### 사이클 5 판정 기준 (복셀 아트, 항목 22/33/34/35/36)
+
+- 22 스무딩: 캐릭터 프레임 그리기 호출마다 `imageSmoothingEnabled`가 true여야 한다. 캐릭터 마스크(그리기 전후 차이 픽셀)의 경계 픽셀 중 내부 팔레트에 없는 색 비율(블렌딩)이 0.25 이상이어야 한다. 음성 대조군(합성 상자에 NEAREST 2/3 축소)은 블렌딩 0.0, 고유 색 6개로 실패, BICUBIC/LANCZOS는 0.8 이상으로 통과한다.
+- 33 발 위치: 지면선은 장치 y = round((440 - camY) x k). 기준점 장치 y(프레임 dy + 180 x k/1.5)와 같아야 한다(허용 1px). 잔디 앞 가장자리(녹색 비율 0.5 미만 첫 행)는 발 아래 8단위 이후여야 한다. 실측은 14단위(문서 6단위와 다름, art-20261015-voxel-map 4장과 frontend 2장의 446 기준과 어긋남 → 보고서 참고).
+- 34 프리셋: art `check.py`와 같은 식(`diff_stats`)으로 평균 6.0 이하, 알파 MAE 2.0 이하.
+- 35 라벨/말풍선: 라벨 위 = 발바닥 선 + 6(허용 1.5), 꼬리 간격 = HEAD.gap x u + tipGap(허용 1.5), 라벨/말풍선끼리 겹침 0. 머리 맨 위는 장면 안 페이지 안에서 `avatar.js` headTop을 같은 식으로 계산한다.
+- 36 로딩: 콜드 열기 -> 첫 캐릭터 프레임 15초 이하, 콜드 자산 전송 10MB 이하가 실패 기준. 콜드 = 새 페이지 + CDP `Network.setCacheDisabled`(같은 컨텍스트의 localStorage는 유지).
 
 ### 한계
 

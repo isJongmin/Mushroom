@@ -21,55 +21,66 @@ export const PAL = Object.freeze({
   st1: '#C8C4D0', st2: '#8E88A0',
 });
 
-// 게임 월드 (style-guide v3 6장). 월드 단위(로직, 네트워크)와 아트 px(그리기) = 2 : 1
+// 게임 월드 (ARCHITECTURE "복셀 아트 계약", 사이클 5). 로직/네트워크/그리기 모두 월드 단위.
+// 화면 CSS px = 월드 x (P / 2). 에셋 px = 월드 x density(1.5).
 export const WORLD = Object.freeze({
   width: 2400,
   height: 540,
-  groundY: 440,
+  groundY: 440, // 지면선 = 캐릭터 기준점(발) y
+  bottomY: 540, // 화면 아래 끝 (월드 맨 아래, 앞 단면 흙/돌까지)
   speed: 160, // 월드 단위/초
   minX: 32,
   maxX: 2368,
   maxDt: 0.1, // 탭 비활성 등으로 생긴 큰 dt는 이 값으로 자른다(초)
+  minViewH: 160, // 시야 세로 최소 (월드)
 });
-export const ART = Object.freeze({
-  perWorld: 2, // 월드 2단위 = 아트 1px
-  width: 1200,
-  height: 270,
-  groundY: 220, // 지면선 (ARCHITECTURE 블록 아트 계약)
-  bottomY: 250, // 화면 아래 끝 (style-guide 6.2)
-  headLine: 52, // 말풍선 머리 위 기준선: 기준점에서 아트 52px 위 (style-guide 8.2)
-  minViewH: 80,
+// 캐릭터 머리 위 기준선(말풍선 꼬리 끝 위치)의 기본값과 여백 (월드 단위).
+// 실제 값은 조합마다 합성 시트 idle 프레임의 맨 위 불투명 행으로 계산한다(avatar.js headTop).
+export const HEAD = Object.freeze({
+  fallback: 104, // 계산 전/실패 시: 모자 포함 최대 키(시트 157px / 1.5 ≈ 105)
+  gap: 4, // 머리(또는 모자) 맨 위와 말풍선 꼬리 끝 사이
 });
+// 발 그림자 (map handoff 4장 권장: 반투명 타원, 알파 0.25)
+export const FOOT_SHADOW = Object.freeze({ rx: 22, ry: 5, color: 'rgba(26, 22, 38, 0.25)' });
 
 export const MOBILE_MAX_WIDTH = 720; // 미만이면 모바일
 export const MOBILE_CONTROLS_H = 132; // 모바일 캔버스 아래 조작 영역 (game.md v3 3장: 64 + 68)
 export const MOBILE_MIN_CANVAS_H = 160; // 소프트 키보드 시 최소 캔버스 세로
 export const DESKTOP_RESERVED_H = 72; // 데스크톱 캔버스 아래 채팅 행 + 여백
 
-/** style-guide 6.1: 정수 픽셀 배율 P */
+/** style-guide 6.1: 표시 배율 P (화면 CSS px / 월드 단위 = P / 2) */
 export function pixelScale(vw, vh) {
   return vw >= 1600 && vh >= 900 ? 3 : 2;
 }
 
-// 아바타 (ARCHITECTURE 블록 아트 계약). manifest.json 값이 우선이고, 아래는 manifest가 없거나 깨졌을 때의 기본값이다.
+// 아바타 (ARCHITECTURE "복셀 아트 계약", 사이클 5). manifest.json 값이 우선이고, 아래는 manifest 값이 빠졌거나 깨졌을 때의 기본값이다.
 export const AVATAR = Object.freeze({
-  frameW: 48,
-  frameH: 64,
-  anchorX: 24,
-  anchorY: 60,
-  frames: Object.freeze(['front', 'side_idle', 'side_walk0', 'side_walk1', 'side_walk2', 'side_walk3', 'back']),
+  frameW: 144, // 시트 px
+  frameH: 192,
+  anchorX: 72,
+  anchorY: 180,
+  density: 1.5, // 시트 px / 월드 단위
+  frames: Object.freeze(['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back']),
   animations: Object.freeze({
-    idle: Object.freeze({ frames: Object.freeze([1]), ms: 500 }),
-    walk: Object.freeze({ frames: Object.freeze([2, 3, 4, 5]), ms: 150 }),
+    idle_front: Object.freeze({ frames: Object.freeze([0, 1]), ms: 600 }),
+    idle: Object.freeze({ frames: Object.freeze([2]), ms: 600 }),
+    walk: Object.freeze({ frames: Object.freeze([3, 4, 5, 6]), ms: 150 }),
   }),
 });
 // 아바타 데이터 키 (ARCHITECTURE 인터페이스 계약, 사이클 3): 정확히 7개
 export const PART_KEYS = Object.freeze(['skin', 'hair', 'face', 'top', 'bottom', 'shoes', 'hat']);
-// 합성 레이어 순서 (hair는 hair_back / hair_front 두 레이어)
-export const DEFAULT_LAYER_ORDER = Object.freeze(['hair_back', 'skin', 'face', 'bottom', 'shoes', 'top', 'hair_front', 'hat']);
-export const LAYER_PART = Object.freeze({
-  hair_back: 'hair', skin: 'skin', face: 'face', bottom: 'bottom', shoes: 'shoes', top: 'top', hair_front: 'hair', hat: 'hat',
-});
+// manifest layerOrder가 없거나 깨졌을 때의 기본 합성 순서 (art-20261015-voxel-final.md 3장 표와 같음)
+export const DEFAULT_LAYER_ORDER = Object.freeze([
+  ['hair_back', 'hair', 'source-over'], ['top_back', 'top', 'source-over'], ['skin', 'skin', 'source-over'],
+  ['face', 'face', 'source-over'], ['bottom', 'bottom', 'source-over'], ['shoes', 'shoes', 'source-over'],
+  ['shade_top', 'top', 'source-atop'], ['top', 'top', 'source-over'], ['shade_hair', 'hair', 'source-atop'],
+  ['hat_back', 'hat', 'source-over'], ['hair_front', 'hair', 'source-over'], ['shade_hat', 'hat', 'source-atop'],
+  ['hat', 'hat', 'source-over'],
+].map(([layer, part, blend]) => Object.freeze({ layer, part, blend })));
+export const LAYER_BLENDS = Object.freeze(['source-over', 'source-atop']);
+// manifest files가 없거나 깨졌을 때만 요청하는 필수 레이어 (메인 결정 2026-10-15, art check.py 2번:
+// 이 레이어들은 해당 파츠의 모든 id에 파일이 있다. hat은 'none' 제외). 그림자/뒷 레이어는 빠진다.
+export const REQUIRED_LAYERS = Object.freeze(['skin', 'face', 'hair_front', 'top', 'bottom', 'shoes', 'hat']);
 export const HAT_NONE = 'none';
 
 // 캐릭터 생성 카테고리 탭 순서와 글자 (character-create.md v3 5.1)
@@ -119,7 +130,7 @@ export const LEGACY_ALIASES = Object.freeze({
   hat: Object.freeze({}),
 });
 
-// style-guide v3 7장 닉네임 라벨, 8장 말풍선 (CSS px, U=2 고정)
+// style-guide v3 7장 닉네임 라벨, 8장 말풍선 (CSS px)
 export const LABEL = Object.freeze({ font: 12, lineH: 16, h: 20, padX: 6, minW: 24, top: 6, textTop: 2, edge: 4 });
 export const BUBBLE = Object.freeze({
   font: 14,
@@ -131,7 +142,7 @@ export const BUBBLE = Object.freeze({
   maxW: 200,
   minW: 40,
   maxLines: 4,
-  tipGap: 4, // 꼬리 끝 = 머리 위 기준선 - 4
+  tipGap: 4, // 꼬리 끝 = 머리 위 기준선(HEAD) - 4
   tailH: 8, // 박스 아래 끝 ~ 꼬리 끝
   edge: 8,
   tailEdge: 10,

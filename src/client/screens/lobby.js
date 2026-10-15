@@ -7,12 +7,12 @@ import {
   NICK_RE, NICK_MAX, ROOM_NAME_MAX, ROOM_PW_MIN, ROOM_PW_MAX, ROOM_CAPACITY, PART_KEYS, LOBBY_POLL_MS, RATE_LOCK_MS,
 } from '../constants.js';
 import { LOBBY_MESSAGES as M, PROFILE_MESSAGES as PM, toAppError } from '../errors.js';
-import { createAvatarRenderer } from '../avatar.js';
+import { createAvatarRenderer, smooth } from '../avatar.js';
 import { openModal } from '../ui/modal.js';
 import { writeRoomSession } from '../store.js';
 import { trimWs, charLength, hasControl, cleanRoomName } from '../backend/common.js';
 
-const THUMB_CROP = Object.freeze({ x: 4, y: 6, size: 40 }); // style-guide 11.6: front 프레임 (4,6)~(44,46) 1배
+const THUMB_CROP = Object.freeze({ x: 16, y: 26, size: 112, css: 40 }); // 사이클 5: front 프레임(시트 px) 얼굴/머리(모자 포함) 정사각형 → CSS 40px
 const LIST_LIMIT = 100;
 const REFRESH_MIN_MS = 400;
 const BANNER_MS = 8000;
@@ -49,7 +49,7 @@ export function mount(root, app, opts = {}) {
 
   // --- 머리줄 -----------------------------------------------------------------
   const dpr = Math.max(1, Math.min(3, Math.round(window.devicePixelRatio || 1)));
-  const thumb = h('canvas', { width: String(THUMB_CROP.size * dpr), height: String(THUMB_CROP.size * dpr), 'aria-hidden': 'true', testid: 'me-thumb' });
+  const thumb = h('canvas', { width: String(THUMB_CROP.css * dpr), height: String(THUMB_CROP.css * dpr), 'aria-hidden': 'true', testid: 'me-thumb' });
   const meNick = h('span', { class: 'bk-me__nick', testid: 'me-nickname' }, profile.nickname);
   meNick.title = profile.nickname;
   const editBtn = h('button', { class: 'bk-btn bk-btn--sm', type: 'button', testid: 'profile-edit' }, '꾸미기');
@@ -667,11 +667,17 @@ export function mount(root, app, opts = {}) {
   let renderer = null;
   app.assets.then((assets) => {
     if (!alive || !assets || assets.source !== 'manifest') return;
-    renderer = createAvatarRenderer(assets);
-    const src = renderer.thumb(assets.sanitizeAvatar(profile.avatar), PART_KEYS);
-    const c = thumb.getContext('2d');
-    c.imageSmoothingEnabled = false;
-    c.drawImage(src, THUMB_CROP.x, THUMB_CROP.y, THUMB_CROP.size, THUMB_CROP.size, 0, 0, thumb.width, thumb.height);
+    const av = assets.sanitizeAvatar(profile.avatar);
+    const paint = () => {
+      const src = renderer && renderer.thumb(av, PART_KEYS); // 합성 중이면 null → onUpdate에서 다시
+      if (!src) return;
+      const c = thumb.getContext('2d');
+      smooth(c);
+      c.clearRect(0, 0, thumb.width, thumb.height);
+      c.drawImage(src, THUMB_CROP.x, THUMB_CROP.y, THUMB_CROP.size, THUMB_CROP.size, 0, 0, thumb.width, thumb.height);
+    };
+    renderer = createAvatarRenderer(assets, { onUpdate: () => { if (alive) paint(); } });
+    paint();
   }, () => {});
 
   // --- 테스트 훅 ------------------------------------------------------------------

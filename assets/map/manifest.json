@@ -1,36 +1,52 @@
 {
-  "scale": 2,
-  "groundY": 220,
-  "width": 1200,
+  "density": 1.5,
+  "groundY": 440,
+  "width": 2400,
   "layers": [
     {
+      "name": "sky",
       "src": "assets/map/sky.png",
       "parallax": 0.0,
       "y": 0,
-      "repeatX": true
+      "w": 10.667,
+      "h": 540.0,
+      "repeatX": false,
+      "stretchX": true
     },
     {
-      "src": "assets/map/clouds.png",
-      "parallax": 0.1,
+      "name": "clouds",
+      "src": "assets/map/clouds.webp",
+      "parallax": 0.12,
       "y": 10,
+      "w": 1800.0,
+      "h": 220.0,
       "repeatX": true
     },
     {
-      "src": "assets/map/far.png",
+      "name": "far",
+      "src": "assets/map/far.webp",
       "parallax": 0.3,
-      "y": 122,
+      "y": 120,
+      "w": 2000.0,
+      "h": 320.0,
       "repeatX": true
     },
     {
-      "src": "assets/map/mid.png",
-      "parallax": 0.6,
-      "y": 112,
+      "name": "mid",
+      "src": "assets/map/mid.webp",
+      "parallax": 0.65,
+      "y": 170,
+      "w": 2000.0,
+      "h": 270.0,
       "repeatX": true
     },
     {
-      "src": "assets/map/ground.png",
+      "name": "ground",
+      "src": "assets/map/ground.webp",
       "parallax": 1.0,
-      "y": 60,
+      "y": 110,
+      "w": 2400.0,
+      "h": 430.0,
       "repeatX": false
     }
   ]

@@ -53,23 +53,19 @@ docs/            문서
 - 아바타 데이터(`characters.avatar`, jsonb, 사이클 3부터): `{ "skin", "hair", "face", "top", "bottom", "shoes", "hat" }` 7개 키, 값은 파츠 id 문자열. `hat`은 `"none"` 허용. (사이클 1~2의 `eyes` 키는 `face`로 대체. backend 마이그레이션으로 변환)
 - 표시 시 manifest에 없는 id는 해당 파츠의 기본값(첫 항목)으로 그린다.
 
-### 블록 아트 계약 (2026-10-14 사이클 3 — 마인크래프트풍 블록 스타일, 이전 픽셀아트 계약 폐기)
-- 스타일: 모든 사물을 상자로 보고 윗면(밝게)/정면(기본)/옆면(어둡게) 3면 톤으로 그리는 블록 픽셀아트. 사선 투영(위·오른쪽에서 본 3/4). 안티에일리어싱 없음.
-- 렌더: `imageSmoothingEnabled = false`, CSS `image-rendering: pixelated`. 아트 1px = 월드 2단위. 표시 배율은 정수만(기본 2, 1600x900 이상 화면 3).
-- 월드: 2400x540 월드 단위 = 아트 1200x270. 지면선 아트 y=220 (월드 440). 잔디 타일 윗면 첫 행 = 218.
-- 아바타 프레임: 48x64. 기준점 (24, 60) = 두 발 사이 바닥 중앙. 지면선 y에 서면 프레임 왼쪽 위 = (x-24, y-60).
-- 시트: 가로 한 줄 7프레임 336x64, 순서 `front, side_idle, side_walk0, side_walk1, side_walk2, side_walk3, back` (프레임 i의 x = 48i).
-  - 인게임: side_idle / side_walk(150ms/프레임). 기본 오른쪽, 왼쪽은 x=24 기준 좌우 반전.
-  - front/back: 캐릭터 생성 미리보기 회전용.
-- 레이어(합성 순서): `hair_back → skin → face → bottom → shoes → top → hair_front → hat`.
-  - 파일: `assets/avatar/<layer>/<id>.png`. hair id 하나가 `hair_back/<id>.png`와 `hair_front/<id>.png` 두 파일을 가진다(뒷부분이 없으면 hair_back 파일은 완전 투명 시트). `hat/none`은 파일 없음.
-- 외곽선: 레이어 PNG는 외곽선 없이 납품. 프런트가 합성 후 바깥 실루엣 1px 외곽선을 그린다: 투명 픽셀 중 4방향(아래, 왼쪽, 오른쪽, 위 순) 이웃에 불투명 픽셀이 있으면 그 이웃 색을 `assets/avatar/outline.json`(`{ "#RRGGBB": "#RRGGBB" }`, 팔레트 색 → line 색)로 매핑한 색으로 칠한다. 매핑에 없으면 RGB 각 성분 x0.45. 결과는 외형 조합당 1회 계산해 캐시. 프레임 경계 안에서 처리(기준점 여백 확보됨).
-- 매니페스트 `assets/avatar/manifest.json`:
-  `{ "frame":{"w":48,"h":64}, "anchor":{"x":24,"y":60}, "scale":2, "frames":["front","side_idle","side_walk0","side_walk1","side_walk2","side_walk3","back"], "animations":{"idle":{"frames":[1],"ms":500},"walk":{"frames":[2,3,4,5],"ms":150}}, "layerOrder":["hair_back","skin","face","bottom","shoes","top","hair_front","hat"], "parts":{ "skin":[..], "hair":[..], "face":[..], "top":[..], "bottom":[..], "shoes":[..], "hat":[{"id":"none","label":"없음"}, ..] }, "presets":[ {"label":"..","avatar":{..}} ] }` — 각 part 배열 항목은 `{"id","label"}`, 첫 항목이 기본값. hair 파츠는 hair_back/hair_front 레이어로, 나머지는 같은 이름 레이어로 그린다.
-- 맵: `assets/map/manifest.json` — `{ "scale":2, "groundY":220, "width":1200, "layers":[ {"src":"assets/map/<file>.png","parallax":0.0~1.0,"y":<아트 px>,"repeatX":true|false} ] }`. 배열 앞쪽이 뒤에 그려진다. parallax 1.0 = 월드와 같이 움직임. 마지막 지면 레이어(parallax 1.0)는 너비 1200.
-- 원본: `assets/_src/block/` Python(Pillow) 스크립트. `python3 assets/_src/block/build.py`로 assets/avatar, assets/map 전체 재생성(결정적 출력).
-- UI: 블록 스타일을 CSS로 구현(계단형 픽셀 테두리, 3면 톤 버튼). PNG UI 스킨은 쓰지 않는다. 정본은 docs/design/style-guide.md.
-- 텍스트(닉네임, 말풍선, UI)는 시스템 폰트로 화면 해상도에서 선명하게.
+### 복셀 아트 계약 (2026-10-15 사이클 5 — 3D 복셀 모델 조명 렌더, 블록 아트 계약 대체)
+- 방식: 캐릭터와 맵 모두 코드로 정의한 3D 복셀(상자) 모델을 오프라인 레이트레이서(numpy)로 조명 렌더(키라이트 + 필 + AO + 소프트 섀도 + 베벨 하이라이트 + 림)해 PNG/WebP로 굽는다. 원본: `assets/_src/voxel/`(공용 렌더러 + 캐릭터), `assets/_src/voxel_map/`(맵). 결정적 출력.
+- 좌표: 월드 2400x540 월드 단위(기존과 같음), 지면선 월드 y=440. **에셋 밀도 1.5px = 월드 1단위**(화면 P=3에서 1:1, P=2에서는 2/3로 축소 표시).
+- 렌더: 캔버스 `imageSmoothingEnabled = true`, `imageSmoothingQuality = 'high'`. 반투명 가장자리(알파) 허용. 1px 외곽선 없음. 표시 배율 P(화면 px / 월드 단위 = P/2)는 기존 규칙(기본 2, 1600x900 이상 3) 유지.
+- 아바타 프레임: 월드 96x128 단위 = 시트 프레임 **144x192 px**, 기준점 **(72, 180) px** = 발 중앙 바닥(월드 (48,120)). 캐릭터 키(머리카락 포함)는 월드 약 90~100단위.
+- 시트: 가로 8프레임 1152x192, 순서 `front, front_b, side, walk0, walk1, walk2, walk3, back` (프레임 i의 x = 144i). 오른쪽을 보는 것이 기본, 왼쪽은 프레임 좌우 반전(기준점 x 유지).
+  - 애니메이션: `idle_front` = [0,1] 600ms(숨쉬기), `idle` = [2](인게임 정지), `walk` = [3,4,5,6] 150ms.
+- 파츠 id: 사이클 3과 **같은 7개 파츠 키와 같은 id 집합**(skin 3, face 4, hair 8, top 6, bottom 5, shoes 4, hat 5+none)과 같은 프리셋 6종을 유지한다. 저장된 프로필이 그대로 동작해야 한다.
+- 레이어: `assets/avatar/manifest.json`의 `layerOrder`가 정본. 각 항목 `{ "layer": "<폴더>", "part": "<파츠 키>", "blend": "source-over" | "source-atop" }`. 프런트는 순서대로 `assets/avatar/<layer>/<id>.png`(id = 프로필의 해당 파츠 값)를 해당 blend로 합성한다. 파일이 없으면 건너뛴다(예: hat none, 그림자 없는 파츠). 그림자 레이어(`shade_*`)는 `source-atop`.
+- 매니페스트: `{ "frame":{"w":144,"h":192}, "anchor":{"x":72,"y":180}, "density":1.5, "frames":[..8개], "animations":{..}, "layerOrder":[..], "parts":{..}, "presets":[..] }`.
+- 맵: `assets/map/manifest.json` — `{ "density":1.5, "groundY":440, "width":2400, "layers":[ {"src":"assets/map/<file>","parallax":0~1,"y":<월드 단위>,"repeatX":bool,"stretchX":bool} ] }`. src는 .png 또는 .webp. 앞쪽 항목이 뒤에 그려진다. parallax 1.0 지면 레이어는 월드 너비 2400(=3600px). y와 크기는 월드 단위로 환산(px / 1.5). 맵 전체 용량 목표 6MB 이하.
+- UI: 블록 스타일 CSS(ui-kit) 유지.
+- 이전 블록 아트 계약(48x64, 2D 면 명암)은 폐기. 소스는 git 이력에 있다.
 
 ## 화면 흐름 (사이클 4)
 `프로필(닉네임 + 캐릭터 꾸미기)` → `로비(방 목록, 방 만들기, 프로필 수정)` → `방(맵 + 캐릭터 + 말풍선 + 채팅 로그 패널, 방 나가기)`.

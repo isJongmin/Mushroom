@@ -4,30 +4,34 @@
 // - 카테고리 탭 7개 + 아이템 슬롯 그리드(썸네일) + 프리셋 + 회전 미리보기(앞/옆/뒤 + 걷기)는 v3 그대로.
 // - 탭/슬롯/프리셋은 assets/avatar/manifest.json 의 parts/presets 로만 만든다(하드코딩 없음).
 import { h, setText } from '../dom.js';
-import { PAL, NICK_RE, NICK_MAX, PART_KEYS, CATEGORY_ORDER, PART_LABELS, HAT_NONE } from '../constants.js';
+import { NICK_RE, NICK_MAX, PART_KEYS, CATEGORY_ORDER, PART_LABELS, HAT_NONE } from '../constants.js';
 import { PROFILE_MESSAGES as M } from '../errors.js';
-import { createAvatarRenderer, makeCanvas } from '../avatar.js';
-import { drawFootShadow } from '../game/world.js';
+import { createAvatarRenderer, smooth } from '../avatar.js';
+import { drawFootShadow, drawMap } from '../game/world.js';
 import { pickAvatar } from '../avatar-data.js';
 import { writeProfile } from '../store.js';
 import { trimWs, charLength } from '../backend/common.js';
 
-// 미리보기 무대 (style-guide 5.14): 아트 56x72, 프레임 왼쪽 위 (4,4) → 기준점 (28,64), 잔디 윗면 첫 행 62
-const STAGE = Object.freeze({ w: 56, h: 72, ax: 28, ay: 64, grassTop: 62 });
-const SKY_BANDS = [[PAL.k3, 0, 24], [PAL.k4, 24, 44], [PAL.k5, 44, 62]];
+// 미리보기 무대 (사이클 5, 월드 단위): 112x144 = CSS 56x72 x --pv (데스크톱 4 → 224x288, 모바일 3 → 168x216).
+// 기준점 (56,128). 배경 = 맵 전체를 카메라 (mapX, mapY)로 그린 작은 장면 (지면선 440 → 무대 128). mapX는 소품이 적은 잔디 구간.
+const STAGE = Object.freeze({ w: 112, h: 144, ax: 56, ay: 128, mapX: 1460, mapY: 440 - 128 });
 
-// 슬롯 썸네일 (style-guide 5.12 표): 합성할 파츠와 자르기 왼쪽 위 (40x40 영역)
+// 슬롯/프리셋 썸네일 자르기 (시트 px, front 프레임 144x192 안의 정사각형): 얼굴/머리(모자 포함) 또는 몸.
+const HEAD_CROP = Object.freeze({ x: 16, y: 26, size: 112 });
+const TOP_CROP = Object.freeze({ x: 22, y: 92, size: 100 }); // 어깨~무릎
+const BOTTOM_CROP = Object.freeze({ x: 27, y: 104, size: 90 }); // 허리~발
+const SHOES_CROP = Object.freeze({ x: 32, y: 112, size: 80 }); // 무릎~발끝 (측면 발끝 y 186까지)
 const THUMB = Object.freeze({
-  skin: { parts: ['skin', 'face'], x: 4, y: 10 },
-  face: { parts: ['skin', 'face'], x: 4, y: 10 },
-  hair: { parts: ['skin', 'face', 'hair'], x: 4, y: 10 },
-  hat: { parts: ['skin', 'face', 'hair', 'hat'], x: 4, y: 6 },
-  top: { parts: ['skin', 'face', 'top'], x: 4, y: 24 },
-  bottom: { parts: ['skin', 'face', 'bottom'], x: 4, y: 24 },
-  shoes: { parts: ['skin', 'face', 'shoes'], x: 4, y: 24 },
+  skin: { parts: ['skin', 'face'], crop: HEAD_CROP },
+  face: { parts: ['skin', 'face'], crop: HEAD_CROP },
+  hair: { parts: ['skin', 'face', 'hair'], crop: HEAD_CROP },
+  hat: { parts: ['skin', 'face', 'hair', 'hat'], crop: HEAD_CROP },
+  top: { parts: ['skin', 'face', 'top'], crop: TOP_CROP },
+  bottom: { parts: ['skin', 'face', 'bottom'], crop: BOTTOM_CROP },
+  shoes: { parts: ['skin', 'face', 'shoes'], crop: SHOES_CROP },
 });
 const THUMB_SIZE = 40;
-const PRESET_CROP = Object.freeze({ x: 4, y: 6 });
+const PRESET_CROP = HEAD_CROP;
 const VIEWS = Object.freeze([['front', '앞'], ['side', '옆'], ['back', '뒤']]);
 
 export function mount(root, app, opts = {}) {
@@ -47,6 +51,7 @@ export function mount(root, app, opts = {}) {
   let walking = false;
   let walkStart = 0;
   let raf = 0;
+  let cancelRepaint = () => {};
   const nick = { value: '', status: 'empty' };
 
   // --- 요소 ---------------------------------------------------------------
@@ -121,77 +126,79 @@ export function mount(root, app, opts = {}) {
   if (app.mode === 'local') app.placeModeBadge(modeSlot);
 
   // --- 미리보기 그리기 ---------------------------------------------------------
-  const art = makeCanvas(STAGE.w, STAGE.h);
-  const actx = art.getContext('2d');
+  // 무대 캔버스 백킹(CSS x dpr)에 바로 그린다. k = 장치 px / 월드 = pv/2 x dpr. 스무딩 켬.
   let map = null;
   let pv = 4;
   let dpr = 1;
+  let k = 2;
+  let lastDrawn = ''; // 마지막으로 그린 (조합, 프레임) — 같은 그림이면 다시 그리지 않는다
+  let shownOnce = false;
 
   function sizeStage() {
     const v = parseInt(getComputedStyle(previewEl).getPropertyValue('--pv'), 10);
     pv = Number.isInteger(v) && v > 0 ? v : 4;
     dpr = Math.max(1, Math.min(3, Math.round(window.devicePixelRatio || 1)));
-    const w = STAGE.w * pv * dpr;
-    const hgt = STAGE.h * pv * dpr;
+    k = (pv / 2) * dpr;
+    const w = Math.round(STAGE.w * k);
+    const hgt = Math.round(STAGE.h * k);
     if (stageCanvas.width !== w || stageCanvas.height !== hgt) { stageCanvas.width = w; stageCanvas.height = hgt; }
+    lastDrawn = '';
   }
 
-  function drawStageBg() {
-    const c = actx;
-    for (const [col, y0, y1] of SKY_BANDS) { c.fillStyle = col; c.fillRect(0, y0, STAGE.w, y1 - y0); }
-    if (map && map.groundImg) {
-      // 지면 레이어의 잔디 윗면 첫 행(아트 y 218 → 레이어 이미지 y 218 - layer.y)부터 10행을 무대 y 62에 깐다
-      const sy = 218 - map.groundLayerY;
-      c.drawImage(map.groundImg, 0, sy, STAGE.w, STAGE.h - STAGE.grassTop, 0, STAGE.grassTop, STAGE.w, STAGE.h - STAGE.grassTop);
-    } else {
-      c.fillStyle = PAL.g1; c.fillRect(0, 62, STAGE.w, 2);
-      c.fillStyle = PAL.g2; c.fillRect(0, 64, STAGE.w, 2);
-      c.fillStyle = PAL.w3; c.fillRect(0, 66, STAGE.w, 6);
-    }
+  // 배경 = 방과 같은 맵 그리기(drawMap)를 카메라 (mapX, mapY)로 (패럴랙스 레이어 포함 작은 장면)
+  function drawStageBg(c) {
+    drawMap(c, map, STAGE.mapX, STAGE.mapY, k, stageCanvas.width, stageCanvas.height);
   }
 
   function previewFrame(now) {
     if (walking) return renderer.frameAt('walk', now - walkStart);
+    if (view === 'front') return renderer.frameAt('idle_front', now - walkStart); // 앞 = 숨쉬기 0,1
     return renderer.frameIndex[view];
   }
 
-  function drawPreview(now = performance.now()) {
-    actx.imageSmoothingEnabled = false;
-    drawStageBg();
-    if (renderer && avatar) {
-      drawFootShadow(actx, STAGE.ax, STAGE.ay);
-      renderer.draw(actx, avatar, STAGE.ax, STAGE.ay, previewFrame(now), false);
-    }
+  function drawPreview(now = performance.now(), force = true) {
+    const fr = renderer && avatar ? previewFrame(now) : -1;
+    const ok = !!(renderer && avatar && renderer.isReady(avatar));
+    const key = `${ok ? PART_KEYS.map((p) => avatar[p]).join('|') : '-'}#${fr}`;
+    if (!force && key === lastDrawn) return;
+    lastDrawn = key;
     const c = stageCanvas.getContext('2d');
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.imageSmoothingEnabled = false;
-    c.drawImage(art, 0, 0, STAGE.w, STAGE.h, 0, 0, stageCanvas.width, stageCanvas.height);
+    smooth(c);
+    drawStageBg(c);
+    if (renderer && avatar) {
+      const fx = STAGE.ax * k;
+      const fy = STAGE.ay * k;
+      if (ok) drawFootShadow(c, fx, fy, k);
+      renderer.draw(c, avatar, fx, fy, k, fr, false);
+    }
+    if (ok && !shownOnce) { shownOnce = true; stageDots.hidden = true; }
   }
 
+  // 앞(숨쉬기)과 걷기는 애니메이션: 프레임이 바뀔 때만 다시 그린다
   function loop(now) {
     raf = 0;
-    if (!alive || !walking) return;
-    drawPreview(now);
+    if (!alive || !(walking || view === 'front')) return;
+    drawPreview(now, false);
     raf = requestAnimationFrame(loop);
   }
   function stopLoop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
+  function startLoop() { if (!raf && alive && ready && (walking || view === 'front')) raf = requestAnimationFrame(loop); }
 
   function setView(next) {
     view = next;
-    for (const [k] of VIEWS) {
-      viewBtns[k].setAttribute('aria-checked', String(k === view));
-      viewBtns[k].tabIndex = k === view ? 0 : -1;
+    for (const [v] of VIEWS) {
+      viewBtns[v].setAttribute('aria-checked', String(v === view));
+      viewBtns[v].tabIndex = v === view ? 0 : -1;
     }
   }
   function setWalking(on) {
     walking = on;
     walkBtn.setAttribute('aria-pressed', String(on));
     stopLoop();
-    if (on) {
-      setView('side');
-      walkStart = performance.now();
-      raf = requestAnimationFrame(loop);
-    }
+    walkStart = performance.now();
+    if (on) setView('side');
+    startLoop();
     drawPreview();
   }
 
@@ -202,12 +209,13 @@ export function mount(root, app, opts = {}) {
     cv.height = sizeCss * dpr;
     return cv;
   }
-  function paintThumb(cv, src, sx, sy) {
+  /** src가 null이면(합성 중) 비워 두고, 합성이 끝나면 renderer onUpdate로 다시 칠한다. */
+  function paintThumb(cv, src, crop) {
     const c = cv.getContext('2d');
     c.setTransform(1, 0, 0, 1, 0, 0);
-    c.imageSmoothingEnabled = false;
+    smooth(c);
     c.clearRect(0, 0, cv.width, cv.height);
-    c.drawImage(src, sx, sy, THUMB_SIZE, THUMB_SIZE, 0, 0, cv.width, cv.height);
+    if (src) c.drawImage(src, crop.x, crop.y, crop.size, crop.size, 0, 0, cv.width, cv.height);
   }
 
   // --- 슬롯 그리드 --------------------------------------------------------------
@@ -236,15 +244,21 @@ export function mount(root, app, opts = {}) {
       const sel = avatar[part] === s.id;
       s.btn.setAttribute('aria-checked', String(sel));
       s.btn.tabIndex = sel ? 0 : -1;
-      if (s.canvas) paintThumb(s.canvas, renderer.thumb({ ...avatar, [part]: s.id }, spec.parts), spec.x, spec.y);
+      if (s.canvas) paintThumb(s.canvas, renderer.thumb({ ...avatar, [part]: s.id }, spec.parts), spec.crop);
     }
   }
 
+  let presetCanvases = [];
+  function paintPresets() {
+    presetCanvases.forEach((cv, i) => paintThumb(cv, renderer.thumb(assets.presets[i].avatar, PART_KEYS), PRESET_CROP));
+  }
   function buildPresets() {
     presetGrid.replaceChildren();
+    presetCanvases = [];
     assets.presets.forEach((p, i) => {
       const cv = thumbCanvas(THUMB_SIZE);
-      paintThumb(cv, renderer.thumb(p.avatar, PART_KEYS), PRESET_CROP.x, PRESET_CROP.y);
+      presetCanvases.push(cv);
+      paintThumb(cv, renderer.thumb(p.avatar, PART_KEYS), PRESET_CROP);
       const btn = h('button', { type: 'button', class: 'bk-btn', testid: `preset-${i}`, 'data-label': p.label, disabled: creating }, cv, h('span', {}, p.label));
       on(btn, 'click', () => applyPreset(i));
       presetGrid.appendChild(btn);
@@ -398,8 +412,11 @@ export function mount(root, app, opts = {}) {
   for (const [k] of VIEWS) {
     on(viewBtns[k], 'click', () => {
       if (creating) return;
-      if (walking && k !== 'side') { walking = false; walkBtn.setAttribute('aria-pressed', 'false'); stopLoop(); }
+      if (walking && k !== 'side') { walking = false; walkBtn.setAttribute('aria-pressed', 'false'); }
+      stopLoop();
+      if (view !== k) walkStart = performance.now();
       setView(k);
+      startLoop();
       drawPreview();
     });
   }
@@ -457,7 +474,11 @@ export function mount(root, app, opts = {}) {
   let resizeTimer = 0;
   on(window, 'resize', () => {
     clearTimeout(resizeTimer);
-    resizeTimer = setTimeout(() => { if (alive) { sizeStage(); drawPreview(); } }, 100);
+    resizeTimer = setTimeout(() => {
+      if (!alive) return;
+      sizeStage();
+      drawPreview();
+    }, 100);
   });
 
   // --- 테스트 훅 ---------------------------------------------------------------
@@ -485,9 +506,22 @@ export function mount(root, app, opts = {}) {
     if (!alive) return;
     assets = a;
     map = m;
-    stageDots.hidden = true;
-    if (!a || a.source !== 'manifest') { showManifestError(); return; }
-    renderer = createAvatarRenderer(a);
+    if (!a || a.source !== 'manifest') { stageDots.hidden = true; showManifestError(); return; }
+    // 레이어는 그릴 조합이 생길 때 받는다. 합성이 끝날 때마다 다음 프레임에 미리보기/썸네일을 다시 칠한다.
+    let repaintRaf = 0;
+    renderer = createAvatarRenderer(a, {
+      onUpdate() {
+        if (repaintRaf || !alive) return;
+        repaintRaf = requestAnimationFrame(() => {
+          repaintRaf = 0;
+          if (!alive || !ready) return;
+          drawPreview();
+          paintSlots();
+          paintPresets();
+        });
+      },
+    });
+    cancelRepaint = () => { if (repaintRaf) cancelAnimationFrame(repaintRaf); repaintRaf = 0; };
     // 최초: manifest 각 파츠 첫 항목 / 수정: 저장 값 (manifest에 없는 id는 기본값, 저장하면 그 값으로 고쳐 저장)
     avatar = editMode ? a.sanitizeAvatar(app.profile.avatar) : { ...a.defaultAvatar };
     ready = true;
@@ -496,6 +530,7 @@ export function mount(root, app, opts = {}) {
     buildSlots();
     announcePart(activeTab);
     drawPreview();
+    startLoop();
     updateSubmit();
   }, () => {
     if (!alive) return;
@@ -510,6 +545,7 @@ export function mount(root, app, opts = {}) {
       alive = false;
       clearTimeout(resizeTimer);
       stopLoop();
+      cancelRepaint();
       ac.abort();
       if (app.providers.profile) app.providers.profile = null;
       renderer?.clear();

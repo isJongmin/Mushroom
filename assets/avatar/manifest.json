@@ -1,0 +1,439 @@
+{
+  "frame": {
+    "w": 144,
+    "h": 192
+  },
+  "anchor": {
+    "x": 72,
+    "y": 180
+  },
+  "density": 1.5,
+  "frames": [
+    "front",
+    "front_b",
+    "side",
+    "walk0",
+    "walk1",
+    "walk2",
+    "walk3",
+    "back"
+  ],
+  "animations": {
+    "idle_front": {
+      "frames": [
+        0,
+        1
+      ],
+      "ms": 600
+    },
+    "idle": {
+      "frames": [
+        2
+      ],
+      "ms": 600
+    },
+    "walk": {
+      "frames": [
+        3,
+        4,
+        5,
+        6
+      ],
+      "ms": 150
+    }
+  },
+  "layerOrder": [
+    {
+      "layer": "hair_back",
+      "part": "hair",
+      "blend": "source-over"
+    },
+    {
+      "layer": "top_back",
+      "part": "top",
+      "blend": "source-over"
+    },
+    {
+      "layer": "skin",
+      "part": "skin",
+      "blend": "source-over"
+    },
+    {
+      "layer": "face",
+      "part": "face",
+      "blend": "source-over"
+    },
+    {
+      "layer": "bottom",
+      "part": "bottom",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shoes",
+      "part": "shoes",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shade_top",
+      "part": "top",
+      "blend": "source-atop"
+    },
+    {
+      "layer": "top",
+      "part": "top",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shade_hair",
+      "part": "hair",
+      "blend": "source-atop"
+    },
+    {
+      "layer": "hat_back",
+      "part": "hat",
+      "blend": "source-over"
+    },
+    {
+      "layer": "hair_front",
+      "part": "hair",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shade_hat",
+      "part": "hat",
+      "blend": "source-atop"
+    },
+    {
+      "layer": "hat",
+      "part": "hat",
+      "blend": "source-over"
+    }
+  ],
+  "parts": {
+    "skin": [
+      {
+        "id": "light",
+        "label": "밝은 피부"
+      },
+      {
+        "id": "medium",
+        "label": "보통 피부"
+      },
+      {
+        "id": "dark",
+        "label": "진한 피부"
+      }
+    ],
+    "face": [
+      {
+        "id": "basic",
+        "label": "기본"
+      },
+      {
+        "id": "smile",
+        "label": "웃음"
+      },
+      {
+        "id": "wink",
+        "label": "윙크"
+      },
+      {
+        "id": "sleepy",
+        "label": "졸린 눈"
+      }
+    ],
+    "hair": [
+      {
+        "id": "black-short",
+        "label": "검은 짧은 머리"
+      },
+      {
+        "id": "brown-short",
+        "label": "밤색 짧은 머리"
+      },
+      {
+        "id": "blonde-spiky",
+        "label": "금발 뻗친 머리"
+      },
+      {
+        "id": "pink-long",
+        "label": "분홍 긴 머리"
+      },
+      {
+        "id": "sky-bob",
+        "label": "하늘색 단발"
+      },
+      {
+        "id": "tan-ponytail",
+        "label": "갈색 포니테일"
+      },
+      {
+        "id": "black-twintail",
+        "label": "검은 양갈래"
+      },
+      {
+        "id": "mint-curly",
+        "label": "민트 곱슬"
+      }
+    ],
+    "top": [
+      {
+        "id": "hoodie-black",
+        "label": "검은 후드티"
+      },
+      {
+        "id": "hoodie-white",
+        "label": "흰 후드티"
+      },
+      {
+        "id": "blouse-white",
+        "label": "흰 블라우스"
+      },
+      {
+        "id": "overalls-green",
+        "label": "초록 멜빵"
+      },
+      {
+        "id": "tee-stripe-red",
+        "label": "빨간 줄무늬 티"
+      },
+      {
+        "id": "cape-blue",
+        "label": "파란 망토 셔츠"
+      }
+    ],
+    "bottom": [
+      {
+        "id": "pants-navy",
+        "label": "남색 바지"
+      },
+      {
+        "id": "pants-black",
+        "label": "검은 바지"
+      },
+      {
+        "id": "skirt-pink",
+        "label": "분홍 치마"
+      },
+      {
+        "id": "shorts-brown",
+        "label": "갈색 반바지"
+      },
+      {
+        "id": "jeans-blue",
+        "label": "청바지"
+      }
+    ],
+    "shoes": [
+      {
+        "id": "sneakers-white",
+        "label": "흰 운동화"
+      },
+      {
+        "id": "maryjane-red",
+        "label": "빨간 메리제인"
+      },
+      {
+        "id": "boots-brown",
+        "label": "갈색 부츠"
+      },
+      {
+        "id": "sneakers-black",
+        "label": "검은 운동화"
+      }
+    ],
+    "hat": [
+      {
+        "id": "none",
+        "label": "없음"
+      },
+      {
+        "id": "cap-white",
+        "label": "흰 야구모자"
+      },
+      {
+        "id": "mushroom-red",
+        "label": "빨간 버섯 모자"
+      },
+      {
+        "id": "explorer-brown",
+        "label": "갈색 탐험가 모자"
+      },
+      {
+        "id": "beanie-yellow",
+        "label": "노란 비니"
+      },
+      {
+        "id": "ribbon-pink",
+        "label": "분홍 리본"
+      }
+    ]
+  },
+  "presets": [
+    {
+      "label": "후드 소년",
+      "avatar": {
+        "skin": "light",
+        "hair": "black-short",
+        "face": "basic",
+        "top": "hoodie-black",
+        "bottom": "pants-navy",
+        "shoes": "sneakers-white",
+        "hat": "none"
+      }
+    },
+    {
+      "label": "분홍 소녀",
+      "avatar": {
+        "skin": "light",
+        "hair": "pink-long",
+        "face": "basic",
+        "top": "blouse-white",
+        "bottom": "skirt-pink",
+        "shoes": "maryjane-red",
+        "hat": "none"
+      }
+    },
+    {
+      "label": "모자 소년",
+      "avatar": {
+        "skin": "light",
+        "hair": "brown-short",
+        "face": "smile",
+        "top": "hoodie-white",
+        "bottom": "pants-black",
+        "shoes": "sneakers-black",
+        "hat": "cap-white"
+      }
+    },
+    {
+      "label": "버섯 꼬마",
+      "avatar": {
+        "skin": "light",
+        "hair": "blonde-spiky",
+        "face": "basic",
+        "top": "overalls-green",
+        "bottom": "jeans-blue",
+        "shoes": "boots-brown",
+        "hat": "mushroom-red"
+      }
+    },
+    {
+      "label": "하늘 마법사",
+      "avatar": {
+        "skin": "medium",
+        "hair": "sky-bob",
+        "face": "wink",
+        "top": "cape-blue",
+        "bottom": "pants-navy",
+        "shoes": "boots-brown",
+        "hat": "none"
+      }
+    },
+    {
+      "label": "탐험가",
+      "avatar": {
+        "skin": "dark",
+        "hair": "black-twintail",
+        "face": "smile",
+        "top": "tee-stripe-red",
+        "bottom": "shorts-brown",
+        "shoes": "sneakers-white",
+        "hat": "explorer-brown"
+      }
+    }
+  ],
+  "files": {
+    "hair_back": [
+      "black-twintail",
+      "pink-long"
+    ],
+    "top_back": [
+      "blouse-white",
+      "cape-blue",
+      "hoodie-black",
+      "hoodie-white",
+      "overalls-green",
+      "tee-stripe-red"
+    ],
+    "skin": [
+      "dark",
+      "light",
+      "medium"
+    ],
+    "face": [
+      "basic",
+      "sleepy",
+      "smile",
+      "wink"
+    ],
+    "bottom": [
+      "jeans-blue",
+      "pants-black",
+      "pants-navy",
+      "shorts-brown",
+      "skirt-pink"
+    ],
+    "shoes": [
+      "boots-brown",
+      "maryjane-red",
+      "sneakers-black",
+      "sneakers-white"
+    ],
+    "shade_top": [
+      "blouse-white",
+      "cape-blue",
+      "hoodie-black",
+      "hoodie-white",
+      "overalls-green",
+      "tee-stripe-red"
+    ],
+    "top": [
+      "blouse-white",
+      "cape-blue",
+      "hoodie-black",
+      "hoodie-white",
+      "overalls-green",
+      "tee-stripe-red"
+    ],
+    "shade_hair": [
+      "black-short",
+      "black-twintail",
+      "blonde-spiky",
+      "brown-short",
+      "mint-curly",
+      "pink-long",
+      "sky-bob",
+      "tan-ponytail"
+    ],
+    "hat_back": [
+      "beanie-yellow",
+      "cap-white",
+      "ribbon-pink"
+    ],
+    "hair_front": [
+      "black-short",
+      "black-twintail",
+      "blonde-spiky",
+      "brown-short",
+      "mint-curly",
+      "pink-long",
+      "sky-bob",
+      "tan-ponytail"
+    ],
+    "shade_hat": [
+      "beanie-yellow",
+      "cap-white",
+      "explorer-brown",
+      "mushroom-red",
+      "ribbon-pink"
+    ],
+    "hat": [
+      "beanie-yellow",
+      "cap-white",
+      "explorer-brown",
+      "mushroom-red",
+      "ribbon-pink"
+    ]
+  }
+}

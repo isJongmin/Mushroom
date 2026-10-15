@@ -1,0 +1,50 @@
+-- =============================================================================
+-- 버섯마을: Realtime 설정 기록
+-- 마이그레이션: 20261014000100_realtime.sql
+--
+-- 이 파일은 주석만 있다. 실행해도 DB에 아무 변화가 없다. (의도된 no-op)
+-- 현재 Realtime 구성에서 "하지 않는 것"과 후속 과제를 기록하기 위해 존재한다.
+--
+-- [현재 구성]
+--  - 채널: map:village (public channel)
+--  - 사용 기능: Broadcast(move, chat) + Presence(접속자 목록)만 사용한다.
+--  - 메시지 형식은 docs/ARCHITECTURE.md "확정된 결정 4"가 정본이다.
+--
+-- [하지 않는 것]
+--  1. Postgres Changes 구독을 쓰지 않는다.
+--     → supabase_realtime publication에 public.characters 등 어떤 테이블도 추가하지 않는다.
+--       (alter publication supabase_realtime add table ... 없음)
+--       캐릭터 정보(nickname/avatar)는 Presence 상태로 전달된다.
+--  2. Realtime Authorization(private channel)을 적용하지 않는다.
+--     → realtime.messages 테이블에 RLS 정책을 추가하지 않는다.
+--     → 프런트는 channel('map:village') 생성 시 config.private를 지정하지 않는다(기본 false).
+--     → 결과: anon key를 가진 누구나(로그인 여부 무관) 채널에 접속·송신할 수 있고,
+--       Broadcast 메시지의 user_id는 클라이언트가 임의로 넣을 수 있다.
+--       완화책: 수신 측이 Presence에 없는 user_id의 move/chat을 버린다.
+--       (ARCHITECTURE.md "알려진 한계" 참고)
+--  3. 채팅/위치를 DB에 저장하지 않는다.
+--
+-- [후속 과제: private channel + realtime.messages RLS]
+--  아래는 참고용 초안이며 이 파일에서 실행하지 않는다. 적용 시 새 마이그레이션 파일로 추가.
+--
+--  -- (a) 로그인한 사용자만 map:village 수신/Presence 조회
+--  -- create policy "village read" on realtime.messages
+--  --   for select to authenticated
+--  --   using ( (select realtime.topic()) = 'map:village'
+--  --           and realtime.messages.extension in ('broadcast', 'presence') );
+--
+--  -- (b) 캐릭터가 있는 사용자만 송신/Presence track
+--  -- create policy "village write" on realtime.messages
+--  --   for insert to authenticated
+--  --   with check ( (select realtime.topic()) = 'map:village'
+--  --                and realtime.messages.extension in ('broadcast', 'presence')
+--  --                and exists (select 1 from public.characters c
+--  --                            where c.user_id = (select auth.uid())) );
+--
+--  -- (c) 프런트: supabase.channel('map:village', { config: { private: true } })
+--  --     대시보드 Realtime 설정에서 "Allow public access" 끄기.
+--
+--  주의: (a)(b)를 적용해도 Broadcast payload의 user_id 위조는 여전히 막지 못한다
+--  (정책은 채널 접근 여부만 판단). 발신자 위조까지 막으려면 서버 경유 송신
+--  (Edge Function 또는 DB 함수에서 realtime.send 호출로 user_id를 auth.uid()로 채움)이 필요하다.
+-- =============================================================================

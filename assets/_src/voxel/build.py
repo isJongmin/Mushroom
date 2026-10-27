@@ -1,4 +1,4 @@
-"""버섯마을 아바타 빌드 (복셀 아트 계약, 사이클 5 + 사이클 6 jump/fall/crouch 프레임).
+"""버섯마을 아바타 빌드 (복셀 아트 계약, 사이클 5 + 사이클 6 jump/fall/crouch 프레임 + 사이클 7 트렌디 비율, 복셀 1칸 1.82px).
 
 python3 assets/_src/voxel/build.py                     # assets/avatar/** 전체 재생성 + 검증용 정답 렌더
 python3 assets/_src/voxel/build.py --preview DIR       # + 미리보기 (presets, parts_*, walk.gif, compare, ingame_scale)
@@ -32,10 +32,10 @@ from vox import render, downsample, SS  # noqa: E402
 W, H = 144, 192
 ANCHOR = (72, 180)
 DENSITY = 1.5
-SCALE = 2.75            # 시트 px / 복셀 1칸
+SCALE = 1.82            # 시트 px / 복셀 1칸 (사이클 7: 2.75 -> 1.82)
 PITCH = 15
 FRAMES = ['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back', 'jump', 'fall', 'crouch']
-YAW = {'front': 25, 'front_b': 25, 'back': 160}
+YAW = {'front': -25, 'front_b': -25, 'back': 160}   # 사이클 7: 정면은 시안처럼 캐릭터 왼쪽에서 (25 -> -25)
 SIDE_YAW = 62
 LAYER_ORDER = [
     ('hair_back', 'hair', 'source-over'),
@@ -55,7 +55,7 @@ LAYER_ORDER = [
 SPLIT = {'hair': ('body', 'hair_back', 'hair_front'), 'top': ('legs', 'top_back', 'top'), 'hat': ('hairshell', 'hat_back', 'hat')}
 SHADE = {'hair': 'man', 'top': 'man', 'hat': 'man+shell'}
 SHADE_RGB = (34, 26, 48)
-SHADE_GAIN = 0.9
+SHADE_GAIN = {'hair': 0.65, 'top': 0.6, 'hat': 0.7}   # 사이클 7: 파츠별 (겹치는 그림자가 곱해져 과하게 어두워지는 것 보정, 0.9 -> 파츠별)
 TOL_MEAN = 6.0          # 레이어 합성 vs 전체 렌더 허용치 (프리멀티 RGB 평균 절대차, /255)
 TOL_ALPHA = 2.0
 
@@ -112,7 +112,7 @@ def t_layer(args):
         r1 = R(allb, fr, vis=range(len(rb)))
         irr0, hit0 = IRR0[(fr, recv)]
         k = np.where(r1['hit'] & hit0, 1 - r1['irr'] / np.maximum(irr0, 1e-6), 0)
-        k = np.clip(k, 0, 1) * SHADE_GAIN
+        k = np.clip(k, 0, 1) * SHADE_GAIN[cat]
         a = k.reshape(H, SS, W, SS).mean((1, 3))
         sh = np.zeros((H, W, 4), np.uint8)
         sh[..., :3] = SHADE_RGB

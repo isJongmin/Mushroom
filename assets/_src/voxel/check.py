@@ -5,6 +5,7 @@ python3 assets/_src/voxel/check.py --fast       # 결정성 재빌드 생략
 
 검사 항목
  1. manifest 형식 (frame/anchor/density/frames/animations/layerOrder{layer,part,blend}/parts/presets)
+    (사이클 7) 파츠 개수 hair 12 / top 10 / bottom 9 / shoes 7 / hat 8(none 포함), 사이클 5 id 전부 유지
  2. manifest <-> 파일 일치: 모든 PNG가 layerOrder 의 레이어 + 해당 part 의 id 이고, 필수 레이어 파일이 있다
     + manifest.files: 모든 레이어 키, 정렬된 id, 실제 파일과 정확히 일치, 필수 레이어는 모든 id(hat 은 none 제외) 포함
  3. 시트 크기 = (144*11) x 192 RGBA
@@ -65,7 +66,16 @@ def main():
     ok(all(set(e) == {'layer', 'part', 'blend'} and e['blend'] in ('source-over', 'source-atop') for e in lo), 'layerOrder {layer,part,blend}')
     ok(all(e['blend'] == ('source-atop' if e['layer'].startswith('shade_') else 'source-over') for e in lo), 'shade_* = source-atop')
     counts = {k: len(v) for k, v in m['parts'].items()}
-    ok(counts == {'skin': 3, 'face': 4, 'hair': 8, 'top': 6, 'bottom': 5, 'shoes': 4, 'hat': 6}, 'parts 개수 %s' % counts)
+    ok(counts == {'skin': 3, 'face': 4, 'hair': 12, 'top': 10, 'bottom': 9, 'shoes': 7, 'hat': 8}, 'parts 개수 %s' % counts)
+    V5IDS = {'skin': ['light', 'medium', 'dark'], 'face': ['basic', 'smile', 'wink', 'sleepy'],
+             'hair': ['black-short', 'brown-short', 'blonde-spiky', 'pink-long', 'sky-bob', 'tan-ponytail', 'black-twintail', 'mint-curly'],
+             'top': ['hoodie-black', 'hoodie-white', 'blouse-white', 'overalls-green', 'tee-stripe-red', 'cape-blue'],
+             'bottom': ['pants-navy', 'pants-black', 'skirt-pink', 'shorts-brown', 'jeans-blue'],
+             'shoes': ['sneakers-white', 'maryjane-red', 'boots-brown', 'sneakers-black'],
+             'hat': ['none', 'cap-white', 'mushroom-red', 'explorer-brown', 'beanie-yellow', 'ribbon-pink']}
+    have = {k: {p['id'] for p in v} for k, v in m['parts'].items()}
+    lost = {k: [i for i in v if i not in have.get(k, ())] for k, v in V5IDS.items()}
+    ok(not any(lost.values()), '사이클 5 id 전부 유지 (저장된 프로필 호환) %s' % {k: v for k, v in lost.items() if v})
     ok(m['parts']['hat'][0]['id'] == 'none', 'hat 첫 항목 none')
     ok(len(m.get('presets', [])) == 6, 'presets 6종')
     ids = {k: {p['id'] for p in v} for k, v in m['parts'].items()}

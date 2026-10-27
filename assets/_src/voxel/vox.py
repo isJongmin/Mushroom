@@ -1,4 +1,4 @@
-"""버섯마을 voxel (사이클 5 정본, voxel_v1에서 이전): numpy 직교 레이캐스터 (상자 기반 복셀 렌더러).
+"""버섯마을 voxel (사이클 5 정본, 사이클 7: 복셀 1칸 1.9px 모델에 맞춰 격자 범위/AO 반경/그림자 거리 확대): numpy 직교 레이캐스터.
 
 모델 = 방향 있는 상자(Box) 목록. 한 상자 = 한 '큐브 덩어리'(베벨/이음새 단위).
   - 1차 가시성: 해석적 ray-box(slab) 교차, 4x4 슈퍼샘플.
@@ -59,19 +59,19 @@ class Box:
 # ---------------------------------------------------------------- 조명 (뷰 공간: x 오른쪽, y 위, z 카메라 쪽)
 KEY_DIR = norm([-0.42, 0.72, 0.56])
 KEY_COL = np.array([1.00, 0.87, 0.70]) * 1.9
-SKY_COL = np.array([0.52, 0.57, 0.74]) * 0.62
+SKY_COL = np.array([0.52, 0.57, 0.74]) * 0.70
 GND_COL = np.array([0.40, 0.30, 0.24]) * 0.45
 FILL_DIR = norm([0.45, 0.10, 0.90])
-FILL_COL = np.array([0.55, 0.64, 0.86]) * 0.30
+FILL_COL = np.array([0.62, 0.66, 0.80]) * 0.40
 BACK_DIR = norm([0.80, 0.35, -0.50])
 BACK_COL = np.array([1.00, 0.78, 0.58]) * 0.85
 RIM_COL = np.array([1.00, 0.82, 0.62]) * 0.95
-EXPOSURE = 1.0
+EXPOSURE = 1.05
 
 # 반구 AO 방향: 26 이웃 방향
 _D = np.array([(x, y, z) for x in (-1, 0, 1) for y in (-1, 0, 1) for z in (-1, 0, 1) if (x, y, z) != (0, 0, 0)], float)
 AO_DIRS = _D / np.linalg.norm(_D, axis=1)[:, None]
-AO_RADII = (0.8, 1.7, 3.0, 4.6)
+AO_RADII = (1.0, 2.2, 3.9, 6.0)      # 사이클 7: 모델 단위가 작아져 1.3배
 AO_W = (1.0, 0.8, 0.55, 0.35)
 
 # 슈퍼샘플 지터 (그림자 소프트니스): 4x4 서브픽셀마다 키라이트 방향을 원뿔 안에서 흔든다
@@ -95,7 +95,7 @@ def _hash3(a, b, c):
 
 # ---------------------------------------------------------------- 점유 격자
 class Grid:
-    def __init__(self, boxes, V, lo=(-26, -12, -26), hi=(26, 60, 26)):
+    def __init__(self, boxes, V, lo=(-36, -16, -36), hi=(36, 98, 36)):
         self.lo = np.array(lo, float)
         n = np.ceil((np.array(hi) - self.lo) / GRID).astype(int)
         occ = np.zeros(n, np.float32)
@@ -245,7 +245,7 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
     tau = np.zeros(N)
     step = 0.6
     act = np.arange(N)
-    for _ in range(140):
+    for _ in range(230):
         pos[act] += Ld[act] * step
         p = pos[act]
         ok = np.all((p > grid.blo) & (p < grid.bhi), axis=1)

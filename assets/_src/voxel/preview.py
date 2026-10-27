@@ -1,4 +1,5 @@
-"""미리보기 (저장소 밖 폴더 권장): presets.png, parts_<part>.png, walk.gif, compare.png, ingame_scale.png,
+"""미리보기 (저장소 밖 폴더 권장): presets.png(사이클 7: 6종 x 앞/옆/뒤/점프/숙이기), parts_<part>.png, walk.gif,
+compare.png(사이클 7: 위 Canva 시안 4종 / 아래 프리셋 1~4 front, 시안 폴더는 환경변수 MUSHROOM_CANVA_DIR), ingame_scale.png(= ingame.png),
 (사이클 6) poses.png (프리셋 x side/jump/fall/crouch, 2배), jump.gif (idle -> crouch -> jump -> fall -> idle, 높이는 물리로 이동).
 모든 합성은 build.composite (프런트와 같은 규칙)로 레이어 시트에서 만든다."""
 import os
@@ -27,18 +28,17 @@ def views(sheets, outfit, names=('front', 'side', 'back')):
     return [frame(c, B.FRAMES.index(n)) for n in names]
 
 
-def make_presets(d, sheets):
+def make_presets(d, sheets, names=('front', 'side', 'back', 'jump', 'crouch')):
+    """(사이클 7) 프리셋 6 x 앞/옆/뒤/점프/숙이기, 1.5배."""
     k = 1.5
     cw, ch = int(W * k), int(H * k)
-    cols = 3
-    im = Image.new('RGBA', (cols * (3 * cw + 24) + 12, 2 * (ch + 26) + 8), BG)
+    im = Image.new('RGBA', (len(names) * cw + 24, len(PRESETS) * (ch + 20) + 8), BG)
     dr = ImageDraw.Draw(im)
     for i, (lab, av) in enumerate(PRESETS):
-        x0 = 12 + (i % cols) * (3 * cw + 24)
-        y0 = 8 + (i // cols) * (ch + 26)
-        dr.text((x0, y0), 'preset %d' % (i + 1), fill=INK)
-        for j, v in enumerate(views(sheets, av)):
-            im.alpha_composite(up(v, k), (x0 + j * cw, y0 + 16))
+        y0 = 8 + i * (ch + 20)
+        dr.text((12, y0), 'preset %d' % (i + 1), fill=INK)
+        for j, v in enumerate(views(sheets, av, names)):
+            im.alpha_composite(up(v, k), (12 + j * cw, y0 + 14))
     im.save(os.path.join(d, 'presets.png'))
 
 
@@ -77,28 +77,25 @@ def make_walk(d, sheets):
     im.save(os.path.join(d, 'walk_frames.png'))
 
 
-def make_compare(d, sheets):
-    refdir = os.path.join(os.path.dirname(d.rstrip('/')), 'voxel')
-    names = ('ref_sit.png', 'ref_desk.png', 'ref_back.png')
-    th = 432
-    refs = []
-    for n in names:
-        p = os.path.join(refdir, n)
-        if os.path.exists(p):
+CANVA = ('c1_hoodie_bucket.png', 'c2_cardigan_skirt.png', 'c3_varsity_cap.png', 'c4_puffer_ponytail.png')
+
+
+def make_compare(d, sheets, canva_dir=None):
+    """(사이클 7) 위: Canva 시안 4종, 아래: 프리셋 1~4 front (레이어 합성). 시안 폴더가 없으면 아래 줄만."""
+    canva_dir = canva_dir or os.environ.get('MUSHROOM_CANVA_DIR', '')
+    k = 2.5
+    cw, ch = int(W * k), int(H * k)
+    im = Image.new('RGBA', (4 * (cw + 10) + 10, 2 * ch + 40), BG)
+    dr = ImageDraw.Draw(im)
+    for j in range(4):
+        p = os.path.join(canva_dir, CANVA[j])
+        if canva_dir and os.path.exists(p):
             r = Image.open(p).convert('RGBA')
-            refs.append(r.resize((round(r.width * th / r.height), th), Image.LANCZOS))
-    av = dict(PRESETS[0][1], top='hoodie-white', bottom='pants-black')
-    mine = [up(v, 2.25) for v in views(sheets, av, ('side', 'front', 'back'))]
-    pad = 12
-    wd = sum(r.width for r in refs) + sum(m.width for m in mine) + pad * 8
-    im = Image.new('RGBA', (wd, th + 30), BG)
-    x = pad
-    for r in refs:
-        im.alpha_composite(r, (x, 24)); x += r.width + pad
-    x += pad
-    for m in mine:
-        im.alpha_composite(m, (x, 24)); x += m.width + pad
-    ImageDraw.Draw(im).text((pad, 6), 'reference  |  voxel (black-short + hoodie-white + pants-black), 2.25x', fill=INK)
+            r = r.resize((int(ch * r.width / r.height), ch), Image.LANCZOS)
+            im.alpha_composite(r, (10 + j * (cw + 10) + (cw - r.width) // 2, 10))
+        v = views(sheets, PRESETS[j][1], ('front',))[0]
+        im.alpha_composite(v.resize((cw, ch), Image.LANCZOS), (10 + j * (cw + 10), ch + 30))
+        dr.text((14 + j * (cw + 10), ch + 14), 'preset %d front (composite)' % (j + 1), fill=INK)
     im.save(os.path.join(d, 'compare.png'))
 
 
@@ -149,6 +146,7 @@ def make_ingame(d, sheets):
     for p in panels:
         out.alpha_composite(p, (0, y)); y += p.height
     out.save(os.path.join(d, 'ingame_scale.png'))
+    out.save(os.path.join(d, 'ingame.png'))
 
 
 def make_poses(d, sheets, k=2):

@@ -165,6 +165,22 @@
     ],
     "hair": [
       {
+        "id": "ash-twoblock",
+        "label": "애쉬브라운 투블럭"
+      },
+      {
+        "id": "black-seethrough",
+        "label": "시스루뱅 긴 흑발"
+      },
+      {
+        "id": "black-wolfcut",
+        "label": "검은 울프컷"
+      },
+      {
+        "id": "pink-bridge-ponytail",
+        "label": "핑크 브릿지 포니테일"
+      },
+      {
         "id": "black-short",
         "label": "검은 짧은 머리"
       },
@@ -199,6 +215,22 @@
     ],
     "top": [
       {
+        "id": "hoodie-lavender",
+        "label": "라벤더 오버핏 후드"
+      },
+      {
+        "id": "cardigan-cream",
+        "label": "크림 가디건과 숄더백"
+      },
+      {
+        "id": "varsity-navy",
+        "label": "네이비 바시티 재킷"
+      },
+      {
+        "id": "puffer-mint",
+        "label": "민트 크롭 패딩과 크로스백"
+      },
+      {
         "id": "hoodie-black",
         "label": "검은 후드티"
       },
@@ -225,6 +257,22 @@
     ],
     "bottom": [
       {
+        "id": "denim-wide",
+        "label": "연청 와이드 데님"
+      },
+      {
+        "id": "skirt-check",
+        "label": "체크 플리츠 스커트"
+      },
+      {
+        "id": "cargo-black",
+        "label": "검정 카고 조거"
+      },
+      {
+        "id": "cargo-beige",
+        "label": "베이지 와이드 카고"
+      },
+      {
         "id": "pants-navy",
         "label": "남색 바지"
       },
@@ -247,6 +295,18 @@
     ],
     "shoes": [
       {
+        "id": "chunky-white",
+        "label": "흰 청키 스니커즈"
+      },
+      {
+        "id": "loafer-socks",
+        "label": "로퍼와 니삭스"
+      },
+      {
+        "id": "hightop-black",
+        "label": "검정 하이탑"
+      },
+      {
         "id": "sneakers-white",
         "label": "흰 운동화"
       },
@@ -267,6 +327,14 @@
       {
         "id": "none",
         "label": "없음"
+      },
+      {
+        "id": "bucket-white",
+        "label": "흰 버킷햇"
+      },
+      {
+        "id": "cap-black",
+        "label": "검정 무지 캡"
       },
       {
         "id": "cap-white",
@@ -292,14 +360,50 @@
   },
   "presets": [
     {
-      "label": "후드 소년",
+      "label": "라벤더 후드",
       "avatar": {
         "skin": "light",
-        "hair": "black-short",
+        "hair": "ash-twoblock",
         "face": "basic",
-        "top": "hoodie-black",
-        "bottom": "pants-navy",
-        "shoes": "sneakers-white",
+        "top": "hoodie-lavender",
+        "bottom": "denim-wide",
+        "shoes": "chunky-white",
+        "hat": "bucket-white"
+      }
+    },
+    {
+      "label": "가디건 걸",
+      "avatar": {
+        "skin": "light",
+        "hair": "black-seethrough",
+        "face": "basic",
+        "top": "cardigan-cream",
+        "bottom": "skirt-check",
+        "shoes": "loafer-socks",
+        "hat": "none"
+      }
+    },
+    {
+      "label": "바시티 캡",
+      "avatar": {
+        "skin": "light",
+        "hair": "black-wolfcut",
+        "face": "basic",
+        "top": "varsity-navy",
+        "bottom": "cargo-black",
+        "shoes": "hightop-black",
+        "hat": "cap-black"
+      }
+    },
+    {
+      "label": "민트 패딩",
+      "avatar": {
+        "skin": "light",
+        "hair": "pink-bridge-ponytail",
+        "face": "basic",
+        "top": "puffer-mint",
+        "bottom": "cargo-beige",
+        "shoes": "chunky-white",
         "hat": "none"
       }
     },
@@ -316,18 +420,6 @@
       }
     },
     {
-      "label": "모자 소년",
-      "avatar": {
-        "skin": "light",
-        "hair": "brown-short",
-        "face": "smile",
-        "top": "hoodie-white",
-        "bottom": "pants-black",
-        "shoes": "sneakers-black",
-        "hat": "cap-white"
-      }
-    },
-    {
       "label": "버섯 꼬마",
       "avatar": {
         "skin": "light",
@@ -338,45 +430,26 @@
         "shoes": "boots-brown",
         "hat": "mushroom-red"
       }
-    },
-    {
-      "label": "하늘 마법사",
-      "avatar": {
-        "skin": "medium",
-        "hair": "sky-bob",
-        "face": "wink",
-        "top": "cape-blue",
-        "bottom": "pants-navy",
-        "shoes": "boots-brown",
-        "hat": "none"
-      }
-    },
-    {
-      "label": "탐험가",
-      "avatar": {
-        "skin": "dark",
-        "hair": "black-twintail",
-        "face": "smile",
-        "top": "tee-stripe-red",
-        "bottom": "shorts-brown",
-        "shoes": "sneakers-white",
-        "hat": "explorer-brown"
-      }
     }
   ],
   "files": {
     "hair_back": [
+      "black-seethrough",
       "black-twintail",
       "pink-long",
-      "sky-bob"
+      "tan-ponytail"
     ],
     "top_back": [
       "blouse-white",
       "cape-blue",
+      "cardigan-cream",
       "hoodie-black",
+      "hoodie-lavender",
       "hoodie-white",
       "overalls-green",
-      "tee-stripe-red"
+      "puffer-mint",
+      "tee-stripe-red",
+      "varsity-navy"
     ],
     "skin": [
       "dark",
@@ -390,14 +463,21 @@
       "wink"
     ],
     "bottom": [
+      "cargo-beige",
+      "cargo-black",
+      "denim-wide",
       "jeans-blue",
       "pants-black",
       "pants-navy",
       "shorts-brown",
+      "skirt-check",
       "skirt-pink"
     ],
     "shoes": [
       "boots-brown",
+      "chunky-white",
+      "hightop-black",
+      "loafer-socks",
       "maryjane-red",
       "sneakers-black",
       "sneakers-white"
@@ -405,46 +485,63 @@
     "shade_top": [
       "blouse-white",
       "cape-blue",
+      "cardigan-cream",
       "hoodie-black",
+      "hoodie-lavender",
       "hoodie-white",
       "overalls-green",
-      "tee-stripe-red"
+      "puffer-mint",
+      "tee-stripe-red",
+      "varsity-navy"
     ],
     "top": [
       "blouse-white",
       "cape-blue",
+      "cardigan-cream",
       "hoodie-black",
+      "hoodie-lavender",
       "hoodie-white",
       "overalls-green",
-      "tee-stripe-red"
+      "puffer-mint",
+      "tee-stripe-red",
+      "varsity-navy"
     ],
     "shade_hair": [
+      "ash-twoblock",
+      "black-seethrough",
       "black-short",
       "black-twintail",
+      "black-wolfcut",
       "blonde-spiky",
       "brown-short",
       "mint-curly",
+      "pink-bridge-ponytail",
       "pink-long",
       "sky-bob",
       "tan-ponytail"
     ],
     "hat_back": [
-      "beanie-yellow",
-      "cap-white",
+      "cap-black",
       "ribbon-pink"
     ],
     "hair_front": [
+      "ash-twoblock",
+      "black-seethrough",
       "black-short",
       "black-twintail",
+      "black-wolfcut",
       "blonde-spiky",
       "brown-short",
       "mint-curly",
+      "pink-bridge-ponytail",
       "pink-long",
       "sky-bob",
       "tan-ponytail"
     ],
     "shade_hat": [
       "beanie-yellow",
+      "bucket-white",
+      "cap-black",
       "cap-white",
       "explorer-brown",
       "mushroom-red",
@@ -452,6 +549,8 @@
     ],
     "hat": [
       "beanie-yellow",
+      "bucket-white",
+      "cap-black",
       "cap-white",
       "explorer-brown",
       "mushroom-red",

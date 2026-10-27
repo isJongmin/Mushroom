@@ -50,11 +50,14 @@ def placed(boxes, x=0.0, y=0.0, z=0.0, yaw=0.0, s=1.0):
 
 
 # ---------------------------------------------------------------- 버섯 집
-def mushroom_house(cap='red', H=56, seed=1, chimney=True, windows=('L', 'R', 'S')):
+def mushroom_house(cap='red', H=56, seed=1, chimney=True, windows=('L', 'R', 'S'), slabs=None, top_cut=0.24,
+                   info=None, sw=48.0):
+    """slabs: 갓 슬랩 (w, h, d) 목록(아래→위). 마지막 슬랩 윗면은 발판으로 쓸 수 있다(top_cut 으로 모서리 덜 깎기).
+    info(dict)를 주면 cap_top(갓 윗면 높이), top_w, top_d, top_cut 을 채운다."""
     rng = np.random.default_rng(seed)
     capc = {'red': ('red', 'red_hi'), 'orange': ('orange', 'orange_hi'), 'blue': ('blue', 'blue_hi')}[cap]
     bx = []
-    SW, SD, CUT = 48.0, 42.0, 0.2          # 기둥 너비/깊이/모서리 깎기
+    SW, SD, CUT = sw, sw * 0.875, 0.2       # 기둥 너비/깊이/모서리 깎기
     # 기초 돌 띠
     bx += octo(0, 0, 0, SW + 4, 4, SD + 4, 'stone2', cut=CUT, noise=0.08)
     # 기둥 (아래가 살짝 넓은 2단)
@@ -63,18 +66,34 @@ def mushroom_house(cap='red', H=56, seed=1, chimney=True, windows=('L', 'R', 'S'
     # 갓 아래 주름(그늘 띠)
     bx += octo(0, H - 3.0, 0, 84, 3.2, 72, 'cream2', cut=0.24, noise=0.03)
     # 갓 슬랩 (아래 → 위): 넓게 퍼진 둥근 돔
-    slabs = [(96, 5, 82), (100, 7, 86), (94, 8, 80), (84, 8, 72), (68, 8, 58), (48, 6, 41), (26, 4, 22)]
+    plat = slabs is not None
+    if slabs is None:
+        slabs = [(96, 5, 82), (100, 7, 86), (94, 8, 80), (84, 8, 72), (68, 8, 58), (48, 6, 41), (26, 4, 22)]
     y = H
     tops = []
     for i, (w, h, d) in enumerate(slabs):
-        col = capc[1] if i >= 5 else capc[0]
-        bx += octo(0, y, 0, w, h, d, col, cut=0.24, noise=0.035)
+        last = i == len(slabs) - 1
+        col = capc[1] if (i >= 5 and not plat) else capc[0]
+        if plat and last:
+            col = {'red': '#F45A48', 'orange': '#FFA23C', 'blue': '#5A88FF'}[cap]
+        elif plat and i == len(slabs) - 2:
+            col = {'red': '#EE5244', 'orange': '#FA9834', 'blue': '#5282FE'}[cap]
+        bx += octo(0, y, 0, w, h, d, col, cut=top_cut if (plat and last) else 0.24, noise=0.035,
+                   tag='top' if (plat and last) else '')
         tops.append((y, w, h, d))
         y += h
     cap_top = y
+    if plat:      # 윗면 뒤쪽 절반에 흰 점 (발판 서는 선 뒤)
+        w, d = slabs[-1][0], slabs[-1][2]
+        for k in range(4):
+            sz = rng.uniform(4.5, 7)
+            bx.append(B(-w * 0.36 + k * w * 0.24 + rng.uniform(-3, 3), y + 0.12, -d * 0.18 - rng.uniform(0, d * 0.18),
+                        sz, 0.8, sz * 0.85, 'white', noise=0.02, bevel=0.3, tag='top'))
+    if info is not None:
+        info.update(cap_top=cap_top, top_w=slabs[-1][0], top_d=slabs[-1][2], top_cut=top_cut)
     # 흰 점 (앞면/옆면 + 윗면)
     spots = []
-    for (yy, w, h, d) in tops[1:5]:
+    for (yy, w, h, d) in tops[1:min(5, len(tops) - (1 if plat else 0))]:
         n = 4 if w > 90 else 3 if w > 60 else 2
         for k in range(n):
             for tries in range(20):
@@ -86,7 +105,7 @@ def mushroom_house(cap='red', H=56, seed=1, chimney=True, windows=('L', 'R', 'S'
             sz = rng.uniform(4.5, 7)
             # 앞면 점 (얇게 붙임)
             bx.append(B(sx, yy + h / 2, d / 2 + 0.25, sz, min(h - 1.5, sz * 0.8), 1.2, 'white', noise=0.02, bevel=0.3))
-    for (yy, w, h, d) in tops[2:6]:
+    for (yy, w, h, d) in (tops[2:-1] if plat else tops[2:6]):
         for k in range(2):
             sx = rng.uniform(-w / 2 + 6, w / 2 - 6); sz = rng.uniform(4, 6.5)
             sz_ = rng.uniform(-d / 2 + 5, d / 2 - 8)

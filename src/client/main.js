@@ -6,7 +6,7 @@ import { loadAvatarAssets, loadMapAssets } from './assets.js';
 import { h, setText } from './dom.js';
 import { BOOT_TIMEOUT_MS } from './constants.js';
 import { AppError, GLOBAL_MESSAGE, toAppError } from './errors.js';
-import { profileKey, readProfile, readRoomSession, clearRoomSession } from './store.js';
+import { profileKey, readProfile, readRoomSession, writeRoomSession, clearRoomSession } from './store.js';
 import { closeAnyModal } from './ui/modal.js';
 import * as profileScreen from './screens/profile.js';
 import * as lobbyScreen from './screens/lobby.js';
@@ -161,10 +161,14 @@ async function boot() {
       await withTimeout(app.backend.joinRoom({ roomId: rs.roomId, password: null, nickname: rs.nickname }), BOOT_TIMEOUT_MS);
       let info = null;
       try { info = (await withTimeout(app.backend.listRooms(), BOOT_TIMEOUT_MS)).find((r) => r.id === rs.roomId) || null; } catch { /* 이름 없이 진행 */ }
-      app.go('room', { roomId: rs.roomId, name: info ? info.name : '', locked: info ? !!info.locked : false, nickname: rs.nickname });
-    } catch {
+      // (사이클 8) 방장 판정: list_rooms mine이 있으면 그것, 없으면(목록 실패) 입장 때 저장한 sessionStorage owner
+      const owner = info && typeof info.mine === 'boolean' ? info.mine : rs.owner;
+      if (info) writeRoomSession(rs.roomId, rs.nickname, owner);
+      app.go('room', { roomId: rs.roomId, name: info ? info.name : '', locked: info ? !!info.locked : false, nickname: rs.nickname, owner });
+    } catch (e) {
       clearRoomSession();
-      app.go('lobby', { banner: 'REJOIN_FAILED' });
+      // (사이클 8) 재입장이 방 없음 → 삭제된 방: 방 삭제 배너. 그 밖은 기존 문구.
+      app.go('lobby', { banner: toAppError(e).code === 'ROOM_NOT_FOUND' ? 'ROOM_CLOSED' : 'REJOIN_FAILED' });
     }
     return;
   }
@@ -214,6 +218,9 @@ function getState() {
     // (사이클 6) 네트워크 계측: adapter = { track, moveSent, subscribe, removeChannel, joinRoom, leaveRoom, drops },
     // link = room-link 상태기계 { state, gen, attempts, joins, opens, closes, drops, stale, heartbeats, notMember, events }
     net: r ? r.net : null,
+    // (사이클 8) 발판 목록·세로 카메라, 이펙트 계측 { particles, ghosts, streaks, sprites, bursts, spritesMade, dropped, superJumps, fxSent }
+    world: r ? r.world : null,
+    fx: r ? r.fx : null,
   };
   return deepFreeze(JSON.parse(JSON.stringify(snapshot)));
 }

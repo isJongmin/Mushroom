@@ -19,7 +19,7 @@ import {
 } from './common.js';
 import { localIdentity } from './identity.js';
 import { createTrackLimiter, TRACK_GAP_MS } from './room-link.js';
-import { cleanMove, isMoveState } from '../game/physics.js';
+import { cleanMove, isMoveState, isFx } from '../game/physics.js';
 
 const DB_KEY = 'mushroom.local.v4.db';
 const LOCK_NAME = 'mushroom.local.v4.db';
@@ -232,6 +232,12 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
       case 'chat': // 서버(sendChat) 송신 흉내. 아무 탭이나 같은 형식으로 보낼 수 있다는 점은 실제 서버와 같은 한계.
         deliver(msg.payload);
         break;
+      case 'room_closed': { // (사이클 8) deleteRoom이 보낸다 (서버 broadcast 흉내). 보낸 탭의 연결도 받는다.
+        const p = msg.payload;
+        if (!p || typeof p !== 'object' || p.room_id !== roomId) return;
+        call('onClosed', { room_id: roomId, by_nickname: typeof p.by_nickname === 'string' ? p.by_nickname.slice(0, 32) : '' });
+        break;
+      }
       case 'debug-drop': // QA 훅: 서버가 이 사용자의 채널을 끊은 상황
         if (msg.user_id === uid) {
           backend.failNext = Math.max(0, Math.min(10, Number(msg.fail) || 0));
@@ -279,9 +285,11 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
   const api = {
     roomId,
     deliver,
-    sendMove({ x, y, dir, s }) {
+    sendMove({ x, y, dir, s, fx }) {
       if (closed) return Promise.reject(new AppError('NETWORK'));
-      mover.push({ user_id: uid, x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' });
+      const p = { user_id: uid, x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' };
+      if (isFx(fx)) p.fx = fx;
+      mover.push(p, !!p.fx); // fx는 급송 (2초에 4회 상한)
       return Promise.resolve();
     },
     /** 닉네임/아바타가 바뀌었을 때만 (최소 2초 간격) */
@@ -358,6 +366,7 @@ export function createLocalBackend() {
         rows.sort((a, b) => b.members - a.members || b.lastAct - a.lastAct || b.r.created_at - a.r.created_at);
         return rows.slice(0, LIST_MAX).map(({ r, members }) => ({
           id: r.id, name: r.name, locked: !!r.pw_hash, members, createdAt: new Date(r.created_at).toISOString(),
+          mine: r.created_by === uid, // (사이클 8)
         }));
       });
     },
@@ -440,6 +449,25 @@ export function createLocalBackend() {
       });
     },
 
+    /**
+     * (사이클 8) 서버 delete_room과 같은 의미: 방장(created_by)만. 없거나 만료된 방 → ROOM_NOT_FOUND, 남의 방 → NOT_OWNER.
+     * 방·멤버·메시지·실패 기록을 지우고, 같은 방 채널로 room_closed { room_id, by_nickname }를 보낸다(보낸 탭 포함).
+     */
+    async deleteRoom(roomId) {
+      const me = requireUid();
+      await delay(LATENCY_MS);
+      if (typeof roomId !== 'string' || !roomId) throw new AppError('ROOM_NOT_FOUND');
+      const byNickname = await tx((db, now) => {
+        const room = own(db.rooms, roomId) ? db.rooms[roomId] : null;
+        if (!room || !roomAlive(db, room, now)) throw new AppError('ROOM_NOT_FOUND');
+        if (room.created_by !== me) throw new AppError('NOT_OWNER');
+        const m = roomMembers(db, roomId)[me];
+        deleteRoom(db, roomId);
+        return m ? m.nickname : '';
+      });
+      postToRoom(roomId, { type: 'room_closed', payload: { room_id: roomId, by_nickname: byNickname } });
+    },
+
     async heartbeat(roomId) {
       const me = requireUid();
       await tx((db, now) => {
@@ -486,7 +514,7 @@ export function createLocalBackend() {
 
     /**
      * 채널 1회 구독 (supabase.js connectRoom과 같은 계약). 재시도·하트비트·재입장은 room-link.js가 한다.
-     * @param handlers { onSync(list), onJoin(state), onLeave(state), onPeerJoin(user_id), onMove(payload), onChat(msg), onDrop(status) }
+     * @param handlers { onSync(list), onJoin(state), onLeave(state), onPeerJoin(user_id), onMove(payload), onChat(msg), onDrop(status), onClosed({ room_id, by_nickname }) }
      * @param self { nickname, avatar, x, y } Presence에 올릴 내 상태 (user_id는 어댑터가 채운다)
      * @param opts.signal AbortSignal
      */

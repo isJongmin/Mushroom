@@ -17,6 +17,7 @@ OUT = os.path.join(ROOT, 'assets', 'map')
 from vox import Cfg, render_tiled, add_glow, lin2srgb, hex2lin
 import scene
 import layers_bg
+import platforms
 
 DENSITY = 1.5
 GROUND_Y = 440
@@ -40,7 +41,7 @@ LAYERS = [
     dict(name='clouds', parallax=0.12, y=10, repeatX=True, stretchX=False),
     dict(name='far', parallax=0.3, y=120, repeatX=True, stretchX=False),
     dict(name='mid', parallax=0.65, y=170, repeatX=True, stretchX=False),
-    dict(name='ground', parallax=1.0, y=110, repeatX=False, stretchX=False),
+    dict(name='ground', parallax=1.0, y=0, repeatX=False, stretchX=False),
 ]
 
 
@@ -99,6 +100,8 @@ def write_manifest():
         if L['stretchX']:
             e['stretchX'] = True
         man['layers'].append(e)
+    # 발판 정본 (사이클 8): 월드 단위, y = 윗면 = 서는 높이. 한 방향 통과.
+    man['platforms'] = [dict(id=p['id'], x1=p['x1'], x2=p['x2'], y=p['y']) for p in platforms.PLATFORMS]
     with open(os.path.join(OUT, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(man, f, ensure_ascii=False, indent=2)
         f.write('\n')

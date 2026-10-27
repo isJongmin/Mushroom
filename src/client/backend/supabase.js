@@ -13,7 +13,7 @@ import { AppError, ERROR_CODES } from '../errors.js';
 import { SUPABASE_CDN, MOVE_INTERVAL_MS } from '../constants.js';
 import { cleanPresenceState, cleanChatMessage, createThrottle } from './common.js';
 import { createTrackLimiter, TRACK_GAP_MS } from './room-link.js';
-import { cleanMove, isMoveState } from '../game/physics.js';
+import { cleanMove, isMoveState, isFx } from '../game/physics.js';
 
 const KNOWN = new Set(ERROR_CODES);
 const SUBSCRIBE_TIMEOUT_MS = 10000;
@@ -221,7 +221,14 @@ export function createSupabaseBackend(url, anonKey) {
     // chat은 서버(send_message → realtime.send)만 보낸다. 형식이 맞지 않으면 버린다.
     // 같은 방 멤버의 위조 송신은 수신 측에서 구분할 수 없다(알려진 한계 1). 신뢰 기록은 recent_messages.
     ch.on('broadcast', { event: 'chat' }, (msg) => deliver(msg && msg.payload));
+    // (사이클 8) 방 삭제: delete_room이 삭제 직전에 서버에서 보낸다 { room_id, by_nickname }. 방장 본인 포함 모두 받는다.
+    ch.on('broadcast', { event: 'room_closed' }, (msg) => {
+      const p = msg && msg.payload;
+      if (!p || typeof p !== 'object' || p.room_id !== roomId) return;
+      call('onClosed', { room_id: roomId, by_nickname: typeof p.by_nickname === 'string' ? p.by_nickname.slice(0, 32) : '' });
+    });
 
+    // fx가 있는 move는 급송(간격 무시, 2초에 4회 상한)
     const mover = createThrottle(MOVE_INTERVAL_MS, (p) => {
       if (closed) return;
       stats.moveSent++;
@@ -260,9 +267,11 @@ export function createSupabaseBackend(url, anonKey) {
     const conn = {
       roomId,
       deliver,
-      sendMove({ x, y, dir, s }) {
+      sendMove({ x, y, dir, s, fx }) {
         if (closed) return Promise.reject(new AppError('NETWORK'));
-        mover.push({ user_id: me, x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' });
+        const p = { user_id: me, x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' };
+        if (isFx(fx)) p.fx = fx;
+        mover.push(p, !!p.fx);
         return Promise.resolve();
       },
       /** 닉네임/아바타가 바뀌었을 때만 (최소 2초 간격, 대기 중 요청은 하나로 합침) */
@@ -335,6 +344,7 @@ export function createSupabaseBackend(url, anonKey) {
       const rows = await rpc('list_rooms', {});
       return (Array.isArray(rows) ? rows : []).map((r) => ({
         id: r.id, name: r.name, locked: !!r.locked, members: Number(r.members) || 0, createdAt: r.created_at,
+        mine: r.mine === true, // (사이클 8) 내가 만든 방 (서버 반영 전에는 없음 → false)
       }));
     },
 
@@ -363,6 +373,13 @@ export function createSupabaseBackend(url, anonKey) {
       await p;
     },
 
+    /** (사이클 8) 방장만. 오류: NOT_OWNER, ROOM_NOT_FOUND. 서버가 삭제 직전에 room_closed를 broadcast한다. */
+    async deleteRoom(roomId) {
+      requireInit();
+      if (typeof roomId !== 'string' || !roomId) throw new AppError('ROOM_NOT_FOUND');
+      await rpc('delete_room', { p_room_id: roomId });
+    },
+
     async heartbeat(roomId) {
       requireInit();
       await rpc('heartbeat', { p_room_id: roomId });
@@ -385,7 +402,7 @@ export function createSupabaseBackend(url, anonKey) {
 
     /**
      * 채널 1회 구독 (재시도·하트비트·재입장은 room-link.js 상태기계가 한다). join_room 'OK' 뒤에만 부른다.
-     * @param handlers { onSync, onJoin, onLeave, onPeerJoin(user_id), onMove, onChat, onDrop(status) }
+     * @param handlers { onSync, onJoin, onLeave, onPeerJoin(user_id), onMove, onChat, onDrop(status), onClosed({ room_id, by_nickname }) }
      * @param opts.signal AbortSignal: 구독 전에 abort되면 채널을 제거하고 NETWORK로 reject
      * @returns { sendMove, updateSelf, healthy, close, leave(= close) }
      */

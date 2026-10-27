@@ -103,10 +103,10 @@ export function createAvatarRenderer(assets, opts = {}) {
     return { cv, ms: performance.now() - t0 };
   }
 
-  function headTopOf(cv) {
+  function headTopOf(cv, frame = idleFrame) {
     try {
       const c = cv.getContext('2d');
-      const data = c.getImageData(idleFrame * fw, 0, fw, fh).data;
+      const data = c.getImageData(frame * fw, 0, fw, fh).data;
       for (let y = 0; y < fh; y++) {
         for (let x = 0; x < fw; x++) if (data[(y * fw + x) * 4 + 3] > ALPHA_TOP) return (ay - y) / density;
       }
@@ -201,6 +201,42 @@ export function createAvatarRenderer(assets, opts = {}) {
     headTop(avatar) {
       const e = sheetCache.get(keyOf(avatar));
       return e && e.state === 'ready' ? e.headTop : HEAD.fallback;
+    },
+    /**
+     * (사이클 8) 프레임별 머리 위 높이(프레임 알파 bbox 맨 위). 엎드리기처럼 키가 낮은 프레임의 말풍선 위치용.
+     * 조합·프레임마다 1회 계산해 캐시한다. 합성 전이면 idle 기준값.
+     */
+    headTopFrame(avatar, frame) {
+      const e = sheetCache.get(keyOf(avatar));
+      if (!e || e.state !== 'ready') return HEAD.fallback;
+      const f = frame | 0;
+      if (!e.normal || f === idleFrame || f < 0 || f >= frameCount) return e.headTop;
+      if (!e.tops) e.tops = new Map();
+      let v = e.tops.get(f);
+      if (v === undefined) { v = headTopOf(e.normal, f); e.tops.set(f, v); }
+      return v;
+    },
+    /**
+     * (사이클 8) 캐릭터 대표 색 [r, g, b]: idle 프레임 몸통 부분(기준점 위 25~60 월드)의 불투명 픽셀 평균. 이펙트 색용.
+     * 조합마다 1회 계산. 합성 전이거나 실패하면 null.
+     */
+    tintOf(avatar) {
+      const e = sheetCache.get(keyOf(avatar));
+      if (!e || e.state !== 'ready' || !e.normal) return null;
+      if (e.tint !== undefined) return e.tint;
+      e.tint = null;
+      try {
+        const y0 = Math.max(0, Math.round(ay - 60 * density));
+        const y1 = Math.min(fh, Math.round(ay - 25 * density));
+        const data = e.normal.getContext('2d').getImageData(idleFrame * fw, y0, fw, y1 - y0).data;
+        let r = 0; let g = 0; let b = 0; let n = 0;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i + 3] < 200) continue;
+          r += data[i]; g += data[i + 1]; b += data[i + 2]; n++;
+        }
+        if (n) e.tint = [Math.round(r / n), Math.round(g / n), Math.round(b / n)];
+      } catch { /* 읽기 실패 */ }
+      return e.tint;
     },
     /**
      * 기준점(발 중앙 바닥)을 (x, y)에 두고 그린다. 좌표 단위는 ctx의 현재 단위, k = 그 단위 / 월드 1단위.

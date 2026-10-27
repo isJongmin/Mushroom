@@ -1,6 +1,6 @@
 // 브라우저 저장소: 프로필(localStorage)과 방 재입장 정보(sessionStorage).
 // ARCHITECTURE 결정 3: `mushroom:profile` = { nickname, avatar(7키) } — 서버에 저장하지 않는다.
-// ARCHITECTURE 결정 6: sessionStorage `mushroom:room` = { roomId, nickname } — 새로고침 재입장용, 나가기에서만 지운다.
+// ARCHITECTURE 결정 6: sessionStorage `mushroom:room` = { roomId, nickname, owner(사이클 8) } — 새로고침 재입장용, 나가기·방 삭제에서 지운다.
 import { LS_PROFILE, SS_ROOM, NICK_RE } from './constants.js';
 import { normalizeAvatar, pickAvatar } from './avatar-data.js';
 
@@ -41,14 +41,15 @@ export function readRoomSession() {
     const o = JSON.parse(raw);
     if (!o || typeof o.roomId !== 'string' || !o.roomId || o.roomId.length > 64) return null;
     if (typeof o.nickname !== 'string' || !NICK_RE.test(o.nickname)) return null;
-    return { roomId: o.roomId, nickname: o.nickname };
+    return { roomId: o.roomId, nickname: o.nickname, owner: o.owner === true };
   } catch {
     return null;
   }
 }
 
-export function writeRoomSession(roomId, nickname) {
-  try { sessionStorage.setItem(SS_ROOM, JSON.stringify({ roomId, nickname })); } catch { /* 재입장만 못 함 */ }
+/** (사이클 8) owner = 내가 만든 방(createRoom 결과 또는 list_rooms mine). 새로고침 후 방 삭제 버튼 표시용 */
+export function writeRoomSession(roomId, nickname, owner = false) {
+  try { sessionStorage.setItem(SS_ROOM, JSON.stringify({ roomId, nickname, owner: !!owner })); } catch { /* 재입장만 못 함 */ }
 }
 
 export function clearRoomSession() {

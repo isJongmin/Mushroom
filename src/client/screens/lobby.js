@@ -126,10 +126,13 @@ export function mount(root, app, opts = {}) {
     goDots.hidden = true;
     const goText = h('span', {});
     const go = h('button', { class: 'bk-btn bk-btn--primary bk-room__go', type: 'button', testid: 'room-enter' }, goDots, goText);
+    // (사이클 8) 내 방(mine)에만 보이는 삭제 버튼
+    const del = h('button', { class: 'bk-btn bk-btn--sm bk-btn--danger bk-room__del', type: 'button', testid: 'room-delete', hidden: true }, '삭제');
     const li = h('li', { class: 'bk-room', testid: 'room-row', 'data-room-id': room.id },
-      lock, h('span', { class: 'bk-room__main' }, name, meta), count, go);
-    const row = { li, lock, name, meta, count, countText, go, goDots, goText, room };
+      lock, h('span', { class: 'bk-room__main' }, name, meta), count, h('span', { class: 'bk-room__acts' }, del, go));
+    const row = { li, lock, name, meta, count, countText, go, goDots, goText, del, room };
     on(go, 'click', () => onEnter(row.room, go));
+    on(del, 'click', () => openDelete(row.room, del));
     return row;
   }
 
@@ -152,6 +155,10 @@ export function mount(root, app, opts = {}) {
     row.goDots.hidden = !joiningThis;
     setText(row.goText, full ? '가득 참' : joiningThis ? '입장 중' : '입장');
     row.go.disabled = full || !!busy;
+    row.del.hidden = room.mine !== true;
+    row.del.disabled = !!busy;
+    row.del.setAttribute('aria-label', `${room.name} 삭제`);
+    row.li.classList.toggle('is-mine', room.mine === true);
     row.go.setAttribute('aria-label', full ? `${room.name}, 가득 참` : `${room.name} 입장, ${kind}, ${room.members}명 접속 중`);
   }
 
@@ -308,9 +315,10 @@ export function mount(root, app, opts = {}) {
 
   // --- 입장 (8장) --------------------------------------------------------------
   function enterRoom(room, nickname) {
-    writeRoomSession(room.id, nickname);
+    const owner = room.mine === true; // (사이클 8) 방장: list_rooms mine 또는 방금 만든 방
+    writeRoomSession(room.id, nickname, owner);
     alive = false; // 이후 늦게 도착한 응답은 무시
-    app.go('room', { roomId: room.id, name: room.name, locked: !!room.locked, nickname });
+    app.go('room', { roomId: room.id, name: room.name, locked: !!room.locked, nickname, owner });
   }
 
   /** 모달/행 공통 오류 처리 중 로비 쪽으로 넘기는 것 */
@@ -505,7 +513,7 @@ export function mount(root, app, opts = {}) {
         const { roomId } = await app.backend.createRoom({ name, password: pw || null, nickname: profile.nickname });
         if (!ctx.open) return;
         close(false);
-        enterRoom({ id: roomId, name, locked: !!pw }, profile.nickname);
+        enterRoom({ id: roomId, name, locked: !!pw, mine: true }, profile.nickname);
       } catch (err) {
         if (!ctx.open) return;
         const code = toAppError(err).code;
@@ -659,6 +667,60 @@ export function mount(root, app, opts = {}) {
     ctx.refresh();
   }
 
+  // --- 방 삭제 모달 (사이클 8): 내 방만. 성공하면 목록 갱신 + 배너 ---------------------------
+  function openDelete(room, returnTo) {
+    if (busy || room.mine !== true) return;
+    clearBanner();
+    const ctx = { busy: false, busyKind: 'delete', roomId: room.id, open: false, timer: 0, lockedUntil: 0, refresh: () => {} };
+    const titleId = `m-title-${++fieldSeq}`;
+    const descId = `m-desc-${fieldSeq}`;
+    const mBanner = modalBanner();
+    const cancelBtn = h('button', { class: 'bk-btn', type: 'button', testid: 'modal-cancel' }, '취소');
+    const d = dots();
+    d.hidden = true;
+    const t = h('span', {}, M.DELETE_CONFIRM);
+    const okBtn = h('button', { class: 'bk-btn bk-btn--danger', type: 'button', testid: 'delete-confirm' }, d, t);
+    const close = (restore = true) => endModal(ctx, restore);
+    const setB = (b) => {
+      ctx.busy = b;
+      okBtn.disabled = b;
+      cancelBtn.disabled = b;
+      d.hidden = !b;
+      setText(t, b ? M.DELETING : M.DELETE_CONFIRM);
+      setBusy(b ? { kind: 'delete', roomId: room.id } : null);
+    };
+    on(cancelBtn, 'click', () => { if (!ctx.busy) close(); });
+    on(okBtn, 'click', async () => {
+      if (ctx.busy) return;
+      mBanner.hidden = true;
+      setB(true);
+      try {
+        await app.backend.deleteRoom(room.id);
+        if (!ctx.open) return;
+        setB(false);
+        close(false);
+        showBanner('info', M.ROOM_DELETED);
+        title.focus({ preventScroll: true });
+        fetchRooms('after');
+      } catch (err) {
+        if (!ctx.open) return;
+        const code = toAppError(err).code;
+        setB(false);
+        if (code === 'ROOM_NOT_FOUND') { close(); lobbyFailure(code); return; }
+        setText(mBanner, code === 'NOT_OWNER' ? M.DELETE_NOT_OWNER : M.DELETE_FAILED);
+        mBanner.hidden = false;
+        if (code === 'NOT_OWNER') fetchRooms('after');
+      }
+    });
+    startModal('delete', [
+      h('div', { class: 'bk-modal__head' }, h('h2', { id: titleId }, M.DELETE_TITLE)),
+      h('p', { class: 'bk-modal__room' }, h('b', { testid: 'modal-room-name' }, room.name)),
+      h('p', { class: 'bk-modal__desc', id: descId }, M.DELETE_DESC),
+      mBanner,
+      h('div', { class: 'bk-modal__foot' }, cancelBtn, okBtn),
+    ], { titleId, descId, ctx, returnTo, onCancel: () => { if (!ctx.busy) close(); }, initialFocus: () => cancelBtn, testid: 'modal-delete-room' });
+  }
+
   // --- 머리줄 동작 ----------------------------------------------------------------
   on(editBtn, 'click', () => { if (!busy) { alive = false; app.go('profile', { mode: 'edit' }); } });
   on(createBtn, 'click', () => openCreate(createBtn));
@@ -689,13 +751,15 @@ export function mount(root, app, opts = {}) {
       modal: modal ? modal.kind : null,
       count: rooms.length,
     },
-    rooms: rooms.map((r) => ({ id: r.id, name: r.name, locked: !!r.locked, members: r.members, createdAt: r.createdAt })),
+    rooms: rooms.map((r) => ({ id: r.id, name: r.name, locked: !!r.locked, members: r.members, createdAt: r.createdAt, mine: r.mine === true })),
   });
 
   // --- 시작 -----------------------------------------------------------------------
   renderSkeleton();
   updateTools();
   if (opts.banner === 'REJOIN_FAILED') showBanner('error', M.REJOIN_FAILED);
+  else if (opts.banner === 'ROOM_CLOSED') showBanner('info', M.ROOM_CLOSED); // (사이클 8) 방장이 방을 삭제
+  else if (opts.banner === 'ROOM_DELETED') showBanner('info', M.ROOM_DELETED); // (사이클 8) 내가 방에서 삭제
   else if (app.storageFailed) { app.storageFailed = false; showBanner('info', M.STORAGE); }
   fetchRooms('first');
   if (opts.focus === 'edit') editBtn.focus({ preventScroll: true });

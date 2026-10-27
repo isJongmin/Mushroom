@@ -93,10 +93,40 @@ export function drawFootShadow(ctx, x, y, k, h = 0) {
   ctx.restore();
 }
 
-/** 카메라 (월드 단위): 플레이어를 가로 가운데, 화면 아래 끝 = 월드 bottomY(540). k로 장치 px 정수에 맞춘다. */
-export function cameraFor(playerX, viewW, viewH, k) {
+/**
+ * 카메라 (월드 단위): 플레이어를 가로 가운데. 세로는 camY(없으면 화면 아래 끝 = 월드 bottomY(540)). k로 장치 px 정수에 맞춘다.
+ */
+export function cameraFor(playerX, viewW, viewH, k, camYIn) {
   let camX = Math.min(Math.max(playerX - viewW / 2, 0), Math.max(0, WORLD.width - viewW));
-  let camY = WORLD.bottomY - viewH;
+  let camY = typeof camYIn === 'number' && Number.isFinite(camYIn) ? camYIn : WORLD.bottomY - viewH;
   if (k > 0) { camX = R(camX * k) / k; camY = R(camY * k) / k; }
   return { camX, camY };
+}
+
+/**
+ * (사이클 8) 세로 카메라 목표: 기준 발 높이 refY가 시야 위에서 66% 지점에 오도록 하되,
+ * 아래로는 지금 구도(화면 아래 끝 = 월드 540)를 넘지 않고 위로는 맵 위 끝(top)을 넘지 않는다(하늘 위 빈 곳 안 보임).
+ * 지면 근처(refY 440)에서는 지금 구도 그대로다. 시야가 맵 세로보다 크면 지금 구도 고정.
+ */
+export const CAM_FOOT_RATIO = 0.66;
+export function camYTarget(refY, viewH, top = 0) {
+  const base = WORLD.bottomY - viewH;
+  if (base <= top) return base;
+  return Math.min(base, Math.max(top, refY - viewH * CAM_FOOT_RATIO));
+}
+
+/** QA/디버그용 발판 윤곽 (sessionStorage mushroom.debug.platforms = '1'일 때만 화면이 부른다) */
+export function drawPlatformDebug(ctx, platforms, camX, camY, k) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  for (const p of platforms) {
+    const x = R((p.x1 - camX) * k);
+    const w = R((p.x2 - camX) * k) - x;
+    const y = R((p.y - camY) * k);
+    ctx.fillStyle = 'rgba(94, 54, 32, 0.85)';
+    ctx.fillRect(x, y, w, Math.max(2, R(10 * k)));
+    ctx.fillStyle = 'rgba(108, 196, 67, 0.95)';
+    ctx.fillRect(x, y, w, Math.max(2, R(3 * k)));
+  }
+  ctx.restore();
 }

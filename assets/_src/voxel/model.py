@@ -113,12 +113,48 @@ def scaled(defs, k=HK):
     return out
 
 
+# ================================================================== 둥근 상자 (사이클 8)
+def stepped(bone, c, h, col, top=(), bot=(), rs=2.5, **kw):
+    """계단식으로 모서리를 깎은 둥근 상자.
+    top/bot: ((깎는 높이, 안쪽 들임), ...) 위/아래 모서리 계단. 각 단은 가운데 높이에서 그 단 끝까지 이어지는
+    둥근 직사각 단면(상자 3개: 세로 모서리 rs 반경)으로, 큰 단이 작은 단을 품어 면에 이음새 줄이 생기지 않는다."""
+    cx, cy, cz = c
+    hx, hy, hz = h
+    out = []
+    kw.setdefault('bevel', 0.6)
+
+    def ring(y0, y1, ins):
+        yc, yh = (y0 + y1) / 2, (y1 - y0) / 2
+        ax, az = hx - ins, hz - ins
+        r = min(rs, 0.8 * min(ax, az))
+        for dx, dz in ((0, r), (r, 0), (r * 0.42, r * 0.42)):
+            out.append(P(bone, (cx, yc, cz), (ax - dx, yh, az - dz), col, **kw))
+    t0 = (top[0][0] if top else 0.0)
+    b0 = (bot[0][0] if bot else 0.0)
+    ring(cy - hy + b0, cy + hy - t0, 0.0)
+    for off, ins in top[1:]:
+        ring(cy, cy + hy - off, ins)
+    for off, ins in bot[1:]:
+        ring(cy - hy + off, cy, ins)
+    return out
+
+
+HEAD_TOP = ((4.0, 0.0), (2.4, 0.7), (1.1, 1.7), (0.0, 3.4))      # 정수리 모서리 (반경 약 4)
+HEAD_BOT = ((3.4, 0.0), (1.8, 0.6), (0.7, 1.5), (0.0, 3.0))      # 턱선 (볼 아래가 둥글게)
+
+
+def round_head(col, **kw):
+    """사이클 8: 머리 28 x 25.6 x 25.6 를 계단식으로 둥글게 (위 모서리, 턱선, 세로 모서리). 앞면 z 12.8 은
+    |x| <= 11.5, y 3.4..21.6 에서 평평 (얼굴 데칼 자리)."""
+    return stepped('head', (0, 12.8, 0), HEAD_H, col, top=HEAD_TOP, bot=HEAD_BOT, rs=2.5, **kw)
+
+
 # ================================================================== skin (마네킹)
 def skin(tone):
     s = SKINS[tone]
     k = dict(noise=0.012)
-    out = [P('head', (0, 12.8, 0), HEAD_H, s, bevel=0.6, **k),
-           P('torso', (0, 41.0, 0), (2.4, 1.8, 2.4), s, **k)]                  # 목
+    out = round_head(s, **k)                                                    # 사이클 8: 둥근 머리
+    out += [P('torso', (0, 41.0, 0), (2.4, 1.8, 2.4), s, **k)]                  # 목
     out += R('torso', (0, 34.6, 0), (7.0, 5.0, 4.0), s, 0.8, **k)              # 가슴 29.6..39.6
     out += R('torso', (0, 28.0, 0), (6.4, 2.0, 3.7), s, 0.6, **k)              # 허리
     out += R('torso', (0, 24.4, 0), (6.8, 2.4, 3.9), s, 0.6, **k)              # 골반 22..26.8
@@ -230,24 +266,64 @@ class Hair:
     def u(self, a, b):
         return self.r.uniform(a, b)
 
-    def shell(self, sb=8.0, bb=4.0, sf=4.0, top=27.2):
-        """정수리 판 + 뒤판(아래 끝 bb) + 옆판(아래 끝 sb, 앞 끝 z sf) + 앞머리 바탕(y 19.7..26.3)."""
-        self.box((0, top, -0.4), (15.6, 1.8, 14.4))
-        self.box((0, (bb + 27.6) / 2, -14.3), (15.5, (27.6 - bb) / 2, 1.6))
+    # 사이클 8: 둥근 돔 볼륨. 머리(둥근 28 x 25.6 x 25.6) 바깥으로 위 4~7칸, 옆 2.5~4칸, 뒤 3~4칸.
+    DOME_Z = -1.0
+    DOME = ((27.0, 0.0), (29.0, 0.8), (30.6, 2.0), (31.9, 3.8), (32.9, 6.2), (33.5, 9.4))     # (단 윗면 y, 안쪽 들임)
+
+    def dome(self, hx=16.6, hz=16.0, base=19.0, lift=0.0, k=0.0):
+        """계단식 둥근 돔 (머리 윗부분). 단마다 둥근 직사각 단면."""
+        self.dome_hx, self.dome_hz, self.lift = hx, hz, lift
+        for i, (yt, ins) in enumerate(self.DOME):
+            ax, az = hx - ins, hz - ins
+            r = min(4.5, 0.8 * min(ax, az))
+            yc, yh = (base + yt + lift) / 2, (yt + lift - base) / 2
+            for dx, dz in ((0, r), (r, 0), (r * 0.42, r * 0.42)):
+                self.box((0, yc, self.DOME_Z), (ax - dx, yh, az - dz), k + 0.015 * i)
+
+    def surf(self, x, z):
+        """돔 윗면 높이 (단 단면 안이면 그 단 높이)."""
+        y = None
+        for yt, ins in self.DOME:
+            if abs(x) <= self.dome_hx - ins - 0.6 and abs(z - self.DOME_Z) <= self.dome_hz - ins - 0.6:
+                y = yt + self.lift
+        return y
+
+    def shell(self, sb=8.0, bb=4.0, sf=4.0, top=27.2, side=16.0, back=-15.6, lift=0.0):
+        """둥근 돔 + 뒤판(아래 끝 bb) + 옆판(아래 끝 sb, 앞 끝 z sf, 둥근 뒤 모서리) + 앞머리 바탕(y 19.7..26.3)."""
+        self.dome(lift=lift)
+        self.box((0, (bb + 27.6) / 2, back + 0.0), (13.2, (27.6 - bb) / 2, 1.7))
         for sg in (1, -1):
-            self.box((sg * 15.5, (sb + 27.6) / 2, (sf - 15.6) / 2), (1.5, (27.6 - sb) / 2, (sf + 15.6) / 2))
+            zb = back + 3.4
+            self.box((sg * side, (sb + 27.6) / 2, (sf + zb) / 2), (1.7, (27.6 - sb) / 2, (sf - zb) / 2))
+            yb = max(sb, bb)
+            self.box((sg * (side - 1.7), (yb + 27.6) / 2, back + 1.8), (1.9, (27.6 - yb) / 2, 1.9))      # 뒤 모서리 (둥글게)
         self.box((0, 23.0, 13.9), (15.0, 3.3, 1.3))
 
-    def crown(self, n=4, y0=29.0, dome=3.0, size=(2.4, 3.4), hy=(1.0, 1.8), spread=10.5, jit=1.2, z0=-0.8):
-        """정수리 볼륨 (가운데가 높은 돔). 둥근 바탕 덩어리 + 작은 결 덩어리(대비 작게)."""
-        self.box((0, y0 - 0.4 + dome * 0.35, z0), (spread + 1.0, 1.0 + dome * 0.35, spread + 1.0), 0.02)
-        self.box((0, y0 - 0.2 + dome * 0.7, z0), (spread * 0.6, 0.8 + dome * 0.3, spread * 0.6), 0.04)
+    def puff(self, y0=16.5, y1=26.0, x=17.6, zb=-17.4, sf=4.0, k=0.03):
+        """관자놀이 높이의 옆/뒤 볼륨 (버섯 실루엣). 얼굴 앞(z > sf)은 덮지 않는다."""
+        yc, yh = (y0 + y1) / 2, (y1 - y0) / 2
+        for sg in (1, -1):
+            self.box((sg * (x - 1.5), yc, (sf + zb + 3.6) / 2), (1.5, yh, (sf - zb - 3.6) / 2), k)
+            self.box((sg * (x - 3.0), yc, zb + 3.0), (2.6, yh, 2.6), k - 0.02)
+        self.box((0, yc, zb + 1.5), (x - 4.6, yh, 1.5), k - 0.03)
+
+    def crown(self, n=4, y0=29.0, dome=3.0, size=(2.4, 3.4), hy=(1.0, 1.8), spread=10.5, jit=1.2, z0=-0.8, tuft=0):
+        """정수리 결 덩어리: 돔 윗면을 따라 반쯤 묻힌 작은 덩어리 + 정수리 위로 솟은 덩어리(tuft 개)."""
         m = n + 1
         for gx in np.linspace(-spread, spread, m):
             for gz in np.linspace(-spread, spread, m):
-                mid = 1.0 - (abs(gx) + abs(gz)) / (2.4 * spread)
-                self.chunk((gx + self.u(-jit, jit), y0 + mid * dome + self.u(-0.4, 0.4), z0 + gz + self.u(-jit, jit)),
-                           (self.u(*size) * 0.7, self.u(*hy), self.u(*size) * 0.7), -0.05, 0.08)
+                x, z = gx + self.u(-jit, jit), z0 + gz + self.u(-jit, jit)
+                y = self.surf(x, z)
+                h = self.u(*hy)
+                if y is None:
+                    continue
+                self.chunk((x, y + self.u(-0.3, 0.3) - h * 0.35, z),
+                           (self.u(*size) * 0.7, h * 0.8, self.u(*size) * 0.7), -0.05, 0.08)
+        for i in range(tuft):                                   # 솟은 덩어리 (앞 정수리, 앞으로 기움. 모자 크라운 35 안)
+            x = (-4.0 + 4.0 * i) + self.u(-0.5, 0.5)
+            z = 7.0 - 1.0 * (i % 2) + self.u(-0.4, 0.4)
+            y = self.surf(x, z) or 31.0
+            self.chunk((x, y + 0.2, z), (2.4 - 0.3 * (i % 2), 1.1, 2.6), 0.05, 0.12, rot=(12, 0, 10 - 10 * i))
 
     def bangs(self, strands, top=24.5, z=14.8, depth=1.3, tip=1.6, k=(-0.06, 0.06)):
         """앞머리 가닥 (x, 아래끝 y, 반폭): 넓은 몸통 + 좁은 끝(계단)."""
@@ -282,8 +358,9 @@ class Hair:
 def hair_ash_twoblock():
     """시안 1: 애쉬브라운 투블럭. 둥근 버섯 실루엣(윗층이 옆/뒤를 덮음), 계단식 앞머리, 볼 감싸는 옆머리, 어두운 뒷목 언더컷."""
     k = Hair('#7A6862', 101)
-    k.shell(sb=9.0, bb=6.0, sf=5.0)
-    k.crown(n=4, y0=28.2, dome=1.6, size=(2.6, 3.6), hy=(0.8, 1.2), spread=10.5, jit=1.0)
+    k.shell(sb=9.0, bb=6.0, sf=5.0, lift=0.4)
+    k.puff(y0=13.0, y1=25.5, x=18.4, zb=-18.2, sf=4.0)
+    k.crown(n=4, y0=28.2, dome=1.6, size=(2.6, 3.6), hy=(0.8, 1.2), spread=10.5, jit=1.0, tuft=2)
     for sg in (1, -1):                                                   # 윗층 오버행 (옆)
         k.side_strands(sg, 24.5, (7.4, 10.4), -15.6, 8.0, x=16.9, w=(1.3, 2.0))
     k.back_strands(25.0, (6.4, 9.4), z=-16.4, w=(1.4, 2.2))              # 윗층 오버행 (뒤)
@@ -301,8 +378,9 @@ def hair_ash_twoblock():
 def hair_black_seethrough():
     """시안 2: 시스루뱅 긴 흑발. 얇은 앞머리 가닥(이마가 비침), 얼굴 옆 직선 커튼, 허리까지 오는 뒷머리, 헤어핀 2개."""
     k = Hair('#27232C', 202, noise=0.05)
-    k.shell(sb=-4.0, bb=-18.0, sf=3.5)
-    k.crown(n=3, y0=28.8, dome=1.8, size=(3.4, 4.4), hy=(0.9, 1.3), spread=9.5, jit=0.8)
+    k.shell(sb=-4.0, bb=-18.0, sf=3.5, lift=0.6)
+    k.puff(y0=8.0, y1=25.5, x=18.6, zb=-18.0, sf=3.0)
+    k.crown(n=3, y0=28.8, dome=1.8, size=(3.4, 4.4), hy=(0.9, 1.3), spread=9.5, jit=0.8, tuft=1)
     k.back_strands(25.0, (-25.0, -21.5), z=-16.0, w=(1.5, 2.3), x0=-17.4, x1=17.4)
     for sg in (1, -1):
         k.side_strands(sg, 24.5, (-21.5, -16.5), -15.6, 5.0, x=17.6, w=(1.3, 2.0), depth=1.6)   # 옆 커튼 (어깨 바깥)
@@ -322,8 +400,9 @@ def hair_black_seethrough():
 def hair_black_wolfcut():
     """시안 3: 검은 울프컷. 헝클어진 정수리, 뾰족한 앞머리, 바깥으로 뻗친 층층 옆머리, 길게 내려와 뻗친 뒷목."""
     k = Hair('#1F1C23', 303, noise=0.07)
-    k.shell(sb=8.0, bb=3.0, sf=4.5)
-    k.crown(n=4, y0=27.8, dome=1.6, size=(2.0, 3.0), hy=(0.8, 1.2), spread=10.5, jit=1.6)
+    k.shell(sb=8.0, bb=3.0, sf=4.5, lift=0.6)
+    k.puff(y0=11.0, y1=25.5, x=18.2, zb=-18.4, sf=4.0)
+    k.crown(n=4, y0=27.8, dome=1.6, size=(2.0, 3.0), hy=(1.0, 1.6), spread=10.5, jit=1.6, tuft=3)
     k.bangs([(x, yb, 1.4) for x, yb in zip(np.linspace(-13.4, 13.4, 10),
                                            (14.4, 12.6, 14.0, 12.4, 13.8, 12.5, 13.9, 12.7, 14.2, 15.0))], tip=2.4)
     for sg in (1, -1):
@@ -344,7 +423,8 @@ def hair_pink_bridge_ponytail():
     """시안 4: 진갈색 + 핑크 브릿지 하이포니테일. 정수리 뒤에서 높이 묶어 위로 솟았다 등 뒤로 떨어지는 꼬리, 얼굴 옆 잔머리."""
     base, pink = '#3F2D29', '#F288B6'
     k = Hair(base, 404, noise=0.05)
-    k.shell(sb=10.0, bb=8.0, sf=4.0)
+    k.shell(sb=10.0, bb=8.0, sf=4.0, lift=0.2)
+    k.puff(y0=14.0, y1=25.5, x=18.0, zb=-17.6, sf=3.5)
     k.crown(n=3, y0=28.4, dome=1.4, size=(3.4, 4.4), hy=(0.8, 1.2), spread=8.5, jit=0.6)
     k.bangs([(x, yb, 1.4) for x, yb in zip(np.linspace(-12.8, 12.8, 9),
                                            (15.6, 14.4, 15.4, 14.2, 15.2, 14.4, 15.4, 14.6, 15.6))], top=22.0, depth=1.0)
@@ -378,8 +458,8 @@ def _fringe(k, xs, ybs, hw=1.45, **kw):
 def hair_black_short():
     """검은 짧은 머리: 곱슬 덩어리 볼륨, 이마를 덮는 짧은 앞머리, 볼 옆 짧은 옆머리."""
     k = Hair('#30231F', 7, noise=0.07)
-    k.shell(sb=10.0, bb=5.0, sf=5.0)
-    k.crown(n=4, y0=28.8, dome=2.8, size=(2.6, 3.6), hy=(1.2, 2.0), spread=10.5, jit=1.4)
+    k.shell(sb=10.0, bb=5.0, sf=5.0, lift=0.6)
+    k.crown(n=4, y0=28.8, dome=2.8, size=(2.6, 3.6), hy=(1.2, 2.0), spread=10.5, jit=1.4, tuft=2)
     for sg in (1, -1):
         for y in (22.0, 17.0, 12.4):                                              # 옆 곱슬 덩어리
             for z in (-12.0, -6.5, -1.0, 4.0):
@@ -397,7 +477,8 @@ def hair_black_short():
 def hair_brown_short():
     """밤색 짧은 머리: 단정한 옆가르마, 한쪽으로 쓸린 앞머리, 정수리 더듬이."""
     k = Hair('#7A4A2E', 21, noise=0.05)
-    k.shell(sb=9.0, bb=5.0, sf=5.0)
+    k.shell(sb=9.0, bb=5.0, sf=5.0, lift=0.4)
+    k.puff(y0=13.0, y1=25.5, x=18.0, zb=-17.8, sf=4.0)
     k.crown(n=3, y0=28.6, dome=2.0, size=(3.0, 4.0), hy=(1.0, 1.4), spread=9.5, jit=0.8)
     k.box((-2.0, 26.6, 14.6), (13.4, 2.0, 1.6), 0.06)                              # 앞 볼륨 (오른쪽으로 쓸림)
     k.box((5.0, 28.2, 13.6), (8.0, 1.2, 1.6), 0.10)
@@ -438,7 +519,8 @@ def hair_blonde_spiky():
 def hair_pink_long():
     """분홍 긴 머리: 일자 앞머리, 볼을 감싸고 가슴까지 오는 앞 가닥, 허리까지 오는 뒷머리(끝 말림)."""
     k = Hair('#F49AC1', 41, noise=0.05)
-    k.shell(sb=-4.0, bb=-16.0, sf=3.5)
+    k.shell(sb=-4.0, bb=-16.0, sf=3.5, lift=0.4)
+    k.puff(y0=8.0, y1=25.5, x=18.4, zb=-17.8, sf=2.5)
     k.crown(n=3, y0=28.6, dome=1.6, size=(3.4, 4.2), hy=(0.9, 1.3), spread=9.5, jit=0.6)
     _fringe(k, np.linspace(-12.8, 12.8, 9), [14.6 + (0.5 if i % 2 else 0) for i in range(9)], hw=1.6, tip=1.0)
     k.back_strands(25.0, (-20.0, -17.0), x0=-17.2, x1=17.2, w=(1.6, 2.4))
@@ -454,7 +536,8 @@ def hair_pink_long():
 def hair_sky_bob():
     """하늘색 단발: 턱선 길이, 안으로 말린 둥근 실루엣, 일자 앞머리."""
     k = Hair('#8FCBF0', 55, noise=0.06)
-    k.shell(sb=2.0, bb=1.0, sf=5.0)
+    k.shell(sb=2.0, bb=1.0, sf=5.0, lift=0.4)
+    k.puff(y0=6.0, y1=25.5, x=18.6, zb=-18.2, sf=4.0)
     k.crown(n=3, y0=28.8, dome=2.0, size=(3.0, 4.0), hy=(1.0, 1.4), spread=9.5, jit=0.8)
     _fringe(k, np.linspace(-12.8, 12.8, 9), [14.8 - 0.5 * np.cos(i * 1.7) for i in range(9)], hw=1.6, tip=1.0)
     for sg in (1, -1):
@@ -505,19 +588,20 @@ def hair_black_twintail():
 def hair_mint_curly():
     """민트 곱슬: 머리 전체를 덮는 크고 둥근 곱슬 볼륨 (작은 덩어리 많이, 바깥으로 2~4칸)."""
     k = Hair('#7FD6B8', 91, noise=0.08)
-    k.shell(sb=5.0, bb=2.0, sf=5.0)
-    k.crown(n=4, y0=29.6, dome=3.0, size=(2.6, 3.6), hy=(1.4, 2.2), spread=11.0, jit=1.4)
+    k.shell(sb=5.0, bb=2.0, sf=5.0, lift=0.2)
+    k.crown(n=4, y0=29.6, dome=3.0, size=(2.6, 3.6), hy=(1.3, 1.8), spread=11.0, jit=1.2)
     for sg in (1, -1):
         for y in (24.0, 19.0, 14.0, 9.0, 4.6):
+            xo = 16.9 if y > 17 else 17.8                                          # 위 두 줄은 모자 안에 들어가게
             for z in (-13.0, -8.0, -3.0, 2.0, 6.4):
-                k.chunk((sg * (17.8 + k.u(-0.6, 0.6)), y + k.u(-1.0, 1.0), z + k.u(-1.0, 1.0)), (1.8, 2.3, 2.4), -0.12, 0.1)
+                k.chunk((sg * (xo + k.u(-0.5, 0.5)), y + k.u(-1.0, 1.0), z + k.u(-1.0, 1.0)), (1.8, 2.3, 2.4), -0.12, 0.1)
         k.cheek_lock(sg, 6.0, z0=4.0, z1=14.4, hx=2.2)
     for y in (24.0, 19.0, 14.0, 9.0, 4.0):
         for x in np.linspace(-14.0, 14.0, 7):
-            k.chunk((x + k.u(-1.0, 1.0), y + k.u(-1.0, 1.0), -17.0 + k.u(-0.6, 0.6)), (2.4, 2.4, 1.8), -0.12, 0.1)
+            k.chunk((x + k.u(-1.0, 1.0), y + k.u(-1.0, 1.0), (-16.4 if y > 17 else -17.0) + k.u(-0.5, 0.5)), (2.4, 2.4, 1.8), -0.12, 0.1)
     _fringe(k, np.linspace(-13.0, 13.0, 8), (15.6, 14.4, 15.2, 14.2, 15.0, 14.4, 15.4, 16.0), hw=1.9, tip=1.2)
     for x in np.linspace(-11.0, 11.0, 5):
-        k.chunk((x + k.u(-0.6, 0.6), 27.0 + k.u(-0.4, 0.6), 15.6 + k.u(0, 0.8)), (2.8, 2.2, 1.9), -0.04, 0.1)
+        k.chunk((x + k.u(-0.6, 0.6), 26.6 + k.u(-0.4, 0.6), 14.8 + k.u(0, 0.6)), (2.8, 2.2, 1.9), -0.04, 0.1)
     return k.out
 
 
@@ -898,8 +982,8 @@ def shoes_loafer_socks():
     out = []
     for sg in (1, -1):
         s = 'shin%+d' % sg
-        out += R(s, (0, -5.6, 0), (2.7, 5.0, 2.7), sock, 0.4)
-        out += R(s, (0, -1.0, 0), (2.82, 0.6, 2.82), tint(sock, -0.04), 0.3)
+        out += R(s, (0, -5.6, 0), (2.7, 5.0, 2.7), sock, 0.4, under=True)                 # 사이클 8: 니삭스는 하의 아래 (shoes_under)
+        out += R(s, (0, -1.0, 0), (2.82, 0.6, 2.82), tint(sock, -0.04), 0.3, under=True)
         out += R(s, (0, -13.05, 1.4), (3.2, 0.45, 4.6), '#3A3034', 0.2)
         out += R(s, (0, -11.6, 1.3), (3.02, 1.1, 4.4), blk, 0.9, noise=0.01)
         out += [P(s, (0, -10.55, 2.9), (3.08, 0.32, 1.0), tint(blk, 0.08), bevel=0.2, noise=0),      # 페니 스트랩
@@ -915,14 +999,14 @@ def shoes_hightop_black():
         s = 'shin%+d' % sg
         out += R(s, (0, -12.95, 1.5), (3.75, 0.6, 5.1), w, 0.3)
         out += R(s, (0, -10.9, 1.2), (3.55, 1.6, 4.7), blk, 0.9)
-        out += R(s, (0, -8.2, -0.1), (3.15, 1.7, 3.2), blk, 0.6)                    # 발목 위
+        out += R(s, (0, -8.2, -0.1), (3.15, 1.7, 3.2), blk, 0.6, under=True)       # 발목 위 (하의 아래)
         out += R(s, (0, -11.3, 4.4), (3.5, 1.0, 1.6), w, 0.6)                       # 흰 앞코
-        out += R(s, (0, -6.6, -0.1), (3.2, 0.3, 3.3), w, 0.2)                       # 윗단 테
+        out += R(s, (0, -6.6, -0.1), (3.2, 0.3, 3.3), w, 0.2, under=True)          # 윗단 테
         out += [decal(s, (sg * 3.58, -11.2, 0.4), (0.03, 0.55, 3.0), w),
                 decal(s, (-sg * 3.58, -11.2, 0.4), (0.03, 0.55, 3.0), w),
-                decal(s, (sg * 3.18, -8.0, -1.6), (0.03, 0.9, 0.9), '#5A5560')]
+                decal(s, (sg * 3.18, -8.0, -1.6), (0.03, 0.9, 0.9), '#5A5560', under=True)]
         for y in (-9.4, -8.4, -7.4):
-            out.append(decal(s, (0, y, 3.13), (1.4, 0.2, 0.03), w))
+            out.append(decal(s, (0, y, 3.13), (1.4, 0.2, 0.03), w, under=y > -9.0))
     return out
 
 
@@ -942,7 +1026,7 @@ def shoes_maryjane():
     out = []
     for sg in (1, -1):
         s = 'shin%+d' % sg
-        out += R(s, (0, -9.6, 0), (2.7, 1.4, 2.7), '#FFFFFF', 0.4)
+        out += R(s, (0, -9.6, 0), (2.7, 1.4, 2.7), '#FFFFFF', 0.4, under=True)        # 발목 양말 (하의 아래)
         out += R(s, (0, -13.05, 1.3), (3.2, 0.45, 4.5), '#9E2838', 0.3)
         out += R(s, (0, -11.8, 1.4), (3.0, 1.0, 4.25), red, 0.8)
         out.append(P(s, (0, -10.75, 1.8), (3.1, 0.3, 0.6), red, bevel=0.2))
@@ -971,39 +1055,46 @@ SHOES = {'chunky-white': shoes_chunky_white, 'loafer-socks': shoes_loafer_socks,
 def hat_bucket_white():
     """시안 1: 흰 버킷햇. 둥글게 줄어드는 크라운, 아래로 기운 챙, 라벤더 무지 패치."""
     w = '#F8F6F2'
-    out = R('head', (0, 25.0, -0.4), (18.8, 5.6, 18.2), w, 2.0, bevel=1.6)     # 크라운 19.4..30.6 (모서리 둥글게)
-    out += R('head', (0, 31.2, -0.4), (15.6, 1.1, 15.0), tint(w, 0.03), 1.0, bevel=1.2)
-    out += R('head', (0, 20.4, -0.4), (18.85, 0.75, 18.25), tint(w, -0.06), 0.6, bevel=0.4)  # 띠
-    out += R('head', (0, 19.6, -0.4), (19.8, 0.7, 19.2), w, 0.5)                # 챙 뿌리
+    out = stepped('head', (0, 27.3, -0.6), (19.2, 7.9, 18.8), w, top=((5.4, 0.0), (3.6, 1.0), (2.0, 2.4), (0.8, 4.2), (0.0, 6.6)),
+                  rs=5.0, bevel=1.0)                                         # 사이클 8: 둥근 크라운 19.4..35.2 (커진 머리카락 덮음)
+    out += R('head', (0, 20.4, -0.6), (19.25, 0.75, 18.85), tint(w, -0.06), 0.6, bevel=0.4)  # 띠
+    out += R('head', (0, 19.6, -0.6), (20.2, 0.7, 19.6), w, 0.5)                # 챙 뿌리
     br = tint(w, -0.02)
     out += [P('head', (0, 18.6, 21.0), (20.4, 0.6, 2.6), br, bevel=0.5, rot=(20, 0, 0)),          # 앞 챙 (짧게: 눈을 가리지 않게)
             P('head', (0, 17.9, -22.2), (20.6, 0.6, 3.4), br, bevel=0.5, rot=(-32, 0, 0)),
             P('head', (21.0, 17.9, -0.4), (3.4, 0.6, 21.6), br, bevel=0.5, rot=(0, 0, -32)),
             P('head', (-21.0, 17.9, -0.4), (3.4, 0.6, 21.6), br, bevel=0.5, rot=(0, 0, 32))]
-    out += [decal('head', (-7.4, 25.4, 17.83), (2.0, 2.0, 0.03), '#BCA8EC'),
-            decal('head', (-7.4, 25.4, 17.86), (1.25, 1.25, 0.03), '#D4C6F4')]
+    out += [decal('head', (-7.4, 25.6, 18.23), (2.0, 2.0, 0.03), '#BCA8EC'),
+            decal('head', (-7.4, 25.6, 18.26), (1.25, 1.25, 0.03), '#D4C6F4')]
     return out
 
 
 def hat_cap_black():
     """시안 3: 검정 무지 캡 (글자/로고 없음, 단추와 작은 크림 패치만). 둥근 크라운 + 긴 챙."""
     b = '#34303D'
-    out = R('head', (0, 24.4, -0.6), (17.6, 5.2, 17.0), b, 3.0, bevel=1.6)     # 19.2..29.6 (둥근 돔)
-    out += R('head', (0, 30.2, -0.8), (13.6, 1.2, 13.0), tint(b, 0.04), 1.0, bevel=1.0)
-    out += [P('head', (0, 31.6, -0.8), (1.3, 0.4, 1.3), tint(b, 0.1), bevel=0.3),
-            P('head', (0, 20.2, 21.4), (13.6, 0.6, 5.6), b, bevel=0.6, rot=(8, 0, 0)),          # 챙
-            P('head', (0, 19.7, 21.2), (13.2, 0.1, 5.2), '#3C3743', bevel=0.0, rot=(8, 0, 0)),
-            decal('head', (0, 23.0, 16.23), (0.16, 3.2, 0.03), tint(b, -0.4)),
-            decal('head', (0, 21.2, -17.43), (4.0, 1.0, 0.03), tint(b, 0.12)),
-            decal('head', (-6.4, 23.0, 16.23), (1.3, 1.0, 0.03), '#EDE3CF'),
-            decal('head', (-6.4, 23.0, 16.23), (1.0, 1.3, 0.03), '#EDE3CF')]
+    out = stepped('head', (0, 27.1, -0.8), (19.4, 7.9, 18.8), b, top=((6.4, 0.0), (4.4, 1.2), (2.6, 2.8), (1.2, 4.8), (0.0, 7.6)),
+                  rs=5.5, bevel=1.0)                                          # 사이클 8: 둥근 돔 19.2..35.0
+    out += [P('head', (0, 35.3, -0.8), (1.3, 0.45, 1.3), tint(b, 0.1), bevel=0.3),
+            P('head', (0, 20.0, 22.4), (14.2, 0.6, 5.8), b, bevel=0.6, rot=(8, 0, 0)),          # 챙
+            P('head', (0, 19.5, 22.2), (13.8, 0.1, 5.4), '#3C3743', bevel=0.0, rot=(8, 0, 0)),
+            decal('head', (0, 24.0, 18.03), (0.16, 4.2, 0.03), tint(b, -0.4)),
+            decal('head', (0, 21.2, -19.63), (4.0, 1.0, 0.03), tint(b, 0.12)),
+            decal('head', (-6.4, 24.6, 18.03), (1.3, 1.0, 0.03), '#EDE3CF'),
+            decal('head', (-6.4, 24.6, 18.03), (1.0, 1.3, 0.03), '#EDE3CF')]
     return out
 
 
 HATS = {'bucket-white': hat_bucket_white, 'cap-black': hat_cap_black}
 HAT_K = (1.38, 1.31, 1.38)         # 사이클 5 모자: 머리 배율(HK)보다 가로/깊이를 조금 더 키워 새 머리카락 볼륨을 덮는다
+HAT_UP = {'ribbon-pink': 2.6, 'beanie-yellow': 1.2, 'cap-white': 1.4, 'explorer-brown': 1.0, 'mushroom-red': 0.8}   # 사이클 8: 커진 머리카락 돔 위로
+
+
+def _lifted(defs, dy):
+    return [dict(d, c=(d['c'][0], d['c'][1] + dy, d['c'][2])) for d in defs]
+
+
 for _tid, _fn in V5.HATS.items():
-    HATS[_tid] = (lambda f=_fn: scaled(f(), HAT_K))
+    HATS[_tid] = (lambda f=_fn, t=_tid: _lifted(scaled(f(), HAT_K), HAT_UP.get(t, 0.0)))
 
 PARTS = {
     'skin': {k: (lambda k=k: skin(k)) for k in SKINS},
@@ -1088,10 +1179,10 @@ def pose_frame(name):
                      hang=24.0, cape=40.0),
         # 사이클 8: 엎드리기 (메이플식). 몸통을 앞으로 눕히고(엉덩이 기준), 머리는 들어 앞을 보고,
         # 팔은 앞으로 뻗어 턱 아래에 받치고, 다리는 뒤로 편다. fit=True: 마네킹 최저점을 y=0, 몸 앞뒤 중심을 z=0.
-        'prone': dict(leg={1: -86.0, -1: -82.0}, shin={1: -62.0, -1: -84.0}, arm={1: 172.0, -1: 166.0},
-                      asplay={1: 22.0, -1: 22.0}, legsplay=4.0, lean=88.0, head=-80.0, pivot='hip', fit=True,
-                      head_drop=(0, -4.5, 1.0),
-                      hang=(70.0, 92.0), hang_cuts=(7.7, -3.8), cape=88.0),
+        'prone': dict(leg={1: -84.0, -1: -80.0}, shin={1: -112.0, -1: -128.0}, arm={1: 172.0, -1: 168.0},
+                      asplay={1: 50.0, -1: 50.0}, legsplay=5.0, lean=88.0, head=-92.0, pivot='hip', fit=True, head_sy=0.9,
+                      head_drop=(0, -4.0, 10.0),
+                      hang=(84.0, 94.0), hang_cuts=(2.0, -6.0), cape=88.0, fit_dx=-4.0),
     }
     if name in POSES6:
         p.update(POSES6[name])
@@ -1145,21 +1236,32 @@ def bone_xf(pose):
         xf['leg%+d' % sg] = (Rt, hip)
         xf['shin%+d' % sg] = (Rs, hip + Rt @ np.array(KNEE))
     if pose.get('fit'):
-        lo, zs = _fit_extent(xf, pose)
-        sh = np.array([0, -lo, -zs])
+        # 화면(옆 뷰)에서 몸이 수평으로 보이게 앞쪽을 살짝 들고(카메라 pitch 보정),
+        # 마네킹의 화면 최저점을 기준선, 화면 가로 중심을 기준점 x 에 맞춘다.
+        G = rot_x(-FIT_TILT)
+        xf = {k: (G @ R, G @ t) for k, (R, t) in xf.items()}
+        V = rot_x(FIT_VIEW[1]) @ rot_y(FIT_VIEW[0])
+        pv = _skin_pts(xf, pose) @ V.T
+        want = np.array([pose.get('fit_dx', 0.0) - (pv[:, 0].min() + pv[:, 0].max()) / 2, -pv[:, 1].min()])
+        A = V[:2][:, 1:]                       # 월드 (y, z) 이동 -> 화면 (x, y) 이동
+        sy, sz = np.linalg.solve(A, want)
+        sh = np.array([0, sy, sz])
         xf = {k: (R, t + sh) for k, (R, t) in xf.items()}
     return xf
 
 
-def _fit_extent(xf, pose):
-    """마네킹(skin) 상자 꼭짓점의 최저 y 와 z 중심 (엎드리기 접지/가운데 맞춤)."""
+FIT_VIEW = (62, 8)           # build.SIDE_YAW, build.PITCH_OF['prone'] (엎드리기는 옆 뷰, 낮은 pitch)
+FIT_TILT = 4.5               # 도: 옆 뷰에서 머리 쪽이 기준선 아래로 내려가 보이는 기울기 보정
+
+
+def _skin_pts(xf, pose):
+    """마네킹(skin) 상자 꼭짓점 (월드)."""
     pts = []
     sgn = np.array([[i, j, k] for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)], float)
-    for d in squash_defs(skin('light'), pose):
+    for d in squash_defs(head_squash(skin('light'), pose), pose):
         R, t = xf[d['bone']]
         pts.append(t + (np.asarray(d['c'], float) + sgn * np.asarray(d['h'], float)) @ R.T)
-    pts = np.concatenate(pts)
-    return float(pts[:, 1].min()), float((pts[:, 2].min() + pts[:, 2].max()) / 2)
+    return np.concatenate(pts)
 
 
 def squash_pt(v, sq):
@@ -1225,7 +1327,7 @@ def _chain(defs, sel, base, cuts, angs, xf, prefix, zpiv=None):
             out.append(d); continue
         (cx, cy, cz), (hx, hy, hz) = d['c'], d['h']
         y0, y1 = cy - hy, cy + hy
-        pz = cz if zpiv is None else zpiv
+        pz = cz if zpiv is None else (cz + hz if zpiv == 'front' else zpiv)
         keys = [base]
         for i, (c, a) in enumerate(zip(cuts, angs)):
             k = '%s%d@%.3f' % (prefix, i + 1, pz)
@@ -1251,14 +1353,40 @@ def _chain(defs, sel, base, cuts, angs, xf, prefix, zpiv=None):
     return out
 
 
+def head_squash(defs, pose):
+    """(사이클 8) 엎드리기: 머리 뼈 상자를 턱(머리 로컬 y 0) 기준으로 세로 head_sy 배 (바닥에 눌린 느낌, 키 비율)."""
+    k = pose.get('head_sy')
+    if not k:
+        return defs
+    return [dict(d, c=(d['c'][0], d['c'][1] * k, d['c'][2]), h=(d['h'][0], d['h'][1] * k, d['h'][2]))
+            if d['bone'] == 'head' else d for d in defs]
+
+
 def sway_defs(defs, cat, pose, xf):
     """hang/cape/skirt_lift 포즈에서 늘어지는 부분을 새 뼈로 옮긴다 (xf 에 뼈 추가). 해당 없으면 defs 그대로."""
+    defs = head_squash(defs, pose)
     if cat == 'hair' and pose.get('hang') is not None:
         hd = pose['lean'] + pose['head']
         h = pose['hang']
         w1, w2 = (h if isinstance(h, tuple) else ((hd + h) / 2, h))      # 마디별 월드 각도
         cuts = pose.get('hang_cuts') or HANG_CUTS
-        return _chain(defs, lambda d: d['c'][1] - d['h'][1] < cuts[0] - 0.8, 'head', cuts, (w1 - hd, w2 - w1), xf, 'hang')
+        zp = None
+        if pose.get('fit'):
+            # 사이클 8 엎드리기: 턱(머리 로컬 y 0)이 바닥이라 cuts[0] 아래 머리카락은 바닥을 뚫는다.
+            # 앞뒤로 넓은 조각(옆머리 말림 등)은 cuts[0] 위로 잘라 남기고, 세로 가닥만 앞 모서리를 축으로 등 위로 눕힌다.
+            zp = 'front'
+            cut = cuts[0]
+            kept = []
+            for d in defs:
+                (cx, cy, cz), (hx, hy, hz) = d['c'], d['h']
+                if d['bone'] == 'head' and not d.get('rot') and cy - hy < cut - 0.8 and hz > hy * 0.9:
+                    if cy + hy <= cut + 0.4:
+                        continue
+                    y0 = cut - 0.3
+                    d = dict(d, c=(cx, (y0 + cy + hy) / 2, cz), h=(hx, (cy + hy - y0) / 2, hz))
+                kept.append(d)
+            defs = kept
+        return _chain(defs, lambda d: d['c'][1] - d['h'][1] < cuts[0] - 0.8, 'head', cuts, (w1 - hd, w2 - w1), xf, 'hang', zpiv=zp)
     defs = squash_defs(defs, pose)
     if cat == 'top' and pose.get('cape') is not None and any(d.get('sway') == 'cape' for d in defs):
         a = pose['cape'] - pose['lean']
@@ -1284,7 +1412,7 @@ def make_boxes(defs, xf, layer, tag, back_view=False):
         R, t = xf[d['bone']]
         kw = {k: d[k] for k in ('bevel', 'decal', 'noise', 'emit') if k in d}
         Rb = R @ _local_rot(d['rot']) if d.get('rot') else R
-        out.append(Box(_xf_point(R, t, d['c']), d['h'], Rb, d['col'], layer, tag=tag, **kw))
+        out.append(Box(_xf_point(R, t, d['c']), d['h'], Rb, d['col'], layer + '_under' if d.get('under') else layer, tag=tag, **kw))
     return out
 
 
@@ -1304,4 +1432,4 @@ def assemble(outfit, frame):
 def proxy_boxes(kind, frame):
     pose = pose_frame(frame)
     xf = bone_xf(pose)
-    return make_boxes(squash_defs(PROXIES[kind](), pose), xf, 'proxy', 'proxy')
+    return make_boxes(squash_defs(head_squash(PROXIES[kind](), pose), pose), xf, 'proxy', 'proxy')

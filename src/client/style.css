@@ -139,3 +139,23 @@ body[data-screen="room"] { background: var(--letterbox); }
   .touch-group { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); min-width: 0; }
   .touch-row--4 .bk-btn { min-width: 0; padding-left: 4px; padding-right: 4px; gap: 6px; white-space: nowrap; }
 }
+
+/* ---------- 사이클 8: 방 삭제 ----------
+   위험 버튼(빨강 블록): ui-kit 버튼 변수만 바꾼다. 디자인 정본(ui-kit.css)에 아직 없어 여기서 정의 (design handoff 요청). */
+.bk-btn--danger {
+  --b-hl: var(--pal-r1); --b-face: var(--pal-r2); --b-sh: var(--pal-r3);
+  --b-side: var(--pal-w4); --b-line: var(--pal-r3); --b-text: var(--pal-white);
+}
+.bk-btn--danger:hover, .bk-btn--danger.is-hover { --b-face: var(--pal-r1); --b-hl: var(--pal-white); --b-sh: var(--pal-r2); --b-text: var(--pal-ink); }
+.bk-btn--danger:disabled { --b-text: var(--pal-w3); }
+.bk-room__acts { display: flex; align-items: center; gap: var(--sp-3); }
+.bk-room__acts .bk-btn[hidden] { display: none; }
+.hud-r .bk-btn--danger[hidden] { display: none; }
+@media (max-width: 719px) {
+  .bk-room__acts { grid-area: go; flex-direction: column; align-items: stretch; gap: var(--sp-2); }
+  .bk-room__del { min-width: 72px; }
+}
+/* 사이클 8: 모바일 "엎드리기"(4자)가 73px 버튼에 넘치지 않게 좁은 화면에서는 아이콘을 뺀다 */
+@media (max-width: 419px) {
+  .touch-row--4 [data-testid="crouch"] .bk-ico { display: none; }
+}

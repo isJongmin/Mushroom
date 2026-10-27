@@ -10,6 +10,7 @@ import {
   AVATAR, PART_KEYS, PART_ID_RE, DEFAULT_LAYER_ORDER, LAYER_BLENDS, REQUIRED_LAYERS, DEFAULT_AVATAR, HAT_NONE, WORLD,
 } from './constants.js';
 import { normalizeAvatar } from './avatar-data.js';
+import { normalizePlatforms } from './game/physics.js';
 
 const REPO_ROOT = new URL('../../', import.meta.url);
 const ASSET_ROOT = new URL('assets/', REPO_ROOT);
@@ -71,7 +72,7 @@ const posNum = (v, d) => (typeof v === 'number' && Number.isFinite(v) && v > 0 &
 // 아바타
 
 const ANIM_NAMES = Object.keys(AVATAR.animations);
-const OPTIONAL_ANIMS = Object.freeze(['jump', 'fall', 'crouch']);
+const OPTIONAL_ANIMS = Object.freeze(['jump', 'fall', 'prone', 'crouch']);
 
 function normalizeAnimations(raw, frameCount) {
   const out = {};
@@ -91,6 +92,8 @@ function normalizeAnimations(raw, frameCount) {
     const frames = a && Array.isArray(a.frames) ? a.frames.filter((f) => Number.isInteger(f) && f >= 0 && f < frameCount) : [];
     if (frames.length) out[name] = { frames, ms: posInt(a.ms, 600, 10000) };
   }
+  // (사이클 8) 엎드리기: prone이 없으면 옛 crouch를 같은 의미로 쓴다(아트 반영 전 호환). 둘 다 없으면 idle.
+  if (!out.prone && out.crouch) out.prone = out.crouch;
   return out;
 }
 
@@ -280,7 +283,7 @@ export async function loadAvatarAssets() {
 
 /**
  * @returns Promise<{ source: 'manifest'|'fallback', layers: [{ img, parallax, y, w, h, repeatX, stretchX, name }],
- *   ground, groundY, width, density, layerCount }>
+ *   ground, groundY, width, density, layerCount, platforms }>
  * 레이어의 y, w, h는 월드 단위 (w, h = 이미지 px / density). 실패한 레이어는 빠진다 (그 레이어만 빼고 그린다).
  */
 export async function loadMapAssets() {
@@ -288,7 +291,10 @@ export async function loadMapAssets() {
   const list = raw && Array.isArray(raw.layers) ? raw.layers : null;
   if (!list || !list.length) {
     warnOnce('map:manifest', 'assets/map/manifest.json이 없습니다 (단색 맵으로 그립니다)');
-    return Object.freeze({ source: 'fallback', layers: [], ground: null, groundY: WORLD.groundY, width: WORLD.width, density: 1.5, layerCount: 0 });
+    return Object.freeze({
+      source: 'fallback', layers: [], ground: null, groundY: WORLD.groundY, width: WORLD.width, density: 1.5, layerCount: 0,
+      platforms: normalizePlatforms(raw && raw.platforms),
+    });
   }
   const density = posNum(raw.density, 1.5);
   const groundY = num(raw.groundY, WORLD.groundY);
@@ -327,5 +333,7 @@ export async function loadMapAssets() {
     width,
     density,
     layerCount: layers.length,
+    // (사이클 8) 발판 [{ id, x1, x2, y }] (한 방향 통과). 없으면 [] → 지면만.
+    platforms: normalizePlatforms(raw.platforms, { width }),
   });
 }

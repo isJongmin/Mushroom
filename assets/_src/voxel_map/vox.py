@@ -409,3 +409,48 @@ def add_glow(rgba, em, ec, sigma=6.0, strength=0.9, sigma2=None, strength2=0.0):
 def lin_from_u8(u):
     c = u / 255.0
     return np.where(c <= 0.04045, c / 12.92, ((c + 0.055) / 1.055) ** 2.4)
+
+
+# ---------------------------------------------------------------- 발판 윗면 마스크 (check.py 용)
+def top_mask(boxes, yaw, pitch, scale, *, W, H, anchor, ss=2, x0=0):
+    """조명 없이 z-버퍼만 계산해, 화면 픽셀마다 'tag=top' 상자의 위를 향한 면이 보이는 비율(0~1)을 돌려준다.
+    x0: 화면 px 오프셋(넓은 레이어의 일부 띠만 계산)."""
+    V = view_matrix(yaw, pitch)
+    Wb, Hb, S = W * ss, H * ss, scale * ss
+    axp, ayp = (anchor[0] - x0) * ss, anchor[1] * ss
+    Z0 = 2000.0
+    zbuf = np.full((Hb, Wb), np.inf)
+    top = np.zeros((Hb, Wb), bool)
+    for b in boxes:
+        Mv, cv = V @ b.R, V @ b.c
+        ext = np.abs(Mv) @ b.h
+        bx0 = int(max(0, np.floor((cv[0] - ext[0]) * S + axp)))
+        bx1 = int(min(Wb, np.ceil((cv[0] + ext[0]) * S + axp) + 1))
+        by0 = int(max(0, np.floor(ayp - (cv[1] + ext[1]) * S)))
+        by1 = int(min(Hb, np.ceil(ayp - (cv[1] - ext[1]) * S) + 1))
+        if bx1 <= bx0 or by1 <= by0:
+            continue
+        vx = ((np.arange(bx0, bx1) + 0.5) - axp) / S
+        vy = (ayp - (np.arange(by0, by1) + 0.5)) / S
+        VX, VY = np.meshgrid(vx, vy)
+        R = np.stack([VX - cv[0], VY - cv[1], np.full_like(VX, Z0 - cv[2])], -1)
+        o = R @ Mv
+        d = -Mv[2, :]
+        inv = np.where(np.abs(d) > 1e-9, 1.0 / np.where(np.abs(d) > 1e-9, d, 1), 1e12)
+        t1 = (-b.h - o) * inv
+        t2 = (b.h - o) * inv
+        tn = np.minimum(t1, t2); tf = np.maximum(t1, t2)
+        tN = tn.max(-1); tF = tf.min(-1)
+        hit = (tN <= tF) & (tF > 0)
+        zs = zbuf[by0:by1, bx0:bx1]
+        win = hit & (tN < zs)
+        zs[win] = tN[win]
+        if b.tag == 'top':
+            # 입사면: tn 이 최대인 축. 위(+y 로컬)를 향한 면인지
+            ax = np.argmax(tn, -1)
+            pl = o + (tN[..., None] * d[None, None, :])
+            up = (ax == 1) & (pl[..., 1] > 0)
+            top[by0:by1, bx0:bx1][win] = up[win]
+        else:
+            top[by0:by1, bx0:bx1][win] = False
+    return top.reshape(H, ss, W, ss).mean((1, 3))

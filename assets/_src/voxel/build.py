@@ -1,4 +1,4 @@
-"""버섯마을 아바타 빌드 (복셀 아트 계약, 사이클 5 + 사이클 6 jump/fall/crouch 프레임 + 사이클 7 트렌디 비율, 복셀 1칸 1.82px).
+"""버섯마을 아바타 빌드 (복셀 아트 계약, 사이클 5 + 사이클 6 jump/fall 프레임 + 사이클 7 트렌디 비율 + 사이클 8 prone(엎드리기)/둥근 머리/shoes_under, 복셀 1칸 1.82px).
 
 python3 assets/_src/voxel/build.py                     # assets/avatar/** 전체 재생성 + 검증용 정답 렌더
 python3 assets/_src/voxel/build.py --preview DIR       # + 미리보기 (presets, parts_*, walk.gif, compare, ingame_scale)
@@ -42,6 +42,7 @@ LAYER_ORDER = [
     ('top_back', 'top', 'source-over'),
     ('skin', 'skin', 'source-over'),
     ('face', 'face', 'source-over'),
+    ('shoes_under', 'shoes', 'source-over'),      # 사이클 8: 양말/하이탑 발목 (하의 아래). 메인 승인 2026-10-28
     ('bottom', 'bottom', 'source-over'),
     ('shoes', 'shoes', 'source-over'),
     ('shade_top', 'top', 'source-atop'),
@@ -62,12 +63,15 @@ TOL_ALPHA = 2.0
 IRR0 = {}               # (frame, recv) -> (irr, hit) : 2단계 풀이 fork 로 물려받음
 
 
+PITCH_OF = {'prone': 8}  # 사이클 8: 엎드리기는 카메라를 낮춰 정수리 윗면이 덜 보이게 (키 비율), model.FIT_VIEW 와 같아야 함
+
+
 def yaw_of(fr):
     return YAW.get(fr, SIDE_YAW)
 
 
 def R(boxes, fr, **kw):
-    return render(boxes, yaw_of(fr), PITCH, SCALE, W=W, H=H, anchor=ANCHOR, **kw)
+    return render(boxes, yaw_of(fr), PITCH_OF.get(fr, PITCH), SCALE, W=W, H=H, anchor=ANCHOR, **kw)
 
 
 # ------------------------------------------------------------------ 작업 (워커에서 실행)
@@ -103,6 +107,13 @@ def t_layer(args):
         back = (r['a'] > 0) & (rp['zbuf'] < r['zbuf'] - 0.05)
         out[Lb] = downsample(r['img'], r['a'] * back)
         out[Lf] = downsample(r['img'], r['a'] * ~back)
+    elif cat == 'shoes':
+        # 사이클 8: under 표시 상자(양말 등)가 보이는 서브픽셀은 shoes_under 로 (하의 아래에 합성)
+        und = np.array([b[i].layer.endswith('_under') for i in range(len(b))] + [False])
+        under = (r['a'] > 0) & und[r['idb']]
+        if under.any():
+            out['shoes_under'] = downsample(r['img'], r['a'] * under)
+        out['shoes'] = downsample(r['img'], r['a'] * ~under)
     else:
         out[cat] = downsample(r['img'], r['a'])
     if cat in SHADE:

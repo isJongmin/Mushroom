@@ -3,12 +3,12 @@
 //
 // 오류 코드 (ARCHITECTURE 결정 6):
 //   ROOM_NOT_FOUND, WRONG_PASSWORD, ROOM_FULL, NICK_TAKEN, NICK_FORMAT, ROOM_NAME_FORMAT, PASSWORD_FORMAT,
-//   TOO_MANY_ROOMS, RATE_LIMITED, NOT_MEMBER, TEXT_FORMAT, NETWORK, UNKNOWN
+//   TOO_MANY_ROOMS, RATE_LIMITED, NOT_MEMBER, TEXT_FORMAT, NETWORK, UNKNOWN, NOT_OWNER(사이클 8: 방장만 방 삭제)
 // 클라이언트 전용: MANIFEST(파츠 매니페스트 실패), STORAGE(프로필 저장 실패)
 
 export const ERROR_CODES = Object.freeze([
   'ROOM_NOT_FOUND', 'WRONG_PASSWORD', 'ROOM_FULL', 'NICK_TAKEN', 'NICK_FORMAT', 'ROOM_NAME_FORMAT', 'PASSWORD_FORMAT',
-  'TOO_MANY_ROOMS', 'RATE_LIMITED', 'NOT_MEMBER', 'TEXT_FORMAT', 'NETWORK', 'UNKNOWN',
+  'TOO_MANY_ROOMS', 'RATE_LIMITED', 'NOT_MEMBER', 'TEXT_FORMAT', 'NETWORK', 'UNKNOWN', 'NOT_OWNER',
 ]);
 const KNOWN = new Set(ERROR_CODES);
 
@@ -67,6 +67,15 @@ export const LOBBY_MESSAGES = Object.freeze({
   LIMIT_NOTE: '방이 많아 100개까지만 보여요.',
   PW_HELP_EMPTY: '비워 두면 누구나 들어올 수 있는 공개 방이 돼요.',
   PW_HELP_SET: '비밀번호를 아는 사람만 들어올 수 있어요.',
+  // (사이클 8) 방 삭제
+  ROOM_CLOSED: '방장이 방을 삭제했어요.',
+  ROOM_DELETED: '방을 삭제했어요.',
+  DELETE_TITLE: '방 삭제',
+  DELETE_DESC: '방을 삭제하면 모두 로비로 나가요.',
+  DELETE_CONFIRM: '삭제',
+  DELETING: '삭제 중',
+  DELETE_NOT_OWNER: '방장만 방을 삭제할 수 있어요.',
+  DELETE_FAILED: '방을 삭제하지 못했어요. 다시 시도해 주세요.',
 });
 
 // room.md 4.3 문구 표, 6~7장
@@ -91,7 +100,8 @@ export const ROOM_MESSAGES = Object.freeze({
   LEAVING: '나가는 중',
   // v3 문구 그대로 유지 (design handoff 4.3 마지막 줄)
   COOLDOWN: '1초 뒤에 다시 보낼 수 있습니다.',
-  HINT: '← → 이동 · ↑ Space 점프 · ↓ 숙이기 · Enter 채팅',
+  HINT: '←→ 이동 · ↑/Space 점프 · ↓ 엎드리기 · ↓+점프 내려가기 · 방향키 2번 슈퍼점프 · Enter 채팅',
+  DELETE: '방 삭제',
 });
 
 /** 처리되지 않은 오류 토스트 */

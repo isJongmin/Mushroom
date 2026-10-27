@@ -96,11 +96,14 @@ export function cleanChatMessage(m) {
 /**
  * 같은 throttle 규칙(최대 10회/초, 마지막 값은 반드시 보냄)을 두 어댑터가 쓴다.
  * send(v)를 즉시 또는 남은 간격 뒤에 호출한다. cancel()로 대기 중인 송신을 버린다.
+ * (사이클 8) push(v, true) = 급송(fx 이펙트 1회): 간격을 기다리지 않고 바로 보낸다(대기 중인 값은 이것으로 대체).
+ *   남용 방지: 급송은 urgentWindowMs(2초) 안에 urgentMax(4)회까지. 넘으면 보통 규칙으로 보낸다.
  */
-export function createThrottle(intervalMs, send) {
+export function createThrottle(intervalMs, send, { urgentMax = 4, urgentWindowMs = 2000 } = {}) {
   let last = -Infinity;
   let pending = null;
   let timer = 0;
+  const urgentAt = [];
   const flush = () => {
     timer = 0;
     const v = pending;
@@ -108,9 +111,22 @@ export function createThrottle(intervalMs, send) {
     if (v) { last = performance.now(); send(v); }
   };
   return {
-    push(v) {
-      const wait = intervalMs - (performance.now() - last);
-      if (wait <= 0 && !timer) { last = performance.now(); send(v); return; }
+    push(v, urgent = false) {
+      const now = performance.now();
+      if (urgent) {
+        while (urgentAt.length && now - urgentAt[0] > urgentWindowMs) urgentAt.shift();
+        if (urgentAt.length < urgentMax) {
+          urgentAt.push(now);
+          clearTimeout(timer);
+          timer = 0;
+          pending = null;
+          last = now;
+          send(v);
+          return;
+        }
+      }
+      const wait = intervalMs - (now - last);
+      if (wait <= 0 && !timer) { last = now; send(v); return; }
       pending = v;
       if (!timer) timer = setTimeout(flush, Math.max(0, wait));
     },

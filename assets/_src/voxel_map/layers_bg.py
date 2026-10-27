@@ -11,8 +11,8 @@ from props import B, BR, placed, octo
 
 
 # ====================================================================== sky
-SKY_STOPS = [(0.00, '#4FA6E8'), (0.25, '#6DBAEE'), (0.45, '#9CD3F4'), (0.57, '#C8E6F2'), (0.65, '#F4EBD8'),
-             (0.74, '#FFE2BC'), (1.00, '#FFD6A6')]
+SKY_STOPS = [(0.00, '#55AAEA'), (0.22, '#74BDEE'), (0.42, '#A6D6F2'), (0.55, '#D2E9F0'), (0.64, '#FBEBD6'),
+             (0.74, '#FFDDB6'), (1.00, '#FFCFA0')]
 
 
 def sky_image(W=16, H=810):
@@ -70,18 +70,23 @@ def far_scene(period_u):
     bx = []
     TAU = 2 * np.pi
     # 먼 산맥: 봉우리마다 위로 좁아지는 층 (주기 안에서 감싸기)
-    peaks = [(0.04, 150, 120), (0.15, 100, 90), (0.27, 175, 150), (0.40, 120, 100), (0.52, 85, 80), (0.66, 160, 130),
-             (0.78, 110, 95), (0.90, 140, 120)]
+    peaks = [(0.03, 130, 190), (0.12, 90, 130), (0.21, 120, 230), (0.33, 100, 160), (0.45, 80, 120), (0.55, 110, 210),
+             (0.70, 95, 150), (0.80, 125, 240), (0.92, 90, 140)]
+    PAST = [('#9E9CCB', '#B5ADD8', '#CDBFE2'), ('#A9A2D2', '#C2B2DC', '#D9C6E6'), ('#98A6CF', '#B0B8DE', '#CBCDE8')]
     for i, (fx, W_, H_) in enumerate(peaks):
         cx = fx * period_u
         z = -250 - (i % 3) * 18
-        n = int(H_ // 10)
+        n = int(H_ * 0.85 // 8)
+        pal = PAST[i % 3]
         for k in range(n):
             t = k / n
-            w = W_ * (1 - t) ** 0.85 + 6
-            off = (rng.uniform(-0.12, 0.12) * W_) * t
-            col = '#EEF2F8' if (H_ > 115 and t > 0.74) else ('#8FB0C8' if t > 0.45 else '#7C9FB8')
-            bx.append(B(cx + off, k * 10 + 5, z, w, 10.4, 34, col, noise=0.03))
+            w = W_ * 1.6 * (1 - t) ** 1.05 + 5
+            off = (rng.uniform(-0.08, 0.08) * W_) * t
+            col = '#F6F2FA' if t > 0.8 else (pal[2] if t > 0.55 else (pal[1] if t > 0.25 else pal[0]))
+            bx.append(B(cx + off, k * 8 + 4, z, w, 8.4, 34, col, noise=0.03))
+            if t > 0.5 and t < 0.8 and rng.random() < 0.5:     # 눈 줄무늬
+                bx.append(B(cx + off + rng.uniform(-w / 4, w / 4), k * 8 + 4, z + 17.3, w * 0.3, 8.4, 0.6, '#F6F2FA',
+                            noise=0.02, bevel=0.1))
     # 가까운 언덕 (초록)
     def h_near(x):
         f = x / period_u * TAU
@@ -95,7 +100,8 @@ def far_scene(period_u):
         # 작은 나무 점
         if rng.random() < 0.55:
             s = rng.uniform(5, 9)
-            bx.append(B(x + rng.uniform(0, w), h + s / 2 + 1, -140, s, s, s, '#5FA872', noise=0.05))
+            bx.append(B(x + rng.uniform(0, w), h + s / 2 + 1, -140, s, s, s,
+                        '#E8A6C4' if rng.random() < 0.3 else '#5FA872', noise=0.05))
         x += w
     # 호수 (아래 띠)
     bx.append(B(period_u / 2, -3, -60, period_u * 1.2, 6, 120, '#7CC4EC', noise=0.02, bevel=0))
@@ -108,47 +114,24 @@ def far_scene(period_u):
     for k, (w, col) in enumerate(((150, '#8E9AB0'), (124, '#97A2B8'), (104, '#8E9AB0'), (92, '#A0AABF'), (86, '#97A2B8'))):
         bx.append(B(cx + (k % 2) * 3, k * 18.4 + 9.2, -122, w, 18.4, 40, col, noise=0.04))
     bx.append(B(cx, base - 1, -122, 92, 2, 40, '#8FCF7A', noise=0.04))
-    def tower(x, z, w, h, roof='#5A78C8'):
-        out = [B(x, base + h / 2, z, w, h, w, '#D9DCE8', noise=0.04)]
+    def tower(x, z, w, h, roof='#E58AB0'):
+        out = [B(x, base + h / 2, z, w, h, w, '#EEE6EE', noise=0.04)]
         out.append(B(x, base + h + 1, z, w + 2, 2, w + 2, '#C3C6D6', noise=0.03))
         r = w + 2; y = base + h + 2
         while r > 1.5:
             out.append(B(x, y + 2, z, r, 4, r, roof, noise=0.03))
-            y += 4; r -= 3.2
+            y += 4; r -= 2.3
         out.append(B(x + w * 0.2, base + h * 0.7, z + w / 2 + 0.2, 2, 3, 0.4, '#FFE7A0', bevel=0, emit=('#FFC060', 0.4)))
         return out
-    bx.append(B(cx, base + 14, -120, 70, 28, 22, '#D0D4E2', noise=0.04))
+    bx.append(B(cx, base + 14, -120, 70, 28, 22, '#E4DCE8', noise=0.04))
     for k in range(9):
-        bx.append(B(cx - 32 + k * 8, base + 30, -110, 4, 4, 2, '#D0D4E2'))
-    bx += tower(cx - 38, -112, 14, 48)
-    bx += tower(cx + 38, -112, 14, 44)
-    bx += tower(cx - 10, -126, 18, 72, '#4D6CC0')
-    bx += tower(cx + 14, -128, 12, 58)
-    # 떠 있는 섬 + 폭포
-    ix, iy, iz = period_u * 0.22, 205, -100
-    layers = [(84, 9, '#8FCF6A'), (80, 12, '#9A6A40'), (64, 12, '#8A5A38'), (46, 12, '#857C92'), (28, 10, '#7A7288'),
-              (12, 9, '#6E6882')]
-    y = iy
-    for (w, h, col) in layers:
-        bx += octo(ix + (84 - w) * 0.08, y - h, iz, w, h, w * 0.7, col, cut=0.22, noise=0.06)
-        y -= h
-    bx += placed(P.oak(83, h=10, r=13), ix - 22, iy, iz + 2)
-    bx += placed(P.pine(84, h=34, r=8), ix + 24, iy, iz - 10)
-    bx += placed(P.mushroom_house('red', 40, seed=85, chimney=False), ix + 2, iy, iz + 6, 15, 0.3)
-    # 폭포: 섬 오른쪽 가장자리에서 아래로
-    wx = ix + 34
-    bx.append(B(wx, iy - 2, iz + 12, 7, 3, 6, '#BFE8FF', noise=0.03, emit=('#DDF4FF', 0.15)))
-    yy = iy - 4
-    k = 0
-    while yy > 4:
-        hh = 10
-        w = 8.0 - min(k, 8) * 0.3
-        bx.append(B(wx + 2, yy - hh / 2, iz + 14, w, hh + 0.2, 3, '#A8DEFA' if k % 2 else '#C4EAFE', noise=0.05,
-                    bevel=0.2, emit=('#DDF4FF', 0.12)))
-        yy -= hh; k += 1
-    for j in range(6):
-        bx.append(B(wx + 2 + rng.uniform(-7, 7), 2.5, iz + 16 + rng.uniform(-3, 3), rng.uniform(3, 6), 3, 3, '#FFFFFF',
-                    noise=0.02))
+        bx.append(B(cx - 32 + k * 8, base + 30, -110, 4, 4, 2, '#E4DCE8'))
+    bx += tower(cx - 38, -112, 14, 52)
+    bx += tower(cx + 38, -112, 14, 48, '#7FA0E0')
+    bx += tower(cx - 10, -126, 18, 84)
+    bx += tower(cx + 14, -128, 12, 66, '#7FA0E0')
+    bx += tower(cx - 56, -116, 10, 34, '#7FA0E0')
+    bx += tower(cx + 54, -116, 10, 30)
     return bx
 
 
@@ -188,22 +171,25 @@ def mid_scene(period_u):
         x += w
     hz = lambda xx: next((h for (x0, w, h) in tops if x0 <= (xx % period_u) < x0 + w), 30)
     # 집 3채 (언덕 위)
-    for i, (fx, roof) in enumerate(((0.15, '#C0503A'), (0.52, '#5A78C8'), (0.80, '#D88A2E'))):
+    for i, (fx, cap) in enumerate(((0.15, 'red'), (0.52, 'blue'), (0.80, 'orange'))):
         cx = fx * period_u
-        bx += placed(cabin(200 + i, roof), cx, hz(cx), -72, [18, -14, 10][i])
+        bx += placed(P.mushroom_house(cap, 44, seed=200 + i, chimney=True), cx, hz(cx), -72, [18, -14, 10][i], 0.42)
+    for i, (fx, cap) in enumerate(((0.33, 'orange'), (0.67, 'red'), (0.95, 'blue'))):
+        cx = fx * period_u
+        bx += placed(P.mushroom_house(cap, 40, seed=210 + i, chimney=False), cx, hz(cx), -80, [-12, 16, 8][i], 0.3)
     # 숲 줄: 뒤 (언덕 위) 둥근 나무 + 소나무
     x = 0.0
     while x < period_u:
         cx = x + rng.uniform(0, 6)
-        if any(abs(cx - f * period_u) < 28 for f in (0.15, 0.52, 0.80)):
+        if any(abs(cx - f * period_u) < 26 for f in (0.15, 0.52, 0.80, 0.33, 0.67, 0.95)):
             x += 10; continue
         r = rng.uniform(0.6, 0.9)
         kind = rng.random()
         z = -86 + rng.uniform(-6, 6)
-        if kind < 0.6:
+        if kind < 0.45:
             bx += placed(P.oak(int(rng.integers(0, 1 << 30)), h=18, r=20, palette=('leaf3', 'leaf4', 'leaf2', 'leaf5')),
                          cx, hz(cx) - 2, z, 0, r)
-        elif kind < 0.88:
+        elif kind < 0.72:
             bx += placed(P.pine(int(rng.integers(0, 1 << 30)), h=58, r=14), cx, hz(cx) - 2, z, 0, r)
         else:
             bx += placed(P.cherry(int(rng.integers(0, 1 << 30)), h=20, r=24), cx, hz(cx) - 2, z, 0, r)

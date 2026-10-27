@@ -77,12 +77,20 @@ export function drawMap(ctx, map, camX, camY, k, Wd, Hd) {
   }
 }
 
-/** 발 그림자: 기준점 아래 반투명 타원 (월드 rx 22, ry 5, 알파 0.25). x, y, k는 ctx 단위. */
-export function drawFootShadow(ctx, x, y, k) {
+/**
+ * 발 그림자: 기준점 아래 반투명 타원 (월드 rx 22, ry 5, 알파 0.25). x, y, k는 ctx 단위.
+ * (사이클 6) 그림자는 지면에 그대로 두고, 점프 높이 h(월드)에 따라 작고 흐려진다: 최고 높이(105)에서 크기 55%, 알파 35%.
+ */
+export function drawFootShadow(ctx, x, y, k, h = 0) {
+  const t = Math.min(1, Math.max(0, h / 105));
+  const s = 1 - 0.45 * t;
+  ctx.save();
+  ctx.globalAlpha = 1 - 0.65 * t;
   ctx.fillStyle = FOOT_SHADOW.color;
   ctx.beginPath();
-  ctx.ellipse(x, y, FOOT_SHADOW.rx * k, FOOT_SHADOW.ry * k, 0, 0, Math.PI * 2);
+  ctx.ellipse(x, y, FOOT_SHADOW.rx * k * s, FOOT_SHADOW.ry * k * s, 0, 0, Math.PI * 2);
   ctx.fill();
+  ctx.restore();
 }
 
 /** 카메라 (월드 단위): 플레이어를 가로 가운데, 화면 아래 끝 = 월드 bottomY(540). k로 장치 px 정수에 맞춘다. */

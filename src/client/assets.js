@@ -71,6 +71,7 @@ const posNum = (v, d) => (typeof v === 'number' && Number.isFinite(v) && v > 0 &
 // 아바타
 
 const ANIM_NAMES = Object.keys(AVATAR.animations);
+const OPTIONAL_ANIMS = Object.freeze(['jump', 'fall', 'crouch']);
 
 function normalizeAnimations(raw, frameCount) {
   const out = {};
@@ -82,6 +83,13 @@ function normalizeAnimations(raw, frameCount) {
       ? { frames, ms: posInt(a.ms, d.ms, 10000) }
       : { frames: d.frames.filter((f) => f < frameCount), ms: d.ms };
     if (!out[name].frames.length) out[name].frames = [0];
+  }
+  // (사이클 6) 선택 애니메이션: manifest에 있고 프레임 번호가 시트 안일 때만 쓴다.
+  // 없으면 넣지 않는다 → avatar.frameAt이 idle 프레임으로 대체 (아트 작업 전 에셋으로도 동작).
+  for (const name of OPTIONAL_ANIMS) {
+    const a = raw && raw[name];
+    const frames = a && Array.isArray(a.frames) ? a.frames.filter((f) => Number.isInteger(f) && f >= 0 && f < frameCount) : [];
+    if (frames.length) out[name] = { frames, ms: posInt(a.ms, 600, 10000) };
   }
   return out;
 }

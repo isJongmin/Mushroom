@@ -6,7 +6,7 @@
 // 오류 매핑:
 //   RPC 예외: error.message === '<코드>' (SQLSTATE P0001) → 그 코드
 //   join_room 반환 'WRONG_PASSWORD' → WRONG_PASSWORD (예외가 아니라 반환값: 실패 기록 커밋 때문)
-//   42501 / PGRST301 (세션 없음·만료) → 세션 복구(getSession → 없으면 signInAnonymously) 후 1회 재시도, 그래도 실패 → UNKNOWN
+//   42501 / PGRST301~303 / HTTP 401 (세션 없음·만료) → 세션 복구(refreshSession → 실패하면 signInAnonymously) 후 1회 재시도, 그래도 실패 → UNKNOWN
 //   fetch 실패/오프라인/CDN 로드 실패 → NETWORK
 //   그 밖 → UNKNOWN
 import { AppError, ERROR_CODES } from '../errors.js';
@@ -26,8 +26,11 @@ function isNetworkError(err) {
   return /failed to fetch|fetch failed|networkerror|network request failed|load failed|timed? ?out/i.test(msg);
 }
 
-function isAuthError(err) {
-  return !!err && (err.code === '42501' || err.code === 'PGRST301' || err.status === 401);
+// PostgREST: PGRST301(JWT 해석 실패), PGRST302(인증 없음), PGRST303(JWT 클레임/만료). 42501은 권한 없음.
+// postgrest-js 2.45는 HTTP 상태를 error가 아니라 응답(res.status)에 둔다 → status를 따로 받는다.
+const AUTH_CODES = new Set(['42501', 'PGRST301', 'PGRST302', 'PGRST303']);
+function isAuthError(err, status) {
+  return !!err && (AUTH_CODES.has(err.code) || status === 401 || err.status === 401);
 }
 
 function mapError(err) {
@@ -89,6 +92,30 @@ export function createSupabaseBackend(url, anonKey) {
     return session;
   }
 
+  /**
+   * 서버가 토큰을 거부했을 때: getSession은 로컬 만료 시각만 보므로 같은 토큰을 돌려줄 수 있다.
+   * refreshSession으로 강제 갱신하고, 실패하면(사용자 삭제 등) 새 익명 계정으로 로그인한다.
+   */
+  async function recoverSession() {
+    const sb = await client();
+    let session = null;
+    try {
+      const r = await sb.auth.refreshSession();
+      session = !r.error && r.data && r.data.session;
+      if (!session) {
+        const a = await sb.auth.signInAnonymously();
+        if (a.error) throw a.error;
+        session = a.data && a.data.session;
+      }
+    } catch (e) {
+      throw mapError(e);
+    }
+    if (!session || !session.user) throw new AppError('UNKNOWN', 'no session');
+    userId = session.user.id;
+    try { sb.realtime.setAuth(session.access_token); } catch { /* 무시 */ }
+    return session;
+  }
+
   async function rpc(name, args, retried = false) {
     const sb = await client();
     let res;
@@ -98,8 +125,8 @@ export function createSupabaseBackend(url, anonKey) {
       throw mapError(e);
     }
     if (res.error) {
-      if (!retried && isAuthError(res.error)) {
-        await ensureSession();
+      if (!retried && isAuthError(res.error, res.status)) {
+        await recoverSession();
         return rpc(name, args, true);
       }
       throw mapError(res.error);

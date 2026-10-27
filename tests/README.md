@@ -13,7 +13,8 @@ python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/�
 
 - 요구: Python Playwright와 Chromium이 설치되어 있어야 한다. 테스트는 설치를 하지 않는다. numpy, Pillow는 항목 22, 33, 34에 필요하다.
 - 저장소 루트를 `python3 -m http.server`로 빈 포트에 띄우고, 종료 시 반드시 멈춘다.
-- 외부 네트워크(Supabase, CDN)에 접속하지 않는다. local 모드(localStorage DB, BroadcastChannel)로 동작한다.
+- 기본은 local 모드다. `LocalBrowser`가 모든 컨텍스트에 sessionStorage `mushroom.mode` = `'local'`을 미리 넣으므로 `?as=`, goto, 새로고침, 새 탭이 모두 local로 열린다. 외부 네트워크는 항목 37에서만 건드린다(Supabase, CDN이 차단됐는지 확인). 항목 38, 39의 supabase 측 검사는 `force_local=False`로 연 컨텍스트에서 한다.
+- 실행 모드 규칙은 `src/client/backend/index.js`를 따른다: `?mode=local`(그 탭 sessionStorage 저장), sessionStorage `mushroom.mode`='local', hash가 정확히 `#local`이면 local. `?mode=supabase`는 저장을 지워 해제한다. 설정 값이 비어 있으면 local이다.
 - 저장소 원본 `assets/`는 건드리지 않는다. build.py와 check.py는 사본에서만 실행한다.
 - 결과는 항목별 `PASS` / `FAIL` / `UNVERIFIED`. 검사 줄마다 `OK` / `NG` / `UNV`를 찍는다. FAIL이 있으면 종료 코드 1.
 - 셀렉터: `data-testid`, 상태: `window.__mushroom.getState()` (docs/handoff/frontend-20261015-rooms.md 4장).
@@ -29,7 +30,7 @@ python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/�
 | 20명 정원 | 항목 7: 활성 가짜 멤버 18명 주입 (방장 1 + 18 + 테스트 탭 B = 20). 가짜는 Presence가 없고 `last_seen`을 40초 뒤로 두어 테스트 동안 활성 유지 |
 | 멤버 행 강제 삭제 (연결 끊김) | 항목 16: 서버가 멤버를 잃은 상황을 만든다 -> 하트비트 NOT_MEMBER 경로 |
 
-## 항목 (36개)
+## 항목 (39개)
 
 | 번호 | 내용 |
 |---|---|
@@ -63,12 +64,28 @@ python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/�
 | 28 | 애니메이션: walk 3..6, 인게임 idle 2, 왼쪽 dir (로컬과 원격) |
 | 29 | 콘솔/페이지 에러 0 (전체 수집) |
 | 30 | 정적 점검: 마이그레이션 (테이블 권한, RLS, password_hash 노출, RPC definer/search_path/anon, realtime 정책) |
-| 31 | 정적 점검: 클라이언트 (innerHTML/eval, 비밀 값, private 채널, chat 송신, 프로필 저장 내용) |
+| 31 | 정적 점검: 클라이언트 (innerHTML/eval, 비밀 값, private 채널, chat 송신, 프로필 저장 내용, config.js JWT role) |
 | 32 | (a) manifest files 대체: files 키 없음/객체 아님/키 누락 -> 필수 레이어만 요청, 404 0, 캐릭터 정상, 경고 1회 (라우트 가로채기) |
 | 33 | (b) 발 위치: me.y = 440, 장치 기준점 = 지면선, 발 아래 1~8단위 잔디, 잔디 앞 가장자리 8단위 이후, 22~26단위 흙 (화면 픽셀) |
 | 34 | (c) 프리셋 6종: 프런트 합성 시트 vs `assets/_src/voxel/out/truth/presetN.png` (art check.py 허용치: 평균 6.0, 알파 MAE 2.0) |
 | 35 | (d) 라벨/말풍선: 라벨 위 = 발바닥 선 +6, 꼬리 간격 = 4u+4 (머리 맨 위 기준), 라벨/말풍선 겹침 0, 캔버스 안 (P2/P3/모바일) |
 | 36 | (e) 로딩 성능: 콜드 열기 -> 첫 캐릭터 프레임, 입장 클릭 -> 첫 프레임, 전송 바이트, 웜 재입장. 실패 기준 15s 초과 / 10MB 초과 |
+| 37 | supabase 모드 기본 진입(쿼리·hash 없음): SUPABASE MODE 배지, CDN/supabase.co 차단 확인 -> 로비 오류 화면 + 다시 시도, pageerror 0 (콘솔 리소스 오류는 29번에서 제외) |
+| 38 | `#local`과 `?mode=local` 진입 = LOCAL MODE 배지, 외부 요청 0건, pageerror 0 |
+| 39 | 모드 스위치: `?mode=local` 저장/유지/`?mode=supabase` 해제, `#localx`·`#local&x` 비해당, `?mode=supabase#local`은 local, 수동 sessionStorage |
+
+### 항목 31 비밀 값 판정 (config.js와 저장소 전체)
+
+- config.js의 JWT: 디코드한 payload `role`이 `anon`이어야 한다. 그 밖의 role, 디코드 실패는 실패.
+- config.js 밖의 어떤 텍스트 파일(docs 포함)에도 JWT(`eyJ...`)가 있으면 실패. `tests/`는 검사 대상이 아니다(규칙 문자열을 담고 있다).
+- `sb_secret_`, `sk_live`, `sk_test` 문자열: docs를 제외한 모든 텍스트 파일에서 0건.
+- `service_role`: 코드 파일(js, html, css, json, sql, py)의 비주석 줄에서만 0건. 주석(`//`, `/*`, `*`, `--`, `#`로 시작하는 줄)과 문서 산문의 언급은 허용한다. 주석 줄에 금지 문자열이 있어도 실패하지 않는다.
+- 판정 로직을 바꾼 뒤에는 사본(스크래치)에 `service_role` JWT, `sb_secret_`, 주석 밖 `service_role`을 넣어 실패하는지 확인한다.
+
+### 항목 37 판정 (차단 환경 전제)
+
+- 외부 요청(`cdn.jsdelivr.net`, `supabase.co`)이 실패 기록되지 않으면 차단 확인이 안 된 것이므로, 오류 화면 검사는 UNVERIFIED(None)로 남긴다.
+- SUPABASE MODE 배지: 현재 화면 코드(`profile.js`, `lobby.js`)는 `app.mode === 'local'`일 때만 배지를 붙인다. supabase 모드에서는 배지가 DOM에 없다. 항목 37은 요청 사양("쿼리 없이 열면 SUPABASE MODE 배지가 보인다")대로 검사하므로 이 부분이 FAIL로 나온다. 설계 결정이 나올 때까지 이 FAIL은 스펙 불일치로 본다.
 
 ### 사이클 5 판정 기준 (복셀 아트, 항목 22/33/34/35/36)
 
@@ -80,7 +97,7 @@ python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/�
 
 ### 한계
 
-- local 모드 테스트다. Supabase 모드(실 익명 로그인, 실 Realtime 채널 구독 거부, RLS 우회 시도, `realtime.send`의 RLS 통과)는 검증하지 않는다 (항목 30이 UNVERIFIED로 남긴다).
+- local 모드 테스트다. Supabase 모드(실 익명 로그인, 실 Realtime 채널 구독 거부, RLS 우회 시도, `realtime.send`의 RLS 통과)는 검증하지 않는다 (항목 30이 UNVERIFIED로 남긴다). 항목 37은 supabase 모드의 진입과 차단 시 동작만 본다. 외부망이 열린 환경에서 실서버로 방 생성/입장/채팅을 확인하는 스모크는 별도 작업이다.
 - 실제 네트워크 단절은 재현하지 않는다. local에는 끊김 경로가 없어서 항목 16은 멤버 행 삭제로 NOT_MEMBER 경로만 본다.
 - 항목 12: IME 조합 중 Esc, Safari 15.4 미만 inert 대체 경로는 UNVERIFIED. 항목 20: 리스너 개수와 JS 힙은 DevTools 없이 측정하지 않는다 (UNVERIFIED).
 - Chromium만 사용한다. dpr 3, 실기기 소프트 키보드, Safari/Firefox는 미검증.

@@ -14,7 +14,10 @@
   QA_FULL_BUILD=1 : 전체 결정성 재빌드(복셀 아바타 check 무옵션, 맵 build 후 md5 비교)를 함께 실행.
 
 - 저장소 루트에서 `python3 -m http.server`를 빈 포트로 띄우고 끝나면 반드시 종료한다.
-- 외부 네트워크(Supabase, CDN)에 접속하지 않는다. local 모드만 검증한다.
+- 기본은 local 모드로 연다: LocalBrowser가 모든 new_context에 sessionStorage `mushroom.mode`='local' init script를 붙인다
+  (URL 쿼리를 바꾸지 않으므로 ?as=, goto, reload, 새 탭 모두 적용). supabase 모드를 검사할 때만 force_local=False로 연다.
+- 외부 네트워크 요청은 37~39번에서만 다룬다(Supabase, CDN 차단 확인). 나머지는 local 모드만 검증한다.
+- 37번은 이 컨테이너처럼 supabase.co와 CDN이 차단된 환경을 전제로 한다. 차단이 아니면 그 검사는 미검증(UNVERIFIED)이다.
 - 결과는 항목별 PASS / FAIL / UNVERIFIED. 확인하지 못한 검사는 UNVERIFIED (사유 기록). 실행하지 않은 것을 PASS로 내지 않는다.
 - 테스트 훅: window.__mushroom.getState(), data-testid (frontend-20261015-rooms.md 4장).
 - 시간 조작(방 만료, 실패 창, 20명 정원)은 localStorage DB(`mushroom.local.v4.db`)를 직접 고쳐 만든다. 각 항목에 방법을 적었다.
@@ -25,6 +28,7 @@ import hashlib
 import json
 import math
 import os
+import re
 import secrets
 import shutil
 import socket
@@ -153,6 +157,32 @@ class Collector:
 def new_ctx(browser, **kw):
     kw.setdefault("viewport", {"width": 1280, "height": 800})
     return browser.new_context(**kw)
+
+
+# local 강제: 앱은 sessionStorage `mushroom.mode` = 'local'이면 local 모드로 뜬다 (backend/index.js localForced).
+# 모든 문서가 로드될 때 init script가 먼저 실행되므로 goto, reload, 새 탭, ?as= 진입이 모두 local이 된다.
+MODE_LOCAL_JS = """
+(() => {
+  try { sessionStorage.setItem('mushroom.mode', 'local'); } catch (e) { /* 저장 불가: 앱이 URL/hash 스위치로만 판단 */ }
+})();
+"""
+
+
+class LocalBrowser:
+    """Playwright Browser 래퍼. new_context()가 만든 컨텍스트마다 local 강제 init script를 붙인다.
+    force_local=False로 부르면 강제하지 않는다(37~39번 supabase 모드와 모드 스위치 검사용)."""
+
+    def __init__(self, browser):
+        self._b = browser
+
+    def new_context(self, force_local=True, **kw):
+        ctx = self._b.new_context(**kw)
+        if force_local:
+            ctx.add_init_script(MODE_LOCAL_JS)
+        return ctx
+
+    def __getattr__(self, name):
+        return getattr(self._b, name)
 
 
 TRACK_JS = """
@@ -2271,6 +2301,157 @@ def t29(browser, col):
 
 
 # ---------------------------------------------------------------------------
+# 37~39: 실행 모드 (docs/handoff/frontend-20261027-supabase-config.md, QA 확인 항목 2)
+# 37은 supabase.co와 CDN이 차단된 환경을 전제로 한다. 38과 39는 force_local=False로 연 컨텍스트에서 모드 규칙을 본다.
+# ---------------------------------------------------------------------------
+LOCAL_HOSTS = {"127.0.0.1", "localhost", ""}  # "" = data:/about: 등 호스트 없는 URL
+
+
+def host_of(url):
+    return urllib.parse.urlsplit(url).hostname or ""
+
+
+def track_external(page):
+    """127.0.0.1 밖으로 나가는 요청 URL 목록을 모은다 (request 이벤트, 계속 수집)."""
+    seen = []
+
+    def on_request(r):
+        if host_of(r.url) not in LOCAL_HOSTS:
+            seen.append(r.url)
+
+    page.on("request", on_request)
+    return seen
+
+
+@case(37, "supabase 모드 기본 진입(쿼리·hash 없음): SUPABASE MODE 배지, CDN 차단 -> 로비 오류 화면과 다시 시도, pageerror 0")
+def t37(browser, col):
+    ctx = browser.new_context(force_local=False)
+    checks = []
+    page_errors = []
+    failed = []  # requestfailed URL
+    try:
+        page = ctx.new_page()
+        # 콘솔 오류는 전역 집계(29번)에 넣지 않는다: CDN 차단 때문에 생기는 리소스 오류는 기대 동작이다.
+        page.on("pageerror", lambda e: page_errors.append(str(e)))
+        page.on("requestfailed", lambda r: failed.append(r.url))
+        page.goto(BASE)
+        if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+            raise AssertionError(f"쿼리 없이 열기: 부트 후 화면 전환 실패 (현재 {sc(page)})")
+        checks.append(("쿼리 없이 열기 -> mode = supabase", state(page)["mode"] == "supabase"))
+
+        def badge_ok(pg):
+            b = pg.get_by_test_id("mode-badge")
+            return b.count() > 0 and b.is_visible() and b.inner_text().strip() == "SUPABASE MODE"
+
+        checks.append(("프로필 화면: SUPABASE MODE 배지 보임", badge_ok(page)))
+
+        # 프로필을 저장해 로비까지 간다 (handoff (a) 방법). 로비는 방 목록을 CDN 없이 못 받는다.
+        preset = MANIFEST["presets"][0]["avatar"]
+        page.evaluate("(v) => localStorage.setItem('mushroom:profile', v)",
+                      json.dumps({"nickname": "버섯이", "avatar": preset}, ensure_ascii=False))
+        page.reload()
+        if wait_until(lambda: sc(page) in ("lobby", "room"), 15) is None:
+            raise AssertionError(f"프로필 저장 뒤 로비 전환 실패 (현재 {sc(page)})")
+        checks.append(("로비: SUPABASE MODE 배지 보임", badge_ok(page)))
+
+        err = page.get_by_test_id("room-error")
+        cdn_failed = [u for u in failed if host_of(u) in ("cdn.jsdelivr.net", "supabase.co")]
+        blocked = bool(cdn_failed)
+        checks.append((f"외부 요청(CDN/supabase.co) 실패 기록 = 차단 확인 (실패 {len(cdn_failed)}건)",
+                       True if blocked else None))
+        if blocked:
+            shown = wait_until(lambda: err.count() > 0 and err.is_visible(), 20)
+            checks.append(("로비 오류 화면(room-error) 표시", bool(shown)))
+            retry = page.get_by_test_id("room-retry")
+            checks.append(("'다시 시도' 버튼 표시(문구 일치)",
+                           bool(shown) and retry.count() > 0 and retry.inner_text().strip() == "다시 시도"))
+            if shown:
+                retry.click()
+                again = wait_until(lambda: err.count() > 0 and err.is_visible(), 10)
+                checks.append(("'다시 시도' 클릭 후 오류 화면 다시 표시(차단 중), 화면 깨짐 없음", bool(again)))
+        else:
+            checks.append(("오류 화면/다시 시도 검사: 외부 요청이 차단되지 않은 환경이라 미검증", None))
+        checks.append((f"pageerror 0건 (앱 예외, 실제 {page_errors[:2]})", len(page_errors) == 0))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(38, "#local(또는 ?mode=local) 진입 = LOCAL MODE 배지, 외부 요청 0건, pageerror 0")
+def t38(browser, col):
+    checks = []
+    for label, path in (("#local", "#local"), ("?mode=local", "?mode=local")):
+        ctx = browser.new_context(force_local=False)
+        try:
+            page = ctx.new_page()
+            ext = track_external(page)
+            errs = []
+            page.on("pageerror", lambda e: errs.append(str(e)))
+            page.goto(BASE + path)
+            if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+                raise AssertionError(f"{label}: 부트 후 화면 전환 실패 (현재 {sc(page)})")
+            checks.append((f"{label}: mode = local", state(page)["mode"] == "local"))
+            b = page.get_by_test_id("mode-badge")
+            checks.append((f"{label}: LOCAL MODE 배지 보임",
+                           b.count() > 0 and b.is_visible() and b.inner_text().strip() == "LOCAL MODE"))
+            time.sleep(1.5)  # 초기 요청이 모두 나갈 시간
+            checks.append((f"{label}: 외부 요청 0건 (실제 {ext[:3]})", not ext))
+            checks.append((f"{label}: pageerror 0건 (실제 {errs[:2]})", not errs))
+        finally:
+            ctx.close()
+    return verdict(checks)
+
+
+@case(39, "모드 스위치 규칙: ?mode=local 저장/유지/해제, #local 우선, #localx·#local&x 비해당, 수동 sessionStorage")
+def t39(browser, col):
+    checks = []
+
+    def boot(page, path):
+        page.goto(BASE + path)
+        if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+            raise AssertionError(f"{path or '(쿼리 없음)'}: 부트 후 화면 전환 실패 (현재 {sc(page)})")
+        return state(page)["mode"]
+
+    def ss(page):
+        return page.evaluate("(k) => sessionStorage.getItem(k)", "mushroom.mode")
+
+    # 탭 A: ?mode=local -> 저장 -> 쿼리 없이 새로고침해도 local -> ?mode=supabase로 해제
+    ctx = browser.new_context(force_local=False)
+    try:
+        a = ctx.new_page()
+        checks.append(("?mode=local -> mode = local", boot(a, "?mode=local") == "local"))
+        checks.append(("?mode=local -> sessionStorage mushroom.mode = 'local'", ss(a) == "local"))
+        checks.append(("쿼리 없이 열기(같은 탭) -> sessionStorage로 local 유지", boot(a, "") == "local"))
+        checks.append(("?mode=supabase -> mode = supabase", boot(a, "?mode=supabase") == "supabase"))
+        checks.append(("?mode=supabase -> sessionStorage 삭제(null)", ss(a) is None))
+    finally:
+        ctx.close()
+
+    # 탭 B: 비슷한 hash는 해당 없음, #local은 쿼리 mode=supabase보다 우선
+    ctx = browser.new_context(force_local=False)
+    try:
+        b = ctx.new_page()
+        checks.append(("#localx -> supabase (정확히 #local만 인식)", boot(b, "#localx") == "supabase"))
+        b2 = ctx.new_page()
+        checks.append(("#local&x -> supabase (정확히 #local만 인식)", boot(b2, "#local&x") == "supabase"))
+        b3 = ctx.new_page()
+        checks.append(("?mode=supabase#local -> local (hash가 우선)", boot(b3, "?mode=supabase#local") == "local"))
+        checks.append(("?mode=supabase#local -> sessionStorage 삭제(null)", ss(b3) is None))
+    finally:
+        ctx.close()
+
+    # 탭 C: 쿼리·hash 없이 sessionStorage만 local로 둔 경우 (init script로 주입)
+    ctx = browser.new_context(force_local=False)
+    try:
+        ctx.add_init_script("try { sessionStorage.setItem('mushroom.mode', 'local'); } catch (e) {}")
+        c = ctx.new_page()
+        checks.append(("sessionStorage mushroom.mode = local (쿼리 없음) -> mode = local", boot(c, "") == "local"))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+# ---------------------------------------------------------------------------
 # 정적 점검 (파일 읽기, 브라우저 없음)
 # ---------------------------------------------------------------------------
 def static_migration():
@@ -2352,9 +2533,80 @@ def static_migration():
     return checks, leak, body_sel, jsonb_leak
 
 
-def static_client():
-    import re
+SECRET_SKIP = {".git", "tests", "__pycache__"}  # 테스트 파일은 규칙 문자열을 담고 있으므로 제외
+CONFIG_REL = "src/client/config.js"
+JWT_RX = re.compile(r"eyJ[A-Za-z0-9_-]{20,}(?:\.[A-Za-z0-9_-]*){0,2}")  # JWT 흔적 (헤더 시작 eyJ)
+FORBID_ANY = ("sb_secret_", "sk_live", "sk_test")  # docs 제외, 어떤 텍스트 파일에도 0건
+FORBID_CODE = ("service_role",)  # 코드 파일의 비주석 줄에서만 0건 (주석과 문서 설명은 허용)
+CODE_EXT = {".js", ".mjs", ".html", ".css", ".json", ".sql", ".py"}
+COMMENT_PREFIX = ("//", "/*", "*", "--", "#")
 
+
+def jwt_role(token):
+    """JWT payload의 role. 디코드 실패 시 None (= anon이 아니므로 실패로 본다)."""
+    parts = token.split(".")
+    if len(parts) < 2:
+        return None
+    seg = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        return json.loads(base64.urlsafe_b64decode(seg)).get("role")
+    except Exception:  # noqa: BLE001 - 형식이 깨진 토큰은 실패 처리
+        return None
+
+
+def text_files():
+    """저장소 안의 텍스트 파일 (.git, tests, __pycache__ 제외, 바이너리는 건너뜀). yield (상대 경로 parts, 본문)."""
+    for p in ROOT.rglob("*"):
+        if not p.is_file():
+            continue
+        rel = p.relative_to(ROOT)
+        if any(part in SECRET_SKIP for part in rel.parts):
+            continue
+        try:
+            body = p.read_text(encoding="utf-8")
+        except (UnicodeDecodeError, OSError):
+            continue
+        yield rel, body
+
+
+def secret_scan():
+    """비밀 점검. 반환: (secrets_hit, cfg_roles)
+    - secrets_hit: 위반 목록. 빈 목록이면 통과.
+        · JWT가 config.js 밖에 있음
+        · config.js JWT 중 payload role이 anon이 아닌 것 (또는 디코드 실패)
+        · sb_secret_ / sk_live / sk_test 문자열 (docs 제외)
+        · service_role 문자열이 코드 파일의 비주석 줄에 있음
+    - cfg_roles: config.js에 있는 JWT들의 role 목록 (정보용)"""
+    secrets_hit = []
+    cfg_roles = []
+    for rel, body in text_files():
+        rel_s = rel.as_posix()
+        in_docs = rel.parts[0] == "docs"
+        if rel_s == CONFIG_REL:
+            for tok in JWT_RX.findall(body):
+                role = jwt_role(tok)
+                cfg_roles.append(role)
+                if role != "anon":
+                    secrets_hit.append(f"{rel_s} JWT role={role}")
+        else:
+            for _ in JWT_RX.findall(body):
+                secrets_hit.append(f"{rel_s} (JWT)")
+        if not in_docs:
+            for w in FORBID_ANY:
+                if w in body:
+                    secrets_hit.append(f"{rel_s} ({w})")
+        if rel.suffix in CODE_EXT:
+            for i, line in enumerate(body.splitlines(), 1):
+                s = line.strip()
+                if s.startswith(COMMENT_PREFIX):
+                    continue
+                for w in FORBID_CODE:
+                    if w in line:
+                        secrets_hit.append(f"{rel_s}:{i} ({w})")
+    return secrets_hit, cfg_roles
+
+
+def static_client():
     checks = []
     src = ROOT / "src/client"
     files = [p for p in src.rglob("*.js")]
@@ -2371,8 +2623,9 @@ def static_client():
     html = find(r"\binnerHTML\b|\bouterHTML\b|insertAdjacentHTML|document\.write|\beval\s*\(|new Function\(")
     checks.append((f"innerHTML/outerHTML/insertAdjacentHTML/document.write/eval/new Function 0건 (실제 {html[:4]})", not html))
     # 테스트 훅 DB 조작 전용 new Function은 tests/에만 있다
-    secrets_hit = find(r"service_role|sk_live|sk_test|eyJ[A-Za-z0-9_-]{20,}")
-    checks.append((f"비밀 값(service_role, JWT, secret key) 0건 (실제 {secrets_hit[:3]})", not secrets_hit))
+    secrets_hit, cfg_roles = secret_scan()
+    checks.append((f"비밀 값 0건: config.js 밖 JWT, anon 아닌 JWT, sb_secret_/sk_live/sk_test, 코드의 service_role (실제 {secrets_hit[:8]})",
+                   not secrets_hit))
     sb = text.get(src / "backend/supabase.js", "")
     checks.append(("supabase.js 채널 private:true (구독 config)", "private: true" in sb))
     send_chat = re.findall(r"send\(\{[^}]*event:\s*'chat'", sb, flags=re.S)
@@ -2385,8 +2638,9 @@ def static_client():
     checks.append(("프로필 저장값은 {nickname, avatar}만 (비밀번호/토큰 없음)", prof_only is not None))
     pw_store = re.search(r"setItem\([^)]*(password|pw)[^)]*\)", local, flags=re.I)
     checks.append(("local 모드: 비밀번호 평문 저장 없음 (PBKDF2 해시만)", pw_store is None and "pw_hash" in local))
-    checks.append(("config.js 키 비어 있음 (커밋본은 local 모드, 실키 없음)",
-                   re.search(r"SUPABASE_(URL|ANON_KEY)\s*=\s*'[^']+'", (src / "config.js").read_text(encoding="utf-8")) is None))
+    cfg_bad = [r for r in cfg_roles if r != "anon"]
+    checks.append((f"config.js JWT payload role = anon 전부 (JWT {len(cfg_roles)}개, role {cfg_roles}, anon 아님 {len(cfg_bad)}개)",
+                   not cfg_bad))
     return checks
 
 
@@ -2482,7 +2736,7 @@ def main():
     col = Collector()
     try:
         with sync_playwright() as pw:
-            browser = pw.chromium.launch(headless=True)
+            browser = LocalBrowser(pw.chromium.launch(headless=True))
             try:
                 if args.shots:
                     capture(browser, Path(args.shots))

@@ -459,9 +459,9 @@ def top_tee_stripe():
 def top_cape():
     shirt = '#EEF2FA'; blue = '#3E6BD8'
     out = _body(shirt, tint(shirt, -0.06), hx=7.5, hz=4.65)
-    out += [P('torso', (0, 13.5, -5.7), (8.3, 8.5, 0.6), blue, bevel=0.5),                       # 망토 등판
-            P('torso', (0, 6.4, -6.3), (8.9, 1.6, 0.6), tint(blue, -0.06), bevel=0.5),             # 아래 퍼짐
-            P('torso', (0, 13.5, -5.05), (7.8, 8.0, 0.05), '#F7C948', decal=True, bevel=0, noise=0)]  # 안감(가장자리만 보임)
+    out += [P('torso', (0, 13.5, -5.7), (8.3, 8.5, 0.6), blue, bevel=0.5, sway=True),            # 망토 등판
+            P('torso', (0, 6.4, -6.3), (8.9, 1.6, 0.6), tint(blue, -0.06), bevel=0.5, sway=True),  # 아래 퍼짐
+            P('torso', (0, 13.5, -5.05), (7.8, 8.0, 0.05), '#F7C948', decal=True, bevel=0, noise=0, sway=True)]  # 안감(가장자리만 보임)
     out += R('torso', (0, 21.3, -0.6), (8.9, 1.1, 5.4), blue, 0.5)                              # 어깨 망토(케이프렛)
     out += [P('torso', (0, 22.9, -3.0), (6.0, 1.0, 2.0), tint(blue, 0.08), bevel=0.4),            # 세운 깃
             P('torso', (0, 20.6, 5.55), (1.05, 1.05, 0.3), '#F7C948', bevel=0.3, noise=0, emit=0.15)]  # 금색 브로치
@@ -660,10 +660,25 @@ PROXIES = {'body': proxy_body, 'legs': proxy_legs, 'hairshell': proxy_hairshell}
 
 
 # ================================================================== 포즈
+# 사이클 6 포즈 (jump / fall / crouch). 기존 8프레임은 아래 기본값에서 사이클 5와 같은 경로를 탄다(출력 동일).
+#   pivot 'hip'  : 몸 기울기(lean)를 엉덩이 높이 기준으로 (기본: 발바닥 높이 기준, 사이클 5 그대로)
+#   sink         : 몸통(+머리, 팔)을 엉덩이 관절보다 아래로 내림 (숙이기에서 키 줄이기)
+#   ground       : None = 자동 접지(낮은 발바닥을 y=0), 숫자 = 고정 높이(점프/하강: 몸 중심 유지, 발은 떠 있음)
+#   feet_z       : 숫자면 두 발바닥 중심 z 평균이 이 값이 되게 몸 전체를 앞뒤로 옮김 (숙이기: 발이 기준점 위)
+#   legsplay     : 다리를 옆으로 벌림(도, +바깥). asplay: 팔별 벌림(도) - 없으면 splay
+#   hang         : 머리카락 늘어짐. 머리 로컬 y < cut 부분을 잘라 (cut, 상자 z) 축으로 돌린다.
+#                  각도 = -(lean + head) + flutter  (flutter 0 = 중력 방향으로 곧게, + = 뒤/위로 날림)
+#   cape         : 망토 등판(sway 표시 상자) 늘어짐. 어깨 뒤 축, 각도 = -lean + flutter
+HANG_CUT = 6.0
+CAPE_PIVOT = (0.0, 21.0, -5.7)
+NEW_FRAMES = ('jump', 'fall', 'crouch')
+
+
 def pose_frame(name):
     """각도 + = 앞으로. shin 은 무릎 굽힘(- = 발이 뒤로)."""
     p = dict(breathe=0.0, arm={1: 0.0, -1: 0.0}, leg={1: 0.0, -1: 0.0}, shin={1: 0.0, -1: 0.0},
-             splay=5.0, head=0.0, lean=0.0)
+             splay=5.0, head=0.0, lean=0.0,
+             pivot=None, sink=0.0, ground=None, feet_z=None, legsplay=None, asplay=None, hang=None, cape=None)
     if name == 'front_b':
         p['breathe'] = -0.45
     walk = {'walk0': ((30, -8), (-24, -32), 40, -1.5), 'walk1': ((-4, -2), (16, -48), 14, 0.0),
@@ -676,6 +691,22 @@ def pose_frame(name):
         p['splay'] = 3.0
         p['head'] = head
         p['lean'] = 3.0
+    POSES6 = {
+        # 상승: 무릎 당김(허벅지 앞 60, 무릎 70), 팔 앞-위로, 살짝 웅크림. 몸 중심은 서 있을 때 높이.
+        'jump': dict(leg={1: 62.0, -1: 56.0}, shin={1: -72.0, -1: -68.0}, arm={1: 120.0, -1: 120.0},
+                     asplay={1: 28.0, -1: 28.0}, lean=8.0, head=-5.0, pivot='hip', ground=0.6,
+                     hang=0.0, cape=-4.0),
+        # 하강: 다리 아래로 펴고 벌림, 팔 옆으로, 머리카락/망토 위로 날림.
+        'fall': dict(leg={1: 10.0, -1: -12.0}, shin={1: -14.0, -1: -8.0}, legsplay=7.0, arm={1: 25.0, -1: -20.0},
+                     asplay={1: 78.0, -1: 78.0}, lean=-4.0, head=3.0, pivot='hip', ground=0.6,
+                     hang=26.0, cape=34.0),
+        # 숙이기: 허벅지 거의 수평, 정강이 수직(발 평평), 몸통 내리고 앞으로 숙임, 머리는 앞을 봄.
+        'crouch': dict(leg={1: 84.0, -1: 84.0}, shin={1: -84.0, -1: -84.0}, arm={1: 30.0, -1: 24.0},
+                       splay=6.0, lean=22.0, head=-14.0, pivot='hip', sink=1.5, feet_z=1.0,
+                       hang=0.0, cape=0.0),
+    }
+    if name in POSES6:
+        p.update(POSES6[name])
     return p
 
 
@@ -691,29 +722,79 @@ def bone_xf(pose):
     legs = {}
     for sg in (1, -1):
         Rt = rot_x(-pose['leg'][sg])
+        if pose.get('legsplay'):
+            Rt = rot_z(sg * pose['legsplay']) @ Rt
         Rs = Rt @ rot_x(-pose['shin'][sg])
         legs[sg] = (Rt, Rs)
     # 땅에 닿게: 두 발바닥 중 낮은 쪽을 y=0 (발 앞뒤 끝도 고려)
     low = []
+    soles = []
     for sg in (1, -1):
         Rt, Rs = legs[sg]
         hip = np.array([sg * HIP[0], HIP[1], 0])
         knee = hip + Rt @ np.array(KNEE)
         for dz in (-3.8, 5.8):
             low.append((knee + Rs @ (np.array(SOLE) + [0, 0, dz - 1.0]))[1])
-    b = -min(low)
-    xf['root'] = (I, np.array([0, b, 0.0]))
-    xf['torso'] = (Rl, np.array([0, b + br * 0.5, 0.0]))
+        soles.append(knee + Rs @ np.array(SOLE))
+    b = -min(low) if pose.get('ground') is None else float(pose['ground'])
+    dz = 0.0 if pose.get('feet_z') is None else float(pose['feet_z']) - float(np.mean([s[2] for s in soles]))
+    xf['root'] = (I, np.array([0, b, dz]))
+    if pose.get('pivot') == 'hip':
+        hy = np.array([0, HIP[1], 0.0])
+        xf['torso'] = (Rl, np.array([0, b + br * 0.5 - pose['sink'], dz]) + hy - Rl @ hy)
+    else:
+        xf['torso'] = (Rl, np.array([0, b + br * 0.5, 0.0]))
     tor_R, tor_t = xf['torso']
     xf['head'] = (Rl @ rot_x(pose['head']), tor_t + Rl @ (np.array(HEAD_PIVOT) + [0, br * 0.5, 0]))
     for sg in (1, -1):
-        Ra = Rl @ rot_z(sg * pose['splay']) @ rot_x(-pose['arm'][sg])
+        spl = pose['asplay'][sg] if pose.get('asplay') else pose['splay']
+        Ra = Rl @ rot_z(sg * spl) @ rot_x(-pose['arm'][sg])
         xf['arm%+d' % sg] = (Ra, tor_t + Rl @ np.array([sg * SHOULDER[0], SHOULDER[1] + br * 0.1, 0]))
         Rt, Rs = legs[sg]
-        hip = np.array([sg * HIP[0], HIP[1] + b, 0])
+        hip = np.array([sg * HIP[0], HIP[1] + b, dz])
         xf['leg%+d' % sg] = (Rt, hip)
         xf['shin%+d' % sg] = (Rs, hip + Rt @ np.array(KNEE))
     return xf
+
+
+def _hinge(xf, bone, pivot, ang):
+    """bone 로컬의 pivot 을 지나는 x축으로 ang 도 돌린 뼈 (R, t)."""
+    R, t = xf[bone]
+    Ra = rot_x(ang)
+    p = np.asarray(pivot, float)
+    return R @ Ra, t + R @ (p - Ra @ p)
+
+
+def sway_defs(defs, cat, pose, xf):
+    """hang/cape 포즈에서 늘어지는 부분을 새 뼈로 옮긴다 (xf 에 뼈 추가). 해당 없으면 defs 그대로."""
+    if cat == 'hair' and pose.get('hang') is not None:
+        ang = -(pose['lean'] + pose['head']) + pose['hang']
+        cut = HANG_CUT
+        out = []
+        for d in defs:
+            if d['bone'] != 'head':
+                out.append(d); continue
+            (cx, cy, cz), (hx, hy, hz) = d['c'], d['h']
+            y0, y1 = cy - hy, cy + hy
+            if y0 >= cut - 0.8:
+                out.append(d); continue
+            key = 'hang@%.3f' % cz
+            if key not in xf:
+                xf[key] = _hinge(xf, 'head', (0, cut, cz), ang)
+            if y1 <= cut + 0.3:
+                e = dict(d); e['bone'] = key
+                out.append(e); continue
+            up = dict(d); up['c'] = (cx, (cut + y1) / 2, cz); up['h'] = (hx, (y1 - cut) / 2, hz)
+            lo_top = cut + 0.6
+            lo = dict(d); lo['bone'] = key
+            lo['c'] = (cx, (y0 + lo_top) / 2, cz); lo['h'] = (hx + 0.05, (lo_top - y0) / 2, hz + 0.05)
+            out += [up, lo]
+        return out
+    if cat == 'top' and pose.get('cape') is not None and any(d.get('sway') for d in defs):
+        if 'cape' not in xf:
+            xf['cape'] = _hinge(xf, 'torso', CAPE_PIVOT, -pose['lean'] + pose['cape'])
+        return [dict(d, bone='cape') if d.get('sway') else d for d in defs]
+    return defs
 
 
 def make_boxes(defs, xf, layer, tag, back_view=False):
@@ -727,16 +808,22 @@ def make_boxes(defs, xf, layer, tag, back_view=False):
 
 def assemble(outfit, frame):
     """outfit: {cat: id}. 반환: Box 목록 (tag = 파츠 키)."""
-    xf = bone_xf(pose_frame(frame))
+    pose = pose_frame(frame)
+    xf = bone_xf(pose)
     boxes = []
     for cat in CATS:
         pid = outfit.get(cat)
         if not pid or pid == 'none':
             continue
-        boxes += make_boxes(PARTS[cat][pid](), xf, cat, cat)
+        boxes += make_boxes(sway_defs(PARTS[cat][pid](), cat, pose, xf), xf, cat, cat)
     return boxes
 
 
 def proxy_boxes(kind, frame):
-    xf = bone_xf(pose_frame(frame))
-    return make_boxes(PROXIES[kind](), xf, 'proxy', 'proxy')
+    pose = pose_frame(frame)
+    xf = bone_xf(pose)
+    defs = PROXIES[kind]()
+    if kind == 'body' and pose.get('cape') is not None:
+        # 망토가 날릴 때 몸 프록시 뒤쪽 두께(망토 자리)가 머리카락 앞/뒤 판정을 흐리지 않게 그대로 둔다
+        pass
+    return make_boxes(defs, xf, 'proxy', 'proxy')

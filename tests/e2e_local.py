@@ -1889,8 +1889,10 @@ def t27(browser, col):
 
         rid = ui_create_room(a, "아바타방")
         legacy = {"skin": "skin-tan", "hair": "hair-spiky-chestnut", "eyes": "eyes-sleepy", "top": "top-vest-green", "bottom": "bottom-jeans-blue"}
+        # 누락 키(shoes, hat)는 manifest 각 파츠의 첫 항목(기본값)으로 채워진다. 기본값은 아트 개정 때 바뀔 수 있어 manifest에서 읽는다.
+        _parts = json.loads((ROOT / "assets/avatar/manifest.json").read_text(encoding="utf-8"))["parts"]
         exp_old = {"skin": "medium", "hair": "brown-short", "face": "sleepy", "top": "overalls-green",
-                   "bottom": "jeans-blue", "shoes": "sneakers-white", "hat": "none"}
+                   "bottom": "jeans-blue", "shoes": _parts["shoes"][0]["id"], "hat": _parts["hat"][0]["id"]}
         a.evaluate("""([rid, av]) => { const bc = new BroadcastChannel('mushroom:room:' + rid);
           bc.postMessage({ type: 'presence-join', state: { user_id: 'legacy-cli-0001', nickname: '옛클라', avatar: av, x: 900, y: 440 } });
           bc.close(); }""", [rid, legacy])
@@ -2872,7 +2874,9 @@ def t40(browser, col):
             if not layer.endswith("_back") and side > 0 and n < 0.25 * side:
                 weak.append(f"{layer}/{pid}#{idx}({n}/{side})")
             fs.append(f)
-        if np.array_equal(fs[0], fs[1]) or np.array_equal(fs[1], fs[2]) or np.array_equal(fs[0], fs[2]):
+        # 완전히 빈 프레임(뒤 레이어가 포즈상 몸에 다 가려진 경우)끼리는 같아도 정상이다. 내용이 있는 프레임끼리만 비교.
+        filled = [f for f in fs if (f[:, :, 3] > 0).any()]
+        if any(np.array_equal(filled[i], filled[j]) for i in range(len(filled)) for j in range(i + 1, len(filled))):
             same.append(f"{layer}/{pid}")
     checks.append((f"files 전 PNG {len(paths)}장 모두 1584x192 RGBA (문제 {bad[:3] or '없음'})", bool(paths) and not bad))
     checks.append((f"몸 앞 레이어 8/9/10 프레임 알파 >= 측면 정지(2) 대비 25% (약함 {weak[:3] or '없음'})", not weak))

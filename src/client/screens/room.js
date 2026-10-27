@@ -26,6 +26,7 @@ const REMOTE_SNAP_DIST = 400; // 이보다 멀면 순간 이동
 const REMOTE_CATCHUP = 32; // 뒤처진 거리(월드 단위)마다 속도를 1배씩 더한다
 const WALK_HOLD_MS = 200; // 원격 아바타: 마지막으로 움직인 뒤 200ms 안이면 walk (패킷 간격 100ms 흡수)
 const Y_SMOOTH_S = 0.08; // 원격 세로 위치 오차 완화 시간 상수(초)
+const AIR_RESYNC = 8; // 원격 공중 시뮬레이션과 받은 y의 차이가 이보다 크면 다시 맞춘다(월드 단위)
 const RECONNECT_BUTTON_MIN_MS = 4000; // 백오프 대기가 이보다 길면 배너에 "지금 연결" 버튼
 const CLEANUP_WAIT_MS = 2000; // 화면 정리 때 채널 정리를 기다리는 최대 시간
 const DESKTOP_MAX_VIEW_W = 1280; // 데스크톱 시야 가로 최대 (월드): P=2 → 1280px, P=3 → 1920px
@@ -311,6 +312,13 @@ export function mount(root, app, opts = {}) {
     const s = typeof p.s === 'string' ? p.s : null;
     const a = pl.air;
     if ((s === 'jump' || s === 'fall') && y < WORLD.groundY) {
+      // 물리가 결정적이라 같은 점프 중에는 시뮬레이션이 맞다. 패킷 도착 간격 흔들림(수 단위)으로
+      // 매번 다시 맞추면 오히려 끌려 내려가므로, 차이가 AIR_RESYNC보다 클 때(새 점프, 어긋남)만 다시 맞춘다.
+      if (a.air && Math.abs(a.y - y) <= AIR_RESYNC) {
+        pl.s = s;
+        pl.lastMoveAt = performance.now();
+        return;
+      }
       a.y = y;
       a.vy = velocityAt(y, s);
       a.air = true;

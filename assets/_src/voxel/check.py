@@ -7,9 +7,11 @@ python3 assets/_src/voxel/check.py --fast       # 결정성 재빌드 생략
  1. manifest 형식 (frame/anchor/density/frames/animations/layerOrder{layer,part,blend}/parts/presets)
  2. manifest <-> 파일 일치: 모든 PNG가 layerOrder 의 레이어 + 해당 part 의 id 이고, 필수 레이어 파일이 있다
     + manifest.files: 모든 레이어 키, 정렬된 id, 실제 파일과 정확히 일치, 필수 레이어는 모든 id(hat 은 none 제외) 포함
- 3. 시트 크기 = (144*8) x 192 RGBA
+ 3. 시트 크기 = (144*11) x 192 RGBA
  4. 기준점이 프레임 안
  5. 프리셋 6종 합성(+파츠 전 변형 무작위 조합) 결과가 프레임 안 (가장자리 1px 여백), 발이 기준점 근처
+    (사이클 6) jump/fall: 발이 기준선 위로 떠도 되지만 기준선 아래로 넘지 않고, 몸 중심 높이가 side 와 비슷
+    crouch: 발바닥이 기준선, 키(기준선~위끝)가 side 의 70~80%
  6. 레이어 합성 vs 전체 렌더 차이 <= 허용치 (build_report.json, truth/)
  7. 결정적 빌드: 다시 빌드한 결과의 파일 해시가 같다
 """
@@ -26,6 +28,7 @@ sys.path.insert(0, HERE)
 import build as B  # noqa: E402
 
 AV = os.path.join(B.ROOT, 'assets', 'avatar')
+NF = len(B.FRAMES)
 REQUIRED = {'skin': 'skin', 'face': 'face', 'hair_front': 'hair', 'top': 'top', 'bottom': 'bottom', 'shoes': 'shoes', 'hat': 'hat'}
 fails = []
 
@@ -52,10 +55,12 @@ def main():
     ok(m.get('frame') == {'w': 144, 'h': 192}, 'frame 144x192')
     ok(m.get('anchor') == {'x': 72, 'y': 180}, 'anchor (72,180)')
     ok(m.get('density') == 1.5, 'density 1.5')
-    ok(m.get('frames') == B.FRAMES, 'frames 8개 순서')
+    ok(m.get('frames') == B.FRAMES and len(B.FRAMES) == 11 and B.FRAMES[8:] == ['jump', 'fall', 'crouch'], 'frames 11개 순서 (8 jump, 9 fall, 10 crouch)')
     an = m.get('animations', {})
     ok(an.get('idle_front', {}).get('frames') == [0, 1] and an.get('idle', {}).get('frames') == [2]
        and an.get('walk', {}).get('frames') == [3, 4, 5, 6], 'animations idle_front/idle/walk')
+    ok(an.get('jump') == {'frames': [8], 'ms': 200} and an.get('fall') == {'frames': [9], 'ms': 200}
+       and an.get('crouch') == {'frames': [10], 'ms': 200}, 'animations jump [8] / fall [9] / crouch [10] 200ms')
     lo = m.get('layerOrder', [])
     ok(all(set(e) == {'layer', 'part', 'blend'} and e['blend'] in ('source-over', 'source-atop') for e in lo), 'layerOrder {layer,part,blend}')
     ok(all(e['blend'] == ('source-atop' if e['layer'].startswith('shade_') else 'source-over') for e in lo), 'shade_* = source-atop')
@@ -101,10 +106,10 @@ def main():
     sheets = {}
     for L, i in files:
         im = Image.open(os.path.join(AV, L, i + '.png'))
-        if im.size != (144 * 8, 192) or im.mode != 'RGBA':
+        if im.size != (144 * NF, 192) or im.mode != 'RGBA':
             bad.append((L, i, im.size, im.mode))
         sheets[(L, i)] = np.array(im.convert('RGBA'))
-    ok(not bad, '%d장 모두 1152x192 RGBA %s' % (len(files), bad[:3]))
+    ok(not bad, '%d장 모두 %dx192 RGBA %s' % (len(files), 144 * NF, bad[:3]))
 
     print('[4] 기준점')
     ok(0 <= m['anchor']['x'] < 144 and 0 <= m['anchor']['y'] < 192, '기준점 프레임 안')
@@ -116,16 +121,32 @@ def main():
         combos.append({k: sorted(ids[k])[rng.integers(len(ids[k]))] for k in ids})
     worst = [999, 999, 0, 0]
     foot_err = 0
+    air = {'jump': [999, 0], 'fall': [999, 0]}       # 발 끝(최하단) y 범위
+    center = []                                     # |몸 중심 y(jump/fall) - side|
+    ratio = [9, 0]                                  # crouch 키 / side 키
+    fi = {n: i for i, n in enumerate(B.FRAMES)}
     for av in combos:
         c = B.composite(sheets, av)
-        for f in range(8):
+        bb = {}
+        for f in range(NF):
             a = c[:, f * 144:(f + 1) * 144, 3]
             ys, xs = np.nonzero(a > 8)
+            bb[f] = (ys.min(), ys.max(), float((ys * a[ys, xs]).sum() / a[ys, xs].sum()))
             worst = [min(worst[0], xs.min()), min(worst[1], ys.min()), max(worst[2], xs.max()), max(worst[3], ys.max())]
-            if f in (2, 3, 4, 5, 6):
+            if f in (2, 3, 4, 5, 6, fi['crouch']):
                 foot_err = max(foot_err, abs(int(ys.max()) - 180))
-    ok(worst[0] >= 1 and worst[1] >= 1 and worst[2] <= 142 and worst[3] <= 190, '불투명(a>8) 범위 x %d..%d, y %d..%d (프리셋 6 + 무작위 40)' % (worst[0], worst[2], worst[1], worst[3]))
-    ok(foot_err <= 10, '측면 발 끝이 기준선 y=180 근처 (최대 차 %dpx)' % foot_err)
+        for n in ('jump', 'fall'):
+            air[n] = [min(air[n][0], bb[fi[n]][1]), max(air[n][1], bb[fi[n]][1])]
+            # 몸 중심 = 프레임 전체 불투명 픽셀의 알파 가중 평균 y
+            center.append(abs(bb[fi[n]][2] - bb[2][2]))
+        r = (180 - bb[fi['crouch']][0]) / (180 - bb[2][0])
+        ratio = [min(ratio[0], r), max(ratio[1], r)]
+    ok(worst[0] >= 1 and worst[1] >= 1 and worst[2] <= 142 and worst[3] <= 190, '불투명(a>8) 범위 x %d..%d, y %d..%d (프리셋 6 + 무작위 40, 11프레임)' % (worst[0], worst[2], worst[1], worst[3]))
+    ok(foot_err <= 10, '측면/걷기/숙이기 발 끝이 기준선 y=180 근처 (최대 차 %dpx)' % foot_err)
+    ok(all(160 <= air[n][0] and air[n][1] <= 190 for n in air), 'jump/fall 발 끝 y: jump %d..%d, fall %d..%d (기준선 위로 뜰 수 있음, 아래로 190 이하)'
+       % (air['jump'][0], air['jump'][1], air['fall'][0], air['fall'][1]))
+    ok(max(center) <= 8, 'jump/fall 몸 중심(알파 가중 평균 y)이 side 와 비슷 (최대 차 %.1fpx <= 8)' % max(center))
+    ok(0.70 <= ratio[0] and ratio[1] <= 0.82, 'crouch 키 / side 키 = %.2f..%.2f (기준선~위끝, 0.70~0.82)' % tuple(ratio))
 
     print('[6] 레이어 합성 vs 전체 렌더')
     rep = json.load(open(os.path.join(HERE, 'out', 'build_report.json')))['layer_vs_full']

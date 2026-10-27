@@ -1,4 +1,5 @@
-"""미리보기 (저장소 밖 폴더 권장): presets.png, parts_<part>.png, walk.gif, compare.png, ingame_scale.png.
+"""미리보기 (저장소 밖 폴더 권장): presets.png, parts_<part>.png, walk.gif, compare.png, ingame_scale.png,
+(사이클 6) poses.png (프리셋 x side/jump/fall/crouch, 2배), jump.gif (idle -> crouch -> jump -> fall -> idle, 높이는 물리로 이동).
 모든 합성은 build.composite (프런트와 같은 규칙)로 레이어 시트에서 만든다."""
 import os
 import json
@@ -150,6 +151,51 @@ def make_ingame(d, sheets):
     out.save(os.path.join(d, 'ingame_scale.png'))
 
 
+def make_poses(d, sheets, k=2):
+    names = ('side', 'jump', 'fall', 'crouch')
+    cw, ch = W * k, H * k
+    im = Image.new('RGBA', (len(names) * cw + 16, len(PRESETS) * (ch + 18) + 8), BG)
+    dr = ImageDraw.Draw(im)
+    for r, (lab, av) in enumerate(PRESETS):
+        y0 = 8 + r * (ch + 18)
+        for j, v in enumerate(views(sheets, av, names)):
+            x0 = 8 + j * cw
+            dr.text((x0 + 4, y0), 'preset %d  %s' % (r + 1, names[j]), fill=INK)
+            gy = y0 + 14 + B.ANCHOR[1] * k
+            dr.line([(x0 + 4, gy), (x0 + cw - 4, gy)], fill=(200, 120, 120, 255))
+            im.alpha_composite(up(v, k), (x0, y0 + 14))
+    im.save(os.path.join(d, 'poses.png'))
+
+
+def jump_timeline(dt=1 / 30):
+    """(프레임 이름, 높이 px) 목록. 물리 = 계약 값(중력 2000, 초속 650 월드/s), 시트 px = 월드 x 1.5."""
+    seq = [('side', 0.0)] * 10 + [('crouch', 0.0)] * 4
+    t = 0.0
+    while True:
+        t += dt
+        h = 650 * t - 1000 * t * t
+        if h <= 0:
+            break
+        seq.append(('jump' if 650 - 2000 * t > 0 else 'fall', h * B.DENSITY))
+    return seq + [('side', 0.0)] * 12
+
+
+def make_jump(d, sheets):
+    comps = [B.composite(sheets, av) for _, av in PRESETS]
+    top = 170
+    frames = []
+    for name, h in jump_timeline():
+        im = Image.new('RGBA', (W * len(comps), H + top), BG)
+        dr = ImageDraw.Draw(im)
+        gy = top + B.ANCHOR[1]
+        dr.rectangle([0, gy, im.width, im.height], fill=(196, 214, 170, 255))
+        for i, c in enumerate(comps):
+            im.alpha_composite(frame(c, B.FRAMES.index(name)), (i * W, top - int(round(h))))
+        dr.text((6, 6), name, fill=INK)
+        frames.append(im.convert('RGB').convert('P', palette=Image.ADAPTIVE, colors=255))
+    frames[0].save(os.path.join(d, 'jump.gif'), save_all=True, append_images=frames[1:], duration=33, loop=0)
+
+
 def make_all(d, sheets, jobs=2):
     os.makedirs(d, exist_ok=True)
     make_presets(d, sheets)
@@ -157,8 +203,16 @@ def make_all(d, sheets, jobs=2):
     make_walk(d, sheets)
     make_compare(d, sheets)
     make_ingame(d, sheets)
+    make_poses(d, sheets)
+    make_jump(d, sheets)
 
 
 if __name__ == '__main__':
     import sys
-    make_all(sys.argv[1], B.load_sheets(os.path.join(B.ROOT, 'assets', 'avatar')))
+    sh = B.load_sheets(os.path.join(B.ROOT, 'assets', 'avatar'))
+    if '--poses' in sys.argv:                     # poses.png + jump.gif 만
+        os.makedirs(sys.argv[1], exist_ok=True)
+        make_poses(sys.argv[1], sh)
+        make_jump(sys.argv[1], sh)
+    else:
+        make_all(sys.argv[1], sh)

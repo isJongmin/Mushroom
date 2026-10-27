@@ -1,4 +1,4 @@
-"""버섯마을 아바타 빌드 (복셀 아트 계약, 사이클 5).
+"""버섯마을 아바타 빌드 (복셀 아트 계약, 사이클 5 + 사이클 6 jump/fall/crouch 프레임).
 
 python3 assets/_src/voxel/build.py                     # assets/avatar/** 전체 재생성 + 검증용 정답 렌더
 python3 assets/_src/voxel/build.py --preview DIR       # + 미리보기 (presets, parts_*, walk.gif, compare, ingame_scale)
@@ -34,7 +34,7 @@ ANCHOR = (72, 180)
 DENSITY = 1.5
 SCALE = 2.75            # 시트 px / 복셀 1칸
 PITCH = 15
-FRAMES = ['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back']
+FRAMES = ['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back', 'jump', 'fall', 'crouch']
 YAW = {'front': 25, 'front_b': 25, 'back': 160}
 SIDE_YAW = 62
 LAYER_ORDER = [
@@ -200,7 +200,9 @@ def manifest(files):
         'density': DENSITY,
         'frames': FRAMES,
         'animations': {'idle_front': {'frames': [0, 1], 'ms': 600}, 'idle': {'frames': [2], 'ms': 600},
-                       'walk': {'frames': [3, 4, 5, 6], 'ms': 150}},
+                       'walk': {'frames': [3, 4, 5, 6], 'ms': 150},
+                       'jump': {'frames': [8], 'ms': 200}, 'fall': {'frames': [9], 'ms': 200},
+                       'crouch': {'frames': [10], 'ms': 200}},
         'layerOrder': [{'layer': l, 'part': p, 'blend': b} for l, p, b in LAYER_ORDER],
         'parts': {k: [{'id': i, 'label': lab} for i, lab in LABELS[k]] for k in CATS},
         'presets': [{'label': lab, 'avatar': av} for lab, av in PRESETS],

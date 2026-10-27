@@ -130,3 +130,12 @@ body[data-screen="room"] { background: var(--letterbox); }
 /* 사이클 5 복셀 아트: 캔버스는 백킹(CSS x dpr)에 고품질 스무딩으로 직접 그린다. 브라우저 확대 보간도 계단 대신 부드럽게
    (ui-kit.css의 canvas { image-rendering: pixelated }를 캐릭터/맵 캔버스에서만 되돌린다). 디자인 handoff로 ui-kit 반영 요청. */
 .game-canvas, .bk-preview__stage canvas, .bk-slot canvas, .bk-presets .bk-btn canvas, .bk-thumb canvas { image-rendering: auto; }
+
+/* 사이클 6: 모바일 조작 4버튼 (왼손 좌우 이동 | 오른손 숙이기·점프). 한 줄 64px(ui-kit 13.2 높이 그대로)이라
+   캔버스 360x508은 그대로다. 두 묶음 사이 16px, 묶음 안 8px. 360 폭: 버튼 (324 - 16 - 16) / 4 = 73px.
+   디자인 정본(room.md, ui-kit 13.2)에 반영 요청 → 반영되면 이 덮어쓰기를 지운다. */
+@media (max-width: 719px) {
+  .touch-row.touch-row--4 { grid-template-columns: 1fr 1fr; gap: var(--sp-4); padding-left: 18px; padding-right: 18px; }
+  .touch-group { display: grid; grid-template-columns: 1fr 1fr; gap: var(--sp-2); min-width: 0; }
+  .touch-row--4 .bk-btn { min-width: 0; padding-left: 4px; padding-right: 4px; gap: 6px; white-space: nowrap; }
+}

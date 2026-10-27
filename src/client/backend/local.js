@@ -13,11 +13,13 @@
 //   chat: sendChat이 저장 후 같은 채널로 'chat'을 보낸다(서버 송신 흉내). 보낸 탭도 같은 이벤트를 받고 id로 중복 제거.
 //   move: 최대 10회/초.
 import { AppError } from '../errors.js';
-import { HEARTBEAT_MS, MOVE_INTERVAL_MS, ROOM_CAPACITY } from '../constants.js';
+import { MOVE_INTERVAL_MS, ROOM_CAPACITY } from '../constants.js';
 import {
   isValidNickname, cleanRoomName, cleanRoomPassword, cleanChatText, cleanPresenceState, cleanChatMessage, createThrottle,
 } from './common.js';
 import { localIdentity } from './identity.js';
+import { createTrackLimiter, TRACK_GAP_MS } from './room-link.js';
+import { cleanMove, isMoveState } from '../game/physics.js';
 
 const DB_KEY = 'mushroom.local.v4.db';
 const LOCK_NAME = 'mushroom.local.v4.db';
@@ -150,13 +152,20 @@ function postToRoom(roomId, msg) {
 }
 
 // ---------------------------------------------------------------------------
-// 실시간 연결 (방 하나)
+// 실시간 연결 (방 하나) — supabase.js connect()와 같은 의미:
+//   track(= Presence 상태 올리기)은 입장 1회 + updateSelf(닉네임/아바타 변경)만, 최소 2초 간격(stats.track로 계측).
+//   presence-heartbeat(2초)는 BroadcastChannel에 서버가 없어서 쓰는 생존 신호이고 Supabase track에 해당하지 않는다
+//   (내용은 마지막으로 track한 상태 그대로, 위치 갱신 아님).
+//   위치는 move로만. 다른 탭의 presence-join을 받으면 onPeerJoin(화면이 자기 현재 상태를 move로 1회 보냄).
+//   QA 훅: 같은 방 채널로 { type: 'debug-drop', user_id, fail } 를 보내면 그 사용자의 연결이 서버에 끊긴 것처럼
+//   닫히고 onDrop('CHANNEL_ERROR')가 불린다. fail = 다음 구독 시도 n번을 NETWORK로 실패시킨다(백오프 확인용).
 function createConnection(roomId, uid, handlers, self, backend, onClose) {
   const myState = { ...self, user_id: uid };
   const members = new Map(); // user_id -> { state, lastSeen }
   const seenChat = new Set();
   let closed = false;
   const bc = new BroadcastChannel(BC_PREFIX + roomId);
+  const stats = backend.stats;
 
   const post = (msg) => {
     if (closed) return;
@@ -169,13 +178,13 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
   const list = () => [{ ...myState }, ...[...members.values()].map((m) => ({ ...m.state }))];
   const emitSync = () => call('onSync', list());
 
-  /** @returns 'new' | 'changed' | 'same' */
+  /** @returns 'new' | 'changed' | 'same' (위치는 비교하지 않는다: Presence는 입장 시점 값) */
   const upsert = (st) => {
     const prev = members.get(st.user_id);
     members.set(st.user_id, { state: st, lastSeen: Date.now() });
     if (!prev) return 'new';
     const p = prev.state;
-    return p.nickname !== st.nickname || JSON.stringify(p.avatar) !== JSON.stringify(st.avatar) || p.x !== st.x ? 'changed' : 'same';
+    return p.nickname !== st.nickname || JSON.stringify(p.avatar) !== JSON.stringify(st.avatar) ? 'changed' : 'same';
   };
 
   const deliver = (raw) => {
@@ -196,7 +205,10 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
         const st = cleanPresenceState(msg.state);
         if (!st || st.user_id === uid) return;
         const r = upsert(st);
-        if (msg.type === 'presence-join') post({ type: 'presence-here', state: { ...myState } });
+        if (msg.type === 'presence-join') {
+          post({ type: 'presence-here', state: { ...myState } });
+          call('onPeerJoin', st.user_id);
+        }
         // presence-here = 내가 들어오기 전부터 있던 사람(첫 sync에 해당) → 입장 이벤트 없음
         if (r === 'new' && msg.type !== 'presence-here') call('onJoin', { ...st });
         if (r !== 'same') emitSync();
@@ -212,15 +224,21 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
         break;
       }
       case 'move': {
-        const p = msg.payload;
-        if (!p || typeof p !== 'object' || p.user_id === uid) return;
-        const m = members.get(p.user_id);
-        if (m && typeof p.x === 'number' && Number.isFinite(p.x)) m.state.x = p.x;
+        const p = cleanMove(msg.payload);
+        if (!p || p.user_id === uid) return;
         call('onMove', p);
         break;
       }
       case 'chat': // 서버(sendChat) 송신 흉내. 아무 탭이나 같은 형식으로 보낼 수 있다는 점은 실제 서버와 같은 한계.
         deliver(msg.payload);
+        break;
+      case 'debug-drop': // QA 훅: 서버가 이 사용자의 채널을 끊은 상황
+        if (msg.user_id === uid) {
+          backend.failNext = Math.max(0, Math.min(10, Number(msg.fail) || 0));
+          stats.drops++;
+          api.close();
+          handlers.onDrop?.('CHANNEL_ERROR');
+        }
         break;
       default:
         break;
@@ -240,46 +258,49 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
     }
     if (removed) emitSync();
   }, PRUNE_MS);
-  // 서버 하트비트 (ARCHITECTURE 결정 4: 20초). NOT_MEMBER면 화면에 알린다.
-  const heartbeatTimer = setInterval(() => {
-    backend.heartbeat(roomId).catch((e) => {
-      if (e && e.code === 'NOT_MEMBER') call('onStatus', 'not_member');
-    });
-  }, HEARTBEAT_MS);
 
   // 탭 닫기: leave_room은 보장할 수 없으므로 Presence만 내린다(untrack). 멤버 행은 활성 60초 규칙에 맡긴다.
   const onPageHide = () => post({ type: 'presence-leave', user_id: uid });
   const onPageShow = (e) => { if (e.persisted) post({ type: 'presence-join', state: { ...myState } }); };
-  // 숨김 탭은 타이머가 느려진다. 다시 보이면 바로 heartbeat.
+  // 숨김 탭은 타이머가 느려진다. 다시 보이면 바로 생존 신호.
   const onVisible = () => { if (document.visibilityState === 'visible') post({ type: 'presence-heartbeat', state: { ...myState } }); };
   window.addEventListener('pagehide', onPageHide);
   window.addEventListener('pageshow', onPageShow);
   document.addEventListener('visibilitychange', onVisible);
 
-  const mover = createThrottle(MOVE_INTERVAL_MS, (p) => post({ type: 'move', payload: p }));
+  const mover = createThrottle(MOVE_INTERVAL_MS, (p) => { stats.moveSent++; post({ type: 'move', payload: p }); });
+  const track = (type) => backend.trackLimiter.run(() => {
+    if (closed) return 'closed';
+    stats.track++;
+    post({ type, state: { ...myState } });
+    return 'ok';
+  });
 
   const api = {
     roomId,
     deliver,
-    async sendMove({ x, y, dir }) {
-      if (closed) throw new AppError('NETWORK');
-      myState.x = x;
-      myState.y = y;
-      mover.push({ user_id: uid, x, y, dir: dir === 'left' ? 'left' : 'right' });
+    sendMove({ x, y, dir, s }) {
+      if (closed) return Promise.reject(new AppError('NETWORK'));
+      mover.push({ user_id: uid, x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' });
+      return Promise.resolve();
     },
+    /** 닉네임/아바타가 바뀌었을 때만 (최소 2초 간격) */
     async updateSelf(partial) {
       if (closed) throw new AppError('NETWORK');
-      for (const k of ['nickname', 'avatar', 'x', 'y']) if (partial && own(partial, k)) myState[k] = partial[k];
-      post({ type: 'presence-heartbeat', state: { ...myState } });
+      for (const k of ['nickname', 'avatar']) if (partial && own(partial, k)) myState[k] = partial[k];
+      await track('presence-heartbeat');
     },
-    async leave() {
+    healthy() {
+      return !closed;
+    },
+    async close() {
       if (closed) return;
       post({ type: 'presence-leave', user_id: uid });
       closed = true;
+      stats.removeChannel++;
       mover.cancel();
       clearInterval(presenceTimer);
       clearInterval(pruneTimer);
-      clearInterval(heartbeatTimer);
       window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('pageshow', onPageShow);
       document.removeEventListener('visibilitychange', onVisible);
@@ -289,11 +310,13 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
       onClose(api);
     },
   };
+  api.leave = api.close;
 
-  post({ type: 'presence-join', state: { ...myState } });
-  // BroadcastChannel은 끊기지 않으므로 바로 connected. 첫 sync = 나 혼자(이미 있던 사람은 presence-here로 조용히 추가).
-  queueMicrotask(() => { emitSync(); call('onStatus', 'connected'); });
-  return api;
+  stats.subscribe++;
+  // 첫 track = presence-join (입장 1회). BroadcastChannel은 끊기지 않으므로 바로 구독 완료.
+  // 첫 sync = 나 혼자(이미 있던 사람은 presence-here로 조용히 추가).
+  const ready = track('presence-join').then(() => { emitSync(); return api; });
+  return { api, ready };
 }
 
 // ---------------------------------------------------------------------------
@@ -309,6 +332,10 @@ export function createLocalBackend() {
 
   const backend = {
     mode: 'local',
+    // 계측 (getState().net.adapter): supabase.js와 같은 이름
+    stats: { track: 0, moveSent: 0, subscribe: 0, removeChannel: 0, joinRoom: 0, leaveRoom: 0, drops: 0 },
+    trackLimiter: createTrackLimiter({ minGapMs: TRACK_GAP_MS }),
+    failNext: 0,
 
     async init() {
       uid = localIdentity().userId;
@@ -362,6 +389,7 @@ export function createLocalBackend() {
 
     async joinRoom({ roomId, password, nickname }) {
       const me = requireUid();
+      backend.stats.joinRoom++;
       await delay(LATENCY_MS);
       if (!isValidNickname(nickname)) throw new AppError('NICK_FORMAT');
       if (typeof roomId !== 'string') throw new AppError('ROOM_NOT_FOUND');
@@ -401,6 +429,7 @@ export function createLocalBackend() {
 
     async leaveRoom(roomId) {
       const me = requireUid();
+      backend.stats.leaveRoom++;
       await tx((db, now) => {
         const ms = db.members[roomId];
         if (ms && own(ms, me)) {
@@ -455,18 +484,30 @@ export function createLocalBackend() {
     },
 
     /**
-     * @param handlers { onSync(list), onJoin(state), onLeave(state), onMove(payload), onChat(msg), onStatus('connected'|'disconnected'|'not_member') }
+     * 채널 1회 구독 (supabase.js connectRoom과 같은 계약). 재시도·하트비트·재입장은 room-link.js가 한다.
+     * @param handlers { onSync(list), onJoin(state), onLeave(state), onPeerJoin(user_id), onMove(payload), onChat(msg), onDrop(status) }
      * @param self { nickname, avatar, x, y } Presence에 올릴 내 상태 (user_id는 어댑터가 채운다)
+     * @param opts.signal AbortSignal
      */
-    async connectRoom(roomId, handlers, self) {
+    async connectRoom(roomId, handlers, self, opts = {}) {
       const me = requireUid();
+      const signal = opts.signal;
       if (typeof BroadcastChannel === 'undefined') throw new AppError('NETWORK', 'BroadcastChannel 미지원');
+      if (signal && signal.aborted) throw new AppError('NETWORK', 'aborted');
+      if (backend.failNext > 0) { // QA 훅 debug-drop의 fail
+        backend.failNext--;
+        await delay(LATENCY_MS);
+        throw new AppError('NETWORK', 'debug fail');
+      }
       // 서버: 비공개 채널은 유효 멤버만 구독 가능 (아니면 CHANNEL_ERROR)
       const ok = await tx((db, now) => own(db.rooms, roomId) && isValidMember(db, roomId, me, now), { write: false });
       if (!ok) throw new AppError('NOT_MEMBER');
-      const conn = createConnection(roomId, me, handlers, self, backend, (c) => conns.delete(c));
+      if (signal && signal.aborted) throw new AppError('NETWORK', 'aborted');
+      const { api: conn, ready } = createConnection(roomId, me, handlers, self, backend, (c) => conns.delete(c));
       conns.add(conn);
-      return { sendMove: conn.sendMove, updateSelf: conn.updateSelf, leave: conn.leave };
+      await ready;
+      if (signal && signal.aborted) { await conn.close(); throw new AppError('NETWORK', 'aborted'); }
+      return { sendMove: conn.sendMove, updateSelf: conn.updateSelf, healthy: conn.healthy, close: conn.close, leave: conn.close };
     },
   };
   return backend;

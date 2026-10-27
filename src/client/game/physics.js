@@ -48,7 +48,7 @@ export function stepBody(b, inp, dt, opt) {
   if (!b.grounded) {
     b.y += b.vy * dt + 0.5 * g * dt * dt;
     b.vy += g * dt;
-    if (b.y >= PHYS.groundY) {
+    if (b.y >= PHYS.groundY && b.vy >= 0) { // 상승 중(dt = 0인 점프 첫 프레임 포함)에는 착지가 아니다
       b.y = PHYS.groundY;
       b.vy = 0;
       b.grounded = true;
@@ -81,7 +81,7 @@ export function stepRemoteAir(r, dt) {
   if (!r.air) return;
   r.y += r.vy * dt + 0.5 * PHYS.gravity * dt * dt;
   r.vy += PHYS.gravity * dt;
-  if (r.y >= PHYS.groundY) { r.y = PHYS.groundY; r.vy = 0; r.air = false; }
+  if (r.y >= PHYS.groundY && r.vy >= 0) { r.y = PHYS.groundY; r.vy = 0; r.air = false; }
 }
 
 /** move payload 정리 (수신 측). 깨진 값이면 null. y는 [지면 - 200, 지면]로 자른다. s가 없으면 null(추정은 화면이). */

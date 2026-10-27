@@ -82,6 +82,7 @@ export const ROOM_MESSAGES = Object.freeze({
   NEW_MESSAGES: (n) => `새 메시지 ${n}개`,
   DISCONNECTED: '연결이 끊어졌어요. 다시 연결하는 중...',
   RECONNECT_FAILED: '연결하지 못했어요.',
+  RECONNECT_NOW: '지금 연결',
   NOT_MEMBER: '방과 연결이 끊어졌어요. 로비에서 다시 들어와 주세요.',
   FATAL: '방에 들어갈 수 없어요. 다시 시도해 주세요.',
   SEND_FAILED: '메시지를 보내지 못했어요.',
@@ -90,7 +91,7 @@ export const ROOM_MESSAGES = Object.freeze({
   LEAVING: '나가는 중',
   // v3 문구 그대로 유지 (design handoff 4.3 마지막 줄)
   COOLDOWN: '1초 뒤에 다시 보낼 수 있습니다.',
-  HINT: '← → 또는 A D 이동 · Enter 채팅 · Esc 입력 해제',
+  HINT: '← → 이동 · ↑ Space 점프 · ↓ 숙이기 · Enter 채팅',
 });
 
 /** 처리되지 않은 오류 토스트 */

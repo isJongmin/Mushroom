@@ -211,6 +211,9 @@ function getState() {
     assets: r ? r.assets : null,
     me: r ? r.me : null,
     players: r ? r.players : [],
+    // (사이클 6) 네트워크 계측: adapter = { track, moveSent, subscribe, removeChannel, joinRoom, leaveRoom, drops },
+    // link = room-link 상태기계 { state, gen, attempts, joins, opens, closes, drops, stale, heartbeats, notMember, events }
+    net: r ? r.net : null,
   };
   return deepFreeze(JSON.parse(JSON.stringify(snapshot)));
 }

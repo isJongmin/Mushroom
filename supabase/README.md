@@ -1,4 +1,4 @@
-# 버섯마을 Supabase 백엔드 (사이클 4: 로그인 없는 채팅방)
+# 버섯마을 Supabase 백엔드 (사이클 4: 로그인 없는 채팅방, 사이클 8: 방 삭제)
 
 정본 설계는 `docs/ARCHITECTURE.md`의 결정 3~6, "데이터 모델 (사이클 4)", "알려진 한계"다. 이 문서는 그 내용을 Supabase에 적용하는 방법과 프런트가 쓸 API를 정리한다.
 
@@ -12,6 +12,8 @@
 | 2 | `migrations/20261014000100_realtime.sql` | 주석만(no-op) |
 | 3 | `migrations/20261014000200_avatar_v3.sql` | (폐기됨) characters 아바타 7키 변환 |
 | 4 | `migrations/20261015000000_rooms.sql` | **현재 스키마.** characters/is_nickname_taken 삭제, rooms/room_members/room_messages/room_join_failures, RPC 7개, `realtime.messages` 정책 |
+| 5 | `migrations/20261027000000_fk_indexes.sql` | FK 인덱스 2개(`room_join_failures.room_id`, `room_members.user_id`) |
+| 6 | `migrations/20261028000000_delete_room.sql` | (사이클 8) `delete_room` RPC 추가, `list_rooms`에 `mine` 컬럼 추가(drop 후 재생성 + 권한 재부여) |
 
 규칙: 이미 적용된 마이그레이션은 수정하지 않는다. 변경은 항상 새 타임스탬프 파일로 추가한다.
 
@@ -25,7 +27,7 @@
 2. 아직 적용하지 않은 파일을 위 순서대로 하나씩, **파일 전체를 한 번에** 붙여넣고 **Run**. (일부만 선택해 실행하지 말 것. 한 번에 보내면 하나의 트랜잭션으로 실행되어 중간에 실패해도 전체가 취소된다.)
 3. 확인
    - **Table Editor**: `rooms`, `room_members`, `room_messages`, `room_join_failures`가 있고 모두 "RLS enabled". `characters`는 없어야 한다.
-   - **Database > Functions**: `list_rooms, create_room, join_room, leave_room, heartbeat, recent_messages, send_message`.
+   - **Database > Functions**: `list_rooms, create_room, join_room, leave_room, heartbeat, recent_messages, send_message, delete_room`.
    - 아래 쿼리 결과가 2행(`mushroom_room_members_receive`, `mushroom_room_members_send`)이어야 한다.
      ```sql
      select policyname from pg_policies where schemaname = 'realtime' and policyname like 'mushroom_%';
@@ -76,7 +78,7 @@ RPC는 `raise exception using message = '<코드>'`로 실패한다. supabase-js
 
 ```js
 const KNOWN = new Set(['ROOM_NOT_FOUND','WRONG_PASSWORD','ROOM_FULL','NICK_TAKEN','NICK_FORMAT',
-  'ROOM_NAME_FORMAT','PASSWORD_FORMAT','TOO_MANY_ROOMS','RATE_LIMITED','NOT_MEMBER','TEXT_FORMAT']);
+  'ROOM_NAME_FORMAT','PASSWORD_FORMAT','TOO_MANY_ROOMS','RATE_LIMITED','NOT_MEMBER','TEXT_FORMAT','NOT_OWNER']);
 const code = KNOWN.has(error.message) ? error.message : 'UNKNOWN';
 ```
 
@@ -86,13 +88,14 @@ const code = KNOWN.has(error.message) ? error.message : 'UNKNOWN';
 
 | RPC | 인자 | 반환 | 오류 코드 |
 |---|---|---|---|
-| `list_rooms` | 없음 | `[{ id, name, locked, members, created_at }]` 최대 100개, 인원 desc → 최근 활동 desc | `NOT_MEMBER`(세션 없음) |
+| `list_rooms` | 없음 | `[{ id, name, locked, members, created_at, mine }]` 최대 100개, 인원 desc → 최근 활동 desc. `mine` = 내가 만든 방(`created_by = auth.uid()`) | `NOT_MEMBER`(세션 없음) |
 | `create_room` | `p_name, p_password, p_nickname` | `uuid` (방 id). 만든 사람 자동 입장 | `ROOM_NAME_FORMAT, PASSWORD_FORMAT, NICK_FORMAT, TOO_MANY_ROOMS` |
 | `join_room` | `p_room_id, p_password, p_nickname` | **`'OK'` 또는 `'WRONG_PASSWORD'`** (아래 주의) | `NICK_FORMAT, ROOM_NOT_FOUND, RATE_LIMITED, ROOM_FULL, NICK_TAKEN` |
 | `leave_room` | `p_room_id` | `null` (멱등, 멤버 아니어도 성공) | 없음 |
 | `heartbeat` | `p_room_id` | `null` | `NOT_MEMBER` |
 | `recent_messages` | `p_room_id` | `[{ id, user_id, nickname, text, created_at }]` 최근 50개, 오래된 것부터 | `NOT_MEMBER` |
 | `send_message` | `p_room_id, p_text` | `{ id, user_id, nickname, text, created_at }` | `NOT_MEMBER, TEXT_FORMAT, RATE_LIMITED` |
+| `delete_room` | `p_room_id` | `null`. 방장만. 삭제 직전 `room_closed` broadcast, 멤버/메시지/실패 기록 cascade 삭제 | `ROOM_NOT_FOUND`(없음/만료/이미 삭제), `NOT_OWNER`(방장 아님), `NOT_MEMBER`(세션 없음) |
 
 ```js
 const { data: rooms }  = await supabase.rpc('list_rooms');
@@ -103,6 +106,7 @@ await supabase.rpc('heartbeat', { p_room_id });            // 20초마다
 const { data: msgs } = await supabase.rpc('recent_messages', { p_room_id });
 const { data: msg }  = await supabase.rpc('send_message', { p_room_id, p_text });
 await supabase.rpc('leave_room', { p_room_id });
+await supabase.rpc('delete_room', { p_room_id });     // 방장만. 성공 시 room_closed가 본인에게도 온다
 ```
 
 **주의: `join_room`의 `WRONG_PASSWORD`는 예외가 아니라 반환값이다.** 실패 횟수 제한을 위해 실패 기록을 커밋해야 하는데, 예외를 던지면 그 호출의 트랜잭션 전체가 롤백되어 기록이 남지 않기 때문이다. 어댑터에서 `data === 'WRONG_PASSWORD'`를 `Error.code = 'WRONG_PASSWORD'`로 바꿔 던지면 인터페이스는 같다.
@@ -120,6 +124,7 @@ await supabase.rpc('leave_room', { p_room_id });
 - 채팅: 앞뒤 공백 제거 후 1~80자, 제어문자(개행 포함) 금지 → `TEXT_FORMAT`. 사용자당 1초 1회(모든 방 합산) → `RATE_LIMITED`. `nickname`은 서버의 멤버 행 값. 방당 최근 50개만 남는다.
 - 만료: 활성 멤버 0명으로 30분이 지난 방은 목록에서 빠지고 `join_room`은 `ROOM_NOT_FOUND`. 실제 삭제는 `list_rooms` 호출 때.
 - 세션 없이(토큰 없이 서비스 키 등) 호출하면 `NOT_MEMBER`.
+- **방 삭제(`delete_room`, 사이클 8)**: `rooms.created_by`가 본인일 때만. 방 행을 `for update`로 잠그므로 동시에 들어온 `join_room`은 삭제 커밋 후 `ROOM_NOT_FOUND`. 삭제 후 다른 멤버의 `heartbeat`·`recent_messages`·`send_message`는 `NOT_MEMBER`, `join_room`은 `ROOM_NOT_FOUND`. 방장이 이미 나가 멤버 행이 없어도 삭제할 수 있다(`by_nickname`이 `null`). 만료된 방은 `ROOM_NOT_FOUND`(목록에 없으므로).
 
 ### Realtime 채널 `room:<room_id>` (비공개)
 
@@ -133,6 +138,7 @@ const ch = supabase.channel(`room:${roomId}`, {
 ch.on('presence', { event: 'sync' }, () => { /* ch.presenceState() */ })
   .on('broadcast', { event: 'move' }, ({ payload }) => { /* { user_id, x, y, dir } */ })
   .on('broadcast', { event: 'chat' }, ({ payload }) => { /* { id, user_id, nickname, text, created_at } */ })
+  .on('broadcast', { event: 'room_closed' }, ({ payload }) => { /* { room_id, by_nickname } → 채널 닫고 로비 */ })
   .subscribe(async (status) => {
     if (status === 'SUBSCRIBED') await ch.track({ user_id: userId, nickname, avatar, x, y });
   });
@@ -142,6 +148,9 @@ ch.on('presence', { event: 'sync' }, () => { /* ch.presenceState() */ })
 - `chat`은 서버(`send_message` → `realtime.send`)만 보낸다. 페이로드는 `send_message` 반환값과 같다. 보낸 사람도 같은 이벤트를 받으므로 `id`로 중복 제거한다(반환값으로 먼저 그렸다면).
 - 클라이언트가 직접 보낸 `chat` 이벤트는 무시해야 하지만, 수신 측에서 서버 송신과 멤버의 위조 송신을 구분할 확실한 방법은 없다(정책은 채널 접근만 판단, 페이로드 형식은 흉내 낼 수 있음). **신뢰할 기록은 `recent_messages`와 `send_message` 반환값**이다. 알려진 한계 1 참고.
 - `move`: `{ user_id, x, y, dir }`, 최대 10회/초. 서버 검증 없음.
+- `room_closed` (사이클 8): `{ room_id: uuid, by_nickname: string | null }`. `delete_room`만 보낸다(`realtime.send(..., 'room_closed', 'room:<id>', true)`). `by_nickname`은 방장의 이 방 멤버 행 닉네임(없으면 `null`). 받은 클라이언트(방장 포함)는 `removeChannel` → sessionStorage `mushroom:room` 삭제 → 로비 + "방장이 방을 삭제했어요" 배너. 놓친 클라이언트는 다음 `heartbeat`(`NOT_MEMBER`) → `join_room`(`ROOM_NOT_FOUND`)으로 같은 처리.
+  - 전달 시점: `realtime.send`는 `realtime.messages` insert이고 Realtime은 커밋된 행만 내보낸다. `delete_room`은 send → delete를 한 트랜잭션에서 하므로 삭제가 커밋될 때 함께 전달되고, 실패·롤백되면 전달되지 않는다. 이미 구독 중인 멤버는 구독 시점에 권한 검사를 통과했으므로 멤버 행이 지워져도 이 이벤트를 받는다.
+  - 멤버가 `room_closed`를 직접 위조해 보낼 수도 있다(알려진 한계 1). 받으면 바로 로비로 가되, 방이 실제로 남아 있으면 `list_rooms`에 계속 보인다. 걱정되면 수신 후 `heartbeat`로 확인해 `NOT_MEMBER`/`ROOM_NOT_FOUND`일 때만 배너를 띄운다.
 
 **`realtime.messages` 정책** (마이그레이션 7절)
 

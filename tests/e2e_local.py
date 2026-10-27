@@ -2849,6 +2849,7 @@ def t40(browser, col):
     checks.append((f"프레임 144x192, 기준점 (72,180) 유지 (실제 {fm}, {anc})", fm == {"w": 144, "h": 192} and anc == {"x": 72, "y": 180}))
     paths = [(layer, pid) for layer, ids in (MANIFEST.get("files") or {}).items() for pid in ids]
     bad, weak, same = [], [], []
+    sheet_px = {8: 0, 9: 0, 10: 0}  # 시트 전체(모든 레이어 합)의 프레임별 알파 픽셀 수
     for layer, pid in paths:
         p = ROOT / "assets/avatar" / layer / f"{pid}.png"
         if not p.exists():
@@ -2860,15 +2861,22 @@ def t40(browser, col):
             continue
         arr = np.asarray(im)
         fs = []
+        side = int((arr[:, 2 * 144:3 * 144, 3] > 0).sum())  # 측면 정지(프레임 2)의 알파 픽셀 수 = 이 레이어의 기준 크기
         for idx in (8, 9, 10):
             f = arr[:, idx * 144:(idx + 1) * 144, :]
-            if int((f[:, :, 3] > 0).sum()) < 500:
-                weak.append(f"{layer}/{pid}#{idx}")
+            n = int((f[:, :, 3] > 0).sum())
+            sheet_px[idx] += n
+            # 뒤 레이어(*_back)는 측면 뷰에서 몸 뒤에 가려지도록 설계되어 프레임 0~7에서도 거의 비어 있다(아트 계약).
+            # 몸 앞 레이어는 절대 크기가 레이어마다 달라(얼굴 등은 작다) 측면 정지 대비 비율로 본다.
+            # 실측 최저 비율 0.33(하의 숙이기), 기준 0.25.
+            if not layer.endswith("_back") and side > 0 and n < 0.25 * side:
+                weak.append(f"{layer}/{pid}#{idx}({n}/{side})")
             fs.append(f)
         if np.array_equal(fs[0], fs[1]) or np.array_equal(fs[1], fs[2]) or np.array_equal(fs[0], fs[2]):
             same.append(f"{layer}/{pid}")
     checks.append((f"files 전 PNG {len(paths)}장 모두 1584x192 RGBA (문제 {bad[:3] or '없음'})", bool(paths) and not bad))
-    checks.append((f"8/9/10 프레임 비어 있지 않음, 알파 500px 이상 (약함 {weak[:3] or '없음'})", not weak))
+    checks.append((f"몸 앞 레이어 8/9/10 프레임 알파 >= 측면 정지(2) 대비 25% (약함 {weak[:3] or '없음'})", not weak))
+    checks.append((f"시트 전체 프레임 8/9/10 비어 있지 않음, 알파 합 {sheet_px} (기준 5000px 이상)", min(sheet_px.values()) >= 5000))
     checks.append((f"8/9/10 프레임이 서로 다름 (같은 파일 {same[:3] or '없음'})", not same))
     return verdict(checks)
 

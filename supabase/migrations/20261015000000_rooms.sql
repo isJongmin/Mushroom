@@ -64,7 +64,7 @@ set search_path = ''
 as $$
   select pg_catalog.regexp_replace(
     p,
-    '^[[:space:] 　﻿]+|[[:space:] 　﻿]+$',
+    '^[[:space:]\u00a0\u3000\ufeff]+|[[:space:]\u00a0\u3000\ufeff]+$',
     '',
     'g'
   );
@@ -98,8 +98,8 @@ create table public.rooms (
                  constraint rooms_name_format check (
                    char_length(name) between 1 and 24
                    and name !~ '[[:cntrl:]]'
-                   and name !~ '^[[:space:] 　﻿]'
-                   and name !~ '[[:space:] 　﻿]$'
+                   and name !~ '^[[:space:]\u00a0\u3000\ufeff]'
+                   and name !~ '[[:space:]\u00a0\u3000\ufeff]$'
                  ),
   -- bcrypt 해시. null = 공개 방. 클라이언트는 이 컬럼을 어떤 경로로도 읽을 수 없다.
   password_hash  text

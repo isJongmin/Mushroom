@@ -45,7 +45,7 @@ docs/            문서
      `leaveRoom(roomId)`, `heartbeat(roomId)`,
      `recentMessages(roomId) → [{ id, user_id, nickname, text, created_at }]` (오래된 것부터),
      `sendChat(roomId, text)`,
-     `connectRoom(roomId, handlers, self) → { sendMove, updateSelf, leave }` (handlers: onSync, onJoin, onLeave, onMove, onChat, onStatus).
+     `connectRoom(roomId, handlers, self, { signal }) → { sendMove, updateSelf, healthy, close, leave(= close) }` (handlers: onSync, onJoin, onLeave, onPeerJoin(user_id), onMove, onChat, onDrop(status)). (사이클 6) 하트비트·재시도·재입장은 어댑터가 아니라 `src/client/backend/room-link.js` 상태기계가 담당. 계측 `backend.stats = { track, moveSent, subscribe, removeChannel, joinRoom, leaveRoom, drops }`.
    - 예외: `join_room`은 비밀번호 불일치를 예외가 아니라 반환값 `'WRONG_PASSWORD'`로 돌려준다(예외는 실패 기록까지 롤백해 시도 제한이 무력화되므로). 성공은 `'OK'`. 어댑터가 `WRONG_PASSWORD` 오류로 변환한다.
    - 서버 세부 규칙(backend 확정): 멤버 행은 마지막 활동 후 10분간 유효 → 그 안의 재입장은 비밀번호 생략, `leave_room` 후나 10분 후에는 다시 필요. 60초 넘게 비활성인 사람의 닉네임은 새 입장자가 쓸 수 있다. 방 이름·채팅에 줄바꿈/제어문자 금지. 채팅 1초 제한은 모든 방 합산. local 모드도 같은 규칙.
    - 재입장용으로 sessionStorage `mushroom:room` = `{ roomId, nickname }` (이 방에서 쓴 닉네임 포함).

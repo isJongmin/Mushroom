@@ -1427,18 +1427,32 @@ def wait_sprite(pg, timeout=8.0):
     return wait_until(lambda: pg.evaluate("() => !!window.__qaSprite"), timeout)
 
 
-def spread(mover, min_gap=130):
-    """mover를 같은 방의 다른 사람과 min_gap(월드 단위) 이상 떨어지게 좌우로 옮긴다 (스폰 위치는 300~900 무작위)."""
-    for _ in range(30):
+WALK_SPEED = 160  # constants.js WORLD.speed (월드 단위/초)
+
+
+def spread(mover, min_gap=130, max_gap=150):
+    """mover를 같은 방의 가장 가까운 다른 사람과 min_gap~max_gap(월드 단위) 거리에 둔다.
+    (사이클 6 수정) 스폰은 300 + 무작위(0~599)라 두 사람이 모바일 시야 밖(컬링 여유 밖)에 떨어질 수 있다.
+    제품은 그 밖의 캐릭터를 그리지 않으므로 라벨/말풍선 기록이 없다. 간헐 실패(항목 35)의 원인은 테스트 쪽 랜덤 스폰이다.
+    그래서 거리를 시야 안(max_gap 이하)으로 맞춘다. 필요한 만큼만 누르고(160/초), 매번 상태를 다시 읽어 보정한다."""
+    goal_mid = (min_gap + max_gap) / 2
+    for _ in range(12):
         st = state(mover)
-        me_x = st["me"]["x"]
-        close = [p["x"] for p in st["players"] if p["user_id"] != st["me"]["user_id"] and abs(p["x"] - me_x) < min_gap]
-        if not close:
+        me = st["me"]
+        others = [p for p in st["players"] if p["user_id"] != me["user_id"]]
+        if not others:
+            return False
+        near = min(others, key=lambda p: abs(p["x"] - me["x"]))
+        d = me["x"] - near["x"]
+        if min_gap <= abs(d) <= max_gap:
             return True
-        near = min(close, key=lambda ox: abs(ox - me_x))
-        hold_key(mover, "ArrowRight" if me_x >= near else "ArrowLeft", 220)
+        side = 1 if d >= 0 else -1  # 지금 서 있는 쪽을 유지
+        delta = (near["x"] + side * goal_mid) - me["x"]
+        hold_key(mover, "ArrowRight" if delta > 0 else "ArrowLeft", min(1500, max(30, abs(delta) / WALK_SPEED * 1000)))
         time.sleep(0.1)
-    return False
+    st = state(mover)
+    me = st["me"]
+    return any(min_gap <= abs(me["x"] - p["x"]) <= max_gap for p in st["players"] if p["user_id"] != me["user_id"])
 
 
 def sprite_stats(with_png, without_png, sp):
@@ -1726,13 +1740,16 @@ def run_py(args, cwd, timeout):
     return p, tail
 
 
-@case(24, "복셀 아바타 검사 (사본): voxel/check.py --fast 통과, manifest files 합 = PNG 65장, 원본 assets 불변. 전체 결정성 재빌드는 QA_FULL_BUILD=1일 때만")
+@case(24, "복셀 아바타 검사 (사본): voxel/check.py --fast 통과, manifest files 합 = 디스크 PNG 수 (기대값은 manifest에서 계산), 원본 assets 불변. 전체 결정성 재빌드는 QA_FULL_BUILD=1일 때만")
 def t24(browser, col):
     before = repo_tree(ROOT)
     manifest = json.loads((ROOT / "assets/avatar/manifest.json").read_text(encoding="utf-8"))
-    n_listed = sum(len(v) for v in manifest["files"].values())
-    n_disk = sum(1 for k in before if k.startswith("assets/avatar/") and k.endswith(".png"))
-    checks = [(f"manifest files 합 {n_listed}장 = 디스크 PNG {n_disk}장", n_listed == n_disk == 65)]
+    # 기대값: manifest files({layer: [id, ...]})가 가리키는 경로 집합. 숫자 하드코딩 없음.
+    listed = {f"assets/avatar/{layer}/{pid}.png" for layer, ids in manifest["files"].items() for pid in ids}
+    disk = {k for k in before if k.startswith("assets/avatar/") and k.endswith(".png")}
+    checks = [(f"manifest files 합 {len(listed)}장 = 디스크 PNG {len(disk)}장, 같은 파일 집합 "
+               f"(목록 밖 {sorted(disk - listed)[:3]}, 파일 없음 {sorted(listed - disk)[:3]})",
+               len(listed) > 0 and listed == disk)]
     dst = copy_repo("voxel-fast")
     p, tail = run_py([str(dst / "assets/_src/voxel/check.py"), "--fast"], dst, 900)
     checks.append((f"voxel/check.py --fast 종료 0 (출력 끝: {tail})", p.returncode == 0))
@@ -2323,7 +2340,7 @@ def track_external(page):
     return seen
 
 
-@case(37, "supabase 모드 기본 진입(쿼리·hash 없음): SUPABASE MODE 배지, CDN 차단 -> 로비 오류 화면과 다시 시도, pageerror 0")
+@case(37, "supabase 모드 기본 진입(쿼리·hash 없음): LOCAL MODE 배지 없음(supabase 모드는 배지 숨김 설계), CDN 차단 -> 로비 오류 화면과 다시 시도, pageerror 0")
 def t37(browser, col):
     ctx = browser.new_context(force_local=False)
     checks = []
@@ -2339,11 +2356,12 @@ def t37(browser, col):
             raise AssertionError(f"쿼리 없이 열기: 부트 후 화면 전환 실패 (현재 {sc(page)})")
         checks.append(("쿼리 없이 열기 -> mode = supabase", state(page)["mode"] == "supabase"))
 
-        def badge_ok(pg):
+        def badge_hidden(pg):
+            """supabase 모드는 배지를 숨긴다 (main.js hidden, 설계 결정). 요소가 없거나 보이지 않으면 통과."""
             b = pg.get_by_test_id("mode-badge")
-            return b.count() > 0 and b.is_visible() and b.inner_text().strip() == "SUPABASE MODE"
+            return b.count() == 0 or not b.is_visible()
 
-        checks.append(("프로필 화면: SUPABASE MODE 배지 보임", badge_ok(page)))
+        checks.append(("프로필 화면: LOCAL MODE 배지 없음 (배지 숨김)", badge_hidden(page)))
 
         # 프로필을 저장해 로비까지 간다 (handoff (a) 방법). 로비는 방 목록을 CDN 없이 못 받는다.
         preset = MANIFEST["presets"][0]["avatar"]
@@ -2352,7 +2370,7 @@ def t37(browser, col):
         page.reload()
         if wait_until(lambda: sc(page) in ("lobby", "room"), 15) is None:
             raise AssertionError(f"프로필 저장 뒤 로비 전환 실패 (현재 {sc(page)})")
-        checks.append(("로비: SUPABASE MODE 배지 보임", badge_ok(page)))
+        checks.append(("로비: LOCAL MODE 배지 없음 (배지 숨김)", badge_hidden(page)))
 
         err = page.get_by_test_id("room-error")
         cdn_failed = [u for u in failed if host_of(u) in ("cdn.jsdelivr.net", "supabase.co")]
@@ -2718,6 +2736,464 @@ def print_result(num, title, status, detail, checks):
     for name, ok in checks or []:
         tag = "OK " if ok is True else ("NG " if ok is False else "UNV")
         print(f"      {tag} {name}", flush=True)
+
+
+# ---------------------------------------------------------------------------
+# 40~46: 사이클 6 (11프레임 시트, 점프·숙이기, 연결 끊김 수정). frontend handoff 7장 1~6 + 시트/manifest 검사
+# ---------------------------------------------------------------------------
+DEBUG_DROP_JS = """([rid, uid, fail]) => {
+  const bc = new BroadcastChannel('mushroom:room:' + rid);
+  bc.postMessage({ type: 'debug-drop', user_id: uid, fail: fail });
+  setTimeout(() => bc.close(), 300);
+}"""
+# 매 프레임 상태를 기록한다 (nick이 없으면 나, 있으면 그 닉네임의 원격 캐릭터)
+REC_JS = """([ms, nick]) => {
+  window.__rec = [];
+  window.__recDone = false;
+  const t0 = performance.now();
+  const step = () => {
+    const st = window.__mushroom.getState();
+    const p = nick ? (st.players || []).find((q) => q.nickname === nick) : st.me;
+    if (p) window.__rec.push({ t: performance.now(), x: p.x, y: p.y, s: p.s, anim: p.anim, frame: p.frame });
+    if (performance.now() - t0 < ms) requestAnimationFrame(step);
+    else window.__recDone = true;
+  };
+  requestAnimationFrame(step);
+}"""
+
+
+def adapter_stats(pg):
+    return ((state(pg).get("net") or {}).get("adapter")) or {}
+
+
+def link_stats(pg):
+    return ((state(pg).get("net") or {}).get("link")) or {}
+
+
+def focus_canvas(pg):
+    pg.evaluate("() => { const c = document.querySelector('[data-testid=game-canvas]'); if (c) c.focus({ preventScroll: true }); }")
+
+
+def start_rec(pg, ms, nick=None):
+    pg.evaluate(REC_JS, [ms, nick])
+
+
+def rec_rows(pg):
+    return pg.evaluate("() => window.__rec || []")
+
+
+def wait_rec_done(pg, timeout=8.0):
+    return wait_until(lambda: pg.evaluate("() => !!window.__recDone"), timeout, 0.1)
+
+
+def collapse(seq):
+    out = []
+    for v in seq:
+        if not out or out[-1] != v:
+            out.append(v)
+    return out
+
+
+def pair_in_room(ctx, col, nick_a, nick_b, room):
+    """A가 방을 만들고 B가 들어온다. 서로 보일 때까지 기다린다. 반환 (a, b, room_id)."""
+    a = open_as(ctx, col, "A", "a")
+    create_profile(a, nick_a)
+    rid = ui_create_room(a, room)
+    b = open_as(ctx, col, "B", "b")
+    create_profile(b, nick_b)
+    enter_from_lobby(b, room)
+    wait_until(lambda: find_player(a, nick_b) is not None, 6)
+    wait_until(lambda: find_player(b, nick_a) is not None, 6)
+    return a, b, rid
+
+
+def jump_trace(rows, key):
+    """녹화 샘플 -> 최고 높이(440 - 최소 y), 체공 시간(첫 공중 샘플 ~ 첫 지상 샘플), 상태 순서, 상태별 프레임.
+    key = 's'(로컬 물리 상태) 또는 'anim'(화면이 쓰는 애니메이션 이름)."""
+    ys = [r["y"] for r in rows]
+    seq = collapse([r[key] for r in rows])
+    frames = {}
+    for r in rows:
+        frames.setdefault(r["anim"], set()).add(r["frame"])
+    air = [i for i, r in enumerate(rows) if r["anim"] in ("jump", "fall")]
+    air_s = None
+    if air:
+        j = min(air[-1] + 1, len(rows) - 1)
+        air_s = (rows[j]["t"] - rows[air[0]]["t"]) / 1000
+    return {
+        "apex": round(440 - min(ys), 1) if ys else None,
+        "air_s": None if air_s is None else round(air_s, 3),
+        "seq": seq,
+        "frames": {k: sorted(v, key=lambda z: -1 if z is None else z) for k, v in frames.items()},
+        "y_end": ys[-1] if ys else None,
+    }
+
+
+@case(40, "아바타 시트 (사이클 6): manifest frames 11개(끝 jump/fall/crouch), animations jump[8]/fall[9]/crouch[10] 200ms, 기존 idle_front[0,1]/idle[2]/walk[3..6] 유지, files 전 PNG 1584x192 RGBA, 8~10 프레임 비어 있지 않고 서로 다름")
+def t40(browser, col):
+    import numpy as np
+    from PIL import Image
+
+    checks = []
+    fr = MANIFEST.get("frames") or []
+    an = MANIFEST.get("animations") or {}
+    checks.append((f"frames {len(fr)}개, 8~10 = jump, fall, crouch (실제 끝 {fr[8:11]})", len(fr) == 11 and fr[8:11] == ["jump", "fall", "crouch"]))
+    for name, idx in (("jump", 8), ("fall", 9), ("crouch", 10)):
+        e = an.get(name) or {}
+        checks.append((f"animations.{name} = frames [{idx}], 200ms (실제 {e})", e.get("frames") == [idx] and e.get("ms") == 200))
+    got = {k: (an.get(k) or {}).get("frames") for k in ("idle_front", "idle", "walk")}
+    checks.append((f"기존 애니메이션 유지: idle_front [0,1], idle [2], walk [3,4,5,6] (실제 {got})",
+                   got == {"idle_front": [0, 1], "idle": [2], "walk": [3, 4, 5, 6]}))
+    fm = MANIFEST.get("frame") or {}
+    anc = MANIFEST.get("anchor") or {}
+    checks.append((f"프레임 144x192, 기준점 (72,180) 유지 (실제 {fm}, {anc})", fm == {"w": 144, "h": 192} and anc == {"x": 72, "y": 180}))
+    paths = [(layer, pid) for layer, ids in (MANIFEST.get("files") or {}).items() for pid in ids]
+    bad, weak, same = [], [], []
+    for layer, pid in paths:
+        p = ROOT / "assets/avatar" / layer / f"{pid}.png"
+        if not p.exists():
+            bad.append(f"{layer}/{pid} 없음")
+            continue
+        im = Image.open(p)
+        if im.size != (1584, 192) or im.mode != "RGBA":
+            bad.append(f"{layer}/{pid} {im.size} {im.mode}")
+            continue
+        arr = np.asarray(im)
+        fs = []
+        for idx in (8, 9, 10):
+            f = arr[:, idx * 144:(idx + 1) * 144, :]
+            if int((f[:, :, 3] > 0).sum()) < 500:
+                weak.append(f"{layer}/{pid}#{idx}")
+            fs.append(f)
+        if np.array_equal(fs[0], fs[1]) or np.array_equal(fs[1], fs[2]) or np.array_equal(fs[0], fs[2]):
+            same.append(f"{layer}/{pid}")
+    checks.append((f"files 전 PNG {len(paths)}장 모두 1584x192 RGBA (문제 {bad[:3] or '없음'})", bool(paths) and not bad))
+    checks.append((f"8/9/10 프레임 비어 있지 않음, 알파 500px 이상 (약함 {weak[:3] or '없음'})", not weak))
+    checks.append((f"8/9/10 프레임이 서로 다름 (같은 파일 {same[:3] or '없음'})", not same))
+    return verdict(checks)
+
+
+@case(41, "Presence track 횟수 (로컬, 1280x800): 입장 시 track 1, 새 멤버 입장에 기존 멤버 track 증가 없음, 10초 이동·점프 후에도 1, move 10회/초 이하, 재연결 1회(debug-drop)마다 +1")
+def t41(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a = open_as(ctx, col, "A", "a")
+        create_profile(a, "트랙41A")
+        rid = ui_create_room(a, "트랙41")
+        b = open_as(ctx, col, "B", "b")
+        create_profile(b, "트랙41B")
+        enter_from_lobby(b, "트랙41")
+        wait_until(lambda: find_player(a, "트랙41B") is not None, 6)
+        time.sleep(0.5)
+        checks.append((f"방장 입장 후 track = 1 (실제 {adapter_stats(a).get('track')})", adapter_stats(a).get("track") == 1))
+        checks.append((f"B 입장 track = 1 (실제 {adapter_stats(b).get('track')})", adapter_stats(b).get("track") == 1))
+        checks.append((f"새 멤버 입장 후 A의 track 그대로 1 (실제 {adapter_stats(a).get('track')})", adapter_stats(a).get("track") == 1))
+        focus_canvas(a)
+        time.sleep(0.2)
+        mv0 = adapter_stats(a).get("moveSent", 0)
+        t0 = time.time()
+        while time.time() - t0 < 10:
+            hold_key(a, "ArrowRight", 300)
+            a.keyboard.press("Space")
+            hold_key(a, "ArrowLeft", 300)
+            a.keyboard.press("KeyW")
+        el = time.time() - t0
+        ad = adapter_stats(a)
+        n_move = ad.get("moveSent", 0) - mv0
+        checks.append((f"10초 이동+점프 후 track 그대로 1 (실제 {ad.get('track')})", ad.get("track") == 1))
+        checks.append((f"move 송신 {n_move}회 / {el:.1f}초 = {n_move / el:.1f}회/초 (10회/초 이하, 움직임 확인 위해 20회 이상)",
+                       20 <= n_move <= 10 * el + 2))
+        uid_a = state(a)["userId"]
+        tr0 = adapter_stats(a).get("track")
+        a.evaluate(DEBUG_DROP_JS, [rid, uid_a, 0])
+        wait_until(lambda: state(a).get("connection") != "connected", 3)
+        wait_conn(a, "connected", 15)
+        tr1 = adapter_stats(a).get("track")
+        checks.append((f"재연결 1회 후 track +1 (실제 {tr0} -> {tr1})", tr1 - tr0 == 1))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(42, "점프 궤적 (1280x800, 로컬 + 원격 B 화면): 최고 높이 104~106, 체공 0.60~0.70초, 착지 y=440, 상태 idle→jump→fall→idle, 프레임 jump 8 / fall 9 / idle 2, 원격 최고 103~107")
+def t42(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, _ = pair_in_room(ctx, col, "점프42A", "점프42B", "점프42")
+        focus_canvas(a)
+        time.sleep(0.4)
+        m = state(a)["me"]
+        checks.append((f"시작: 지면 y=440, idle (y {m['y']}, s {m['s']})", m["y"] == 440 and m["s"] == "idle"))
+        start_rec(a, 2400)
+        start_rec(b, 2400, "점프42A")
+        time.sleep(0.2)
+        a.keyboard.press("ArrowUp")
+        wait_rec_done(a, 6)
+        wait_rec_done(b, 6)
+        la = jump_trace(rec_rows(a), "s")
+        ra = jump_trace(rec_rows(b), "anim")
+        checks.append((f"로컬 최고 높이 {la['apex']} (기대 104~106)", la["apex"] is not None and 104 <= la["apex"] <= 106))
+        checks.append((f"로컬 체공 {la['air_s']}초 (기대 0.60~0.70)", la["air_s"] is not None and 0.60 <= la["air_s"] <= 0.70))
+        checks.append((f"로컬 상태 순서 {la['seq']} (기대 idle, jump, fall, idle)", la["seq"] == ["idle", "jump", "fall", "idle"]))
+        checks.append((f"로컬 착지 y {la['y_end']} (기대 440)", la["y_end"] == 440))
+        checks.append((f"로컬 프레임 jump {la['frames'].get('jump')} / fall {la['frames'].get('fall')} / idle {la['frames'].get('idle')} (기대 [8] / [9] / [2])",
+                       la["frames"].get("jump") == [8] and la["frames"].get("fall") == [9] and set(la["frames"].get("idle", [2])) == {2}))
+        rs = ra["seq"]
+        checks.append((f"원격 최고 높이 {ra['apex']} (기대 103~107)", ra["apex"] is not None and 103 <= ra["apex"] <= 107))
+        checks.append((f"원격 체공 {ra['air_s']}초 (기대 0.55~0.75)", ra["air_s"] is not None and 0.55 <= ra["air_s"] <= 0.75))
+        checks.append((f"원격 상태 순서 {rs} (jump 다음 fall, walk·crouch 없음)",
+                       "jump" in rs and "fall" in rs and rs.index("jump") < rs.index("fall") and "walk" not in rs and "crouch" not in rs))
+        checks.append((f"원격 착지 y {ra['y_end']} (기대 440)", ra["y_end"] == 440))
+        checks.append((f"원격 프레임 jump {ra['frames'].get('jump')} / fall {ra['frames'].get('fall')} (기대 [8] / [9])",
+                       ra["frames"].get("jump") == [8] and ra["frames"].get("fall") == [9]))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(43, "숙이기 (1280x800): ↓/S 누르는 동안 s=crouch·frame 10, 숙인 채 ←/→ x 불변, 숙인 채 Space 점프 없음, 해제 후 idle(frame 2), 원격 B 화면에서 A의 crouch 프레임 10")
+def t43(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, _ = pair_in_room(ctx, col, "숙이기43A", "숙이기43B", "숙이기43")
+        focus_canvas(a)
+        time.sleep(0.4)
+        m0 = state(a)["me"]
+        checks.append((f"시작: 지면 idle (y {m0['y']}, s {m0['s']})", m0["y"] == 440 and m0["s"] == "idle"))
+        start_rec(b, 3000, "숙이기43A")
+        a.keyboard.down("ArrowDown")
+        time.sleep(0.25)
+        m1 = state(a)["me"]
+        checks.append((f"↓ 누르는 동안: s crouch, frame 10 (실제 {m1['s']}, {m1['frame']})", m1["s"] == "crouch" and m1["frame"] == 10))
+        a.keyboard.down("ArrowRight")
+        time.sleep(0.35)
+        m2 = state(a)["me"]
+        a.keyboard.up("ArrowRight")
+        time.sleep(0.1)
+        checks.append((f"숙인 채 → 키: x 불변 (x {m1['x']} -> {m2['x']}), s crouch", abs(m2["x"] - m1["x"]) < 0.5 and m2["s"] == "crouch"))
+        a.keyboard.press("Space")
+        time.sleep(0.35)
+        m3 = state(a)["me"]
+        checks.append((f"숙인 채 Space: 점프 없음 (y {m3['y']}, s {m3['s']})", m3["y"] == 440 and m3["s"] == "crouch"))
+        a.keyboard.up("ArrowDown")
+        time.sleep(0.3)
+        m4 = state(a)["me"]
+        checks.append((f"↓ 뗌: idle 복귀, frame 2 (s {m4['s']}, frame {m4['frame']})", m4["s"] == "idle" and m4["frame"] == 2))
+        wait_rec_done(b, 6)
+        cf = sorted({r["frame"] for r in rec_rows(b) if r["anim"] == "crouch"}, key=lambda z: -1 if z is None else z)
+        checks.append((f"원격 B 화면: A의 crouch 프레임 {cf} (기대 [10])", cf == [10]))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(44, "채팅 입력 중 이동·점프·숙이기 키 9종 무시(글자만 입력), 캔버스 포커스 중 Space/↑/↓ 페이지 스크롤 없음, 로그 목록 포커스 중 → 는 캐릭터 이동 안 함, 버튼 포커스 중 Space = 버튼 동작 (1280x800)")
+def t44(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a = open_as(ctx, col, "A", "a")
+        create_profile(a, "키입력44")
+        ui_create_room(a, "키44")
+        time.sleep(0.4)
+        m0 = state(a)["me"]
+        inp = a.get_by_test_id("chat-input")
+        inp.click()
+        keys = ["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "Space", "KeyA", "KeyD", "KeyW", "KeyS"]
+        bad = []
+        for k in keys:
+            a.keyboard.down(k)
+            time.sleep(0.12)
+            m = state(a)["me"]
+            if abs(m["x"] - m0["x"]) >= 0.5 or m["y"] != 440 or m["s"] != "idle":
+                bad.append((k, m["x"], m["y"], m["s"]))
+            a.keyboard.up(k)
+            time.sleep(0.05)
+        checks.append((f"채팅 입력 중 이동·점프·숙이기 키 9종 무시 (위반 {bad or '없음'})", not bad))
+        val = inp.input_value()
+        checks.append((f"글자 키만 입력됨 (값 {val!r}, 기대 ' adws')", val == " adws"))
+        still = a.evaluate("() => document.activeElement && document.activeElement.getAttribute('data-testid')")
+        checks.append((f"키를 눌러도 입력 칸 포커스 유지 (실제 {still})", still == "chat-input"))
+
+        # 페이지 스크롤: 스크롤 가능한 페이지로 만든 뒤 캔버스 포커스에서 Space/↓/↑를 누른다
+        a.evaluate("() => { const d = document.createElement('div'); d.id = 'qa-spacer'; d.style.height = '3000px'; document.body.appendChild(d); window.scrollTo(0, 0); }")
+        scrollable = a.evaluate("() => document.documentElement.scrollHeight > window.innerHeight + 100")
+        focus_canvas(a)
+        time.sleep(0.2)
+        for k in ("ArrowDown", "Space", "ArrowUp"):
+            a.keyboard.press(k)
+            time.sleep(0.15)
+        sy = a.evaluate("() => window.scrollY")
+        a.evaluate("() => { const d = document.getElementById('qa-spacer'); if (d) d.remove(); }")
+        if scrollable:
+            checks.append((f"캔버스 포커스: Space/↓/↑ 페이지 스크롤 없음 (scrollY {sy})", sy == 0))
+        else:
+            checks.append(("캔버스 포커스 스크롤 검사: 페이지가 스크롤되지 않는 구조라 미검증", None))
+        time.sleep(0.8)
+
+        # 로그 목록 포커스 중 방향키는 목록에 양보 (캐릭터 이동 안 함)
+        lg = a.get_by_test_id("chat-log")
+        if lg.count() and lg.is_visible():
+            lg.focus()
+            x1 = state(a)["me"]["x"]
+            a.keyboard.down("ArrowRight")
+            time.sleep(0.3)
+            a.keyboard.up("ArrowRight")
+            x2 = state(a)["me"]["x"]
+            checks.append((f"로그 목록 포커스 중 →: 캐릭터 이동 안 함 (x {x1} -> {x2})", abs(x2 - x1) < 0.5))
+        else:
+            checks.append(("로그 목록 포커스 검사: 로그 목록이 보이지 않아 미검증", None))
+
+        # 버튼 포커스 중 Space는 버튼 동작 (점프 아님)
+        fold = a.get_by_test_id("log-fold")
+        if fold.count() and fold.is_visible():
+            before = fold.get_attribute("aria-expanded")
+            fold.focus()
+            a.keyboard.press("Space")
+            time.sleep(0.3)
+            after = fold.get_attribute("aria-expanded")
+            m = state(a)["me"]
+            checks.append((f"버튼 포커스 중 Space = 버튼 동작 (aria-expanded {before} -> {after}), 점프 없음 (y {m['y']}, s {m['s']})",
+                           before != after and m["y"] == 440 and m["s"] == "idle"))
+        else:
+            checks.append(("버튼 포커스 Space 검사: 접기 버튼이 보이지 않아 미검증", None))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(45, "360x640 모바일 (dpr2, 터치): 버튼 4개(move-left, move-right, crouch, jump) 보임·높이 44 이상·겹침 0·캔버스 아래/채팅 위·가로 안, 캔버스 360x508, 가로 스크롤 없음, 중앙점 히트 = 해당 버튼, 탭 점프, 누르고 있기 숙이기 + 오른쪽 이동 없음")
+def t45(browser, col):
+    ctx = new_ctx(browser, viewport={"width": 360, "height": 640}, device_scale_factor=2, is_mobile=True, has_touch=True)
+    checks = []
+    try:
+        a = open_as(ctx, col, "A", "a")
+        create_profile(a, "모바일45")
+        ui_create_room(a, "모바일45방")
+        time.sleep(0.6)
+        names = ["move-left", "move-right", "crouch", "jump"]
+        bx = {t: a.get_by_test_id(t).bounding_box() for t in names + ["game-canvas", "chat-input"]}
+        if any(v is None for v in bx.values()):
+            checks.append((f"보이지 않는 요소: {[k for k, v in bx.items() if v is None]}", False))
+            return verdict(checks)
+        cv = bx["game-canvas"]
+        checks.append((f"캔버스 360x508 유지 (실제 {cv['width']:.0f}x{cv['height']:.0f})", abs(cv["width"] - 360) <= 1 and abs(cv["height"] - 508) <= 1))
+        hs = {t: round(bx[t]["height"], 1) for t in names}
+        checks.append((f"터치 버튼 4개 보임, 높이 44 이상 (실제 {hs})", all(h >= 44 for h in hs.values())))
+
+        def ov(p, q):
+            return (min(p["x"] + p["width"], q["x"] + q["width"]) - max(p["x"], q["x"]) > 0.5
+                    and min(p["y"] + p["height"], q["y"] + q["height"]) - max(p["y"], q["y"]) > 0.5)
+
+        pairs = [f"{p}~{q}" for i, p in enumerate(names) for q in names[i + 1:] if ov(bx[p], bx[q])]
+        checks.append((f"버튼끼리 겹침 0 (겹친 쌍 {pairs or '없음'})", not pairs))
+        below = all(bx[t]["y"] >= cv["y"] + cv["height"] - 0.5 for t in names)
+        above_chat = all(bx[t]["y"] + bx[t]["height"] <= bx["chat-input"]["y"] + 0.5 for t in names)
+        checks.append(("버튼은 캔버스 아래, 채팅 입력 위", below and above_chat))
+        inside = all(bx[t]["x"] >= -0.5 and bx[t]["x"] + bx[t]["width"] <= 360.5 for t in names)
+        checks.append(("버튼 가로 범위 0~360 안", inside))
+        sw = a.evaluate("() => document.documentElement.scrollWidth")
+        checks.append((f"가로 스크롤 없음 (scrollWidth {sw}, 기대 360 이하)", sw <= 360))
+        hits = {}
+        for t in names:
+            c = bx[t]
+            hits[t] = a.evaluate(
+                "([x, y]) => { const el = document.elementFromPoint(x, y); const h = el && el.closest('[data-testid]'); return h ? h.getAttribute('data-testid') : null; }",
+                [c["x"] + c["width"] / 2, c["y"] + c["height"] / 2])
+        checks.append((f"버튼 중앙점 히트 = 해당 버튼 (실제 {hits})", all(hits[t] == t for t in names)))
+
+        a.get_by_test_id("jump").tap()
+        seen = []
+        t0 = time.time()
+        while time.time() - t0 < 1.0:
+            seen.append(state(a)["me"]["s"])
+            time.sleep(0.03)
+        mj = state(a)["me"]
+        checks.append((f"탭 점프: jump 관측, 착지 후 y 440·idle (관측 순서 {collapse(seen)}, 최종 y {mj['y']} s {mj['s']})",
+                       "jump" in seen and mj["y"] == 440 and mj["s"] == "idle"))
+
+        crouch = a.get_by_test_id("crouch")
+        right = a.get_by_test_id("move-right")
+        crouch.dispatch_event("pointerdown")
+        time.sleep(0.25)
+        s1 = state(a)["me"]
+        right.dispatch_event("pointerdown")
+        time.sleep(0.35)
+        s2 = state(a)["me"]
+        right.dispatch_event("pointerup")
+        crouch.dispatch_event("pointerup")
+        time.sleep(0.3)
+        s3 = state(a)["me"]
+        checks.append((f"누르고 있기 숙이기: s crouch, frame 10 (실제 {s1['s']}, {s1['frame']})", s1["s"] == "crouch" and s1["frame"] == 10))
+        checks.append((f"숙인 채 오른쪽 버튼: x 불변 (x {s1['x']} -> {s2['x']})", abs(s2["x"] - s1["x"]) < 0.5 and s2["s"] == "crouch"))
+        checks.append((f"손 뗌: idle 복귀 (s {s3['s']})", s3["s"] == "idle"))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(46, "재연결 (local 훅 debug-drop fail=2, 1280x800): 끊김 배너 -> 약 7초 뒤 자동 복구(배너 숨김), 대기 4초 구간 '지금 연결' 표시, 시도마다 join→join-ok→open, join 3·open 3·drops +1·track +1, 로그 끊김/다시 연결, 복구 후 이동 반영")
+def t46(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, rid = pair_in_room(ctx, col, "재연결46A", "재연결46B", "재연결46")
+        time.sleep(0.3)
+        lk0 = link_stats(b)
+        ad0 = adapter_stats(b)
+        uid_b = state(b)["userId"]
+        b.evaluate(DEBUG_DROP_JS, [rid, uid_b, 2])
+        banner = b.get_by_test_id("game-banner")
+        shown = wait_until(lambda: banner.is_visible(), 3)
+        checks.append(("끊김 직후 배너 표시 (game-banner)", bool(shown)))
+        t0 = time.time()
+        conns = []
+        btn_seen = False
+        recovered = False
+        while time.time() - t0 < 15:
+            c = state(b).get("connection")
+            if not conns or conns[-1] != c:
+                conns.append(c)
+            if b.get_by_test_id("reconnect-button").is_visible():
+                btn_seen = True
+            if c == "connected" and not banner.is_visible():
+                recovered = True
+                break
+            time.sleep(0.1)
+        dt = time.time() - t0
+        checks.append((f"자동 복구: 배너 숨김 + connected ({dt:.1f}초, 기준 15초 이내, 연결 상태 순서 {conns})", recovered))
+        checks.append(("'지금 연결' 버튼: 대기 4초 이상 구간에서 표시 (설계 RECONNECT_BUTTON_MIN_MS 4000)", btn_seen))
+        time.sleep(0.4)
+        lk1 = link_stats(b)
+        ad1 = adapter_stats(b)
+        dj = lk1.get("joins", 0) - lk0.get("joins", 0)
+        do = lk1.get("opens", 0) - lk0.get("opens", 0)
+        dd = lk1.get("drops", 0) - lk0.get("drops", 0)
+        dtr = ad1.get("track", 0) - ad0.get("track", 0)
+        checks.append((f"join 3회 (실패 2 + 성공 1) (실제 {dj})", dj == 3))
+        checks.append((f"open 3회 (실제 {do})", do == 3))
+        checks.append((f"drops +1 (실제 {dd})", dd == 1))
+        checks.append((f"Presence track +1 (성공한 구독 1회, 실패 시도에는 track 없음) (실제 {dtr})", dtr == 1))
+        evs = lk1.get("events") or []
+        last_drop = max((i for i, e in enumerate(evs) if e and e[0] == "drop"), default=-1)
+        seq = [e[0] for e in evs[last_drop + 1:] if e and e[0] in ("join", "join-ok", "open", "open-ok", "open-fail", "join-fail")]
+        exp = ["join", "join-ok", "open", "open-fail", "join", "join-ok", "open", "open-fail", "join", "join-ok", "open", "open-ok"]
+        checks.append((f"시도 순서 join→join-ok→open (실패 2회 후 성공) (실제 {seq})", seq == exp))
+        logs = [it["text"] for it in log_items(b)]
+        checks.append(("로그: '연결이 끊어졌어요' 줄", any("연결이 끊어졌어요" in t for t in logs)))
+        checks.append(("로그: '다시 연결됐어요' 줄", any("다시 연결됐어요" in t for t in logs)))
+        px = lambda: (find_player(b, "재연결46A") or {}).get("x", 0)  # noqa: E731
+        xa0 = px()
+        focus_canvas(a)
+        hold_key(a, "ArrowRight", 600)
+        moved = wait_until(lambda: px() - xa0 >= 50, 4)
+        checks.append((f"복구 후 A 이동이 B 화면에 반영 (dx {px() - xa0:.0f}, 기준 50 이상)", bool(moved)))
+    finally:
+        ctx.close()
+    return verdict(checks)
 
 
 def main():

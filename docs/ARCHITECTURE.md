@@ -30,7 +30,9 @@ docs/            문서
 5. 실시간 (사이클 4): 방마다 **비공개 채널** `room:<room_id>` (`{ config: { private: true } }`, Realtime Authorization).
    - `realtime.messages` RLS: 해당 방 `room_members`에 본인 행이 있는 authenticated만 broadcast/presence 읽기·쓰기 허용. 공개 채널 `map:village`는 폐기.
    - Presence: key = user_id, 상태 = `{ user_id, nickname, avatar, x, y }`.
-   - Broadcast `move` (클라이언트 송신): `{ user_id, x, y, dir }`, 최대 10회/초, `dir`은 `'left' | 'right'`.
+   - Broadcast `move` (클라이언트 송신): `{ user_id, x, y, dir, s }`, 최대 10회/초, `dir`은 `'left' | 'right'`, `s`(사이클 6)는 `'idle' | 'walk' | 'jump' | 'fall' | 'crouch'`. `y`는 발 위치(월드, 지면 440, 점프 중 작아짐). `s`가 없으면 `idle/walk`로 추정.
+   - (사이클 6) Presence `track()`은 입장 시와 닉네임/아바타 변경 시에만 호출한다(위치 갱신에 쓰지 않음 — Supabase Presence 전송 한도 초과로 채널이 끊긴 원인). Presence 상태의 x/y는 입장 시점 값일 뿐이며, 새 멤버가 들어오면(presence join) 기존 멤버가 자기 현재 상태를 `move`로 1회 보낸다. track 호출은 최소 2초 간격.
+   - (사이클 6) 채널 구독은 반드시 `join_room` 성공(`'OK'`) 후. 채널 오류/종료 시 지수 백오프(1, 2, 4, 8, 16, 최대 30초)로 `join_room` → 재구독. 탭이 다시 보이면 즉시 상태 점검.
    - Broadcast `chat` (**서버 송신만**): 클라이언트는 `send_message` RPC를 호출하고, DB가 저장 후 같은 채널로 `{ id, user_id, nickname, text, created_at }`를 보낸다(발신자·닉네임은 서버가 멤버 행에서 채움 → 채팅 위장 불가). 클라이언트가 직접 보낸 `chat` 이벤트는 무시한다.
 6. 실행 모드 두 가지 (src/client/config.js로 전환):
    - supabase 모드: `SUPABASE_URL`, `SUPABASE_ANON_KEY`가 채워진 경우.
@@ -60,6 +62,8 @@ docs/            문서
 - 아바타 프레임: 월드 96x128 단위 = 시트 프레임 **144x192 px**, 기준점 **(72, 180) px** = 발 중앙 바닥(월드 (48,120)). 캐릭터 키(머리카락 포함)는 월드 약 90~100단위.
 - 시트: 가로 8프레임 1152x192, 순서 `front, front_b, side, walk0, walk1, walk2, walk3, back` (프레임 i의 x = 144i). 오른쪽을 보는 것이 기본, 왼쪽은 프레임 좌우 반전(기준점 x 유지).
   - 애니메이션: `idle_front` = [0,1] 600ms(숨쉬기), `idle` = [2](인게임 정지), `walk` = [3,4,5,6] 150ms.
+  - (사이클 6) 프레임 추가: 8 = `jump`(상승, 무릎 당기고 팔 위로), 9 = `fall`(하강, 다리 펴고 팔 벌림), 10 = `crouch`(숙이기, 정지). 시트 11프레임 1584x192. manifest `frames`/`animations`에 `jump` [8], `fall` [9], `crouch` [10] 추가. 기준점(72,180)은 모든 프레임 동일(점프 높이는 프런트가 y로 표현, 프레임은 포즈만). 프런트는 manifest에 해당 애니메이션이 없으면 idle 프레임으로 대체.
+  - (사이클 6) 조작: 점프 = ↑ / W / Space(채팅 입력 중 아님), 숙이기 = ↓ / S 누르는 동안(지면에서만, 숙인 동안 이동 불가). 물리(월드 단위): 중력 2000/s², 점프 초속 650(최고 높이 약 105), 공중 좌우 이동 허용, 착지 시 y=440. 모바일 터치: 점프·숙이기 버튼 추가.
 - 파츠 id: 사이클 3과 **같은 7개 파츠 키와 같은 id 집합**(skin 3, face 4, hair 8, top 6, bottom 5, shoes 4, hat 5+none)과 같은 프리셋 6종을 유지한다. 저장된 프로필이 그대로 동작해야 한다.
 - 레이어: `assets/avatar/manifest.json`의 `layerOrder`가 정본. 각 항목 `{ "layer": "<폴더>", "part": "<파츠 키>", "blend": "source-over" | "source-atop" }`. 프런트는 순서대로 `assets/avatar/<layer>/<id>.png`(id = 프로필의 해당 파츠 값)를 해당 blend로 합성한다. 파일이 없으면 건너뛴다(예: hat none, 그림자 없는 파츠). 그림자 레이어(`shade_*`)는 `source-atop`.
 - 매니페스트: `{ "frame":{"w":144,"h":192}, "anchor":{"x":72,"y":180}, "density":1.5, "frames":[..8개], "animations":{..}, "layerOrder":[..], "parts":{..}, "presets":[..] }`.

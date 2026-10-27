@@ -72,7 +72,7 @@ export const PART_KEYS = Object.freeze(['skin', 'hair', 'face', 'top', 'bottom',
 // manifest layerOrder가 없거나 깨졌을 때의 기본 합성 순서 (art-20261015-voxel-final.md 3장 표와 같음)
 export const DEFAULT_LAYER_ORDER = Object.freeze([
   ['hair_back', 'hair', 'source-over'], ['top_back', 'top', 'source-over'], ['skin', 'skin', 'source-over'],
-  ['face', 'face', 'source-over'], ['bottom', 'bottom', 'source-over'], ['shoes', 'shoes', 'source-over'],
+  ['face', 'face', 'source-over'], ['shoes_under', 'shoes', 'source-over'], ['bottom', 'bottom', 'source-over'], ['shoes', 'shoes', 'source-over'],
   ['shade_top', 'top', 'source-atop'], ['top', 'top', 'source-over'], ['shade_hair', 'hair', 'source-atop'],
   ['hat_back', 'hat', 'source-over'], ['hair_front', 'hair', 'source-over'], ['shade_hat', 'hat', 'source-atop'],
   ['hat', 'hat', 'source-over'],

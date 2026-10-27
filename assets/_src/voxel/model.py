@@ -1055,7 +1055,7 @@ PROXIES = {'body': proxy_body, 'legs': proxy_legs, 'hairshell': proxy_hairshell}
 #   squash       : (sy, sxz) 몸통 뼈 상자를 엉덩이 높이 기준으로 세로 sy, 가로/깊이 sxz 배
 #   skirt_lift   : 치마 단(sway='skirt')을 수평으로 되돌리고 위로 올림 (숙이기: 치마가 지면을 뚫지 않게)
 HANG_CUTS = (7.7, -3.8)
-NEW_FRAMES = ('jump', 'fall', 'crouch')
+NEW_FRAMES = ('jump', 'fall', 'prone')
 
 
 def pose_frame(name):
@@ -1063,7 +1063,7 @@ def pose_frame(name):
     p = dict(breathe=0.0, arm={1: 0.0, -1: 0.0}, leg={1: 0.0, -1: 0.0}, shin={1: 0.0, -1: 0.0},
              splay=4.0, head=0.0, lean=0.0,
              pivot=None, sink=0.0, ground=None, feet_z=None, legsplay=None, asplay=None, hang=None, cape=None,
-             skirt_lift=None, squash=None, hang_cuts=None)
+             skirt_lift=None, squash=None, hang_cuts=None, fit=False)
     if name in ('front', 'front_b', 'back'):
         p['legsplay'] = 3.0                      # 정면/뒤: 살짝 벌린 A 자세 (시안)
         p['splay'] = 6.0
@@ -1086,9 +1086,12 @@ def pose_frame(name):
         'fall': dict(leg={1: 10.0, -1: -12.0}, shin={1: -16.0, -1: -8.0}, legsplay=6.0, arm={1: 40.0, -1: -35.0},
                      asplay={1: 62.0, -1: 62.0}, lean=-4.0, head=3.0, pivot='hip', ground=1.0,
                      hang=24.0, cape=40.0),
-        'crouch': dict(leg={1: 106.0, -1: 102.0}, shin={1: -128.0, -1: -124.0}, arm={1: 72.0, -1: 66.0},
-                       splay=8.0, lean=24.0, head=-20.0, pivot='hip', sink=0.5, feet_z=1.0, squash=(0.85, 1.05),
-                       hang=(2.0, 75.0), hang_cuts=(7.7, -12.2), cape=40.0, skirt_lift=3.0),
+        # 사이클 8: 엎드리기 (메이플식). 몸통을 앞으로 눕히고(엉덩이 기준), 머리는 들어 앞을 보고,
+        # 팔은 앞으로 뻗어 턱 아래에 받치고, 다리는 뒤로 편다. fit=True: 마네킹 최저점을 y=0, 몸 앞뒤 중심을 z=0.
+        'prone': dict(leg={1: -86.0, -1: -82.0}, shin={1: -62.0, -1: -84.0}, arm={1: 172.0, -1: 166.0},
+                      asplay={1: 22.0, -1: 22.0}, legsplay=4.0, lean=88.0, head=-80.0, pivot='hip', fit=True,
+                      head_drop=(0, -4.5, 1.0),
+                      hang=(70.0, 92.0), hang_cuts=(7.7, -3.8), cape=88.0),
     }
     if name in POSES6:
         p.update(POSES6[name])
@@ -1131,7 +1134,8 @@ def bone_xf(pose):
         xf['torso'] = (Rl, np.array([0, b + LEGX + br * 0.5, 0.0]))
     tor_R, tor_t = xf['torso']
     sq = (lambda v: squash_pt(v, pose['squash'])) if pose.get('squash') else (lambda v: v)
-    xf['head'] = (Rl @ rot_x(pose['head']), tor_t + Rl @ sq(stretch_pt(HEAD_PIVOT) + [0, br * 0.5, 0]))
+    xf['head'] = (Rl @ rot_x(pose['head']), tor_t + Rl @ sq(stretch_pt(HEAD_PIVOT) + [0, br * 0.5, 0])
+                  + np.array(pose.get('head_drop') or (0, 0, 0), float))
     for sg in (1, -1):
         spl = pose['asplay'][sg] if pose.get('asplay') else pose['splay']
         Ra = Rl @ rot_z(sg * spl) @ rot_x(-pose['arm'][sg])
@@ -1140,7 +1144,22 @@ def bone_xf(pose):
         hip = np.array([sg * HIP[0], HIP[1] + LEGX + b, dz])
         xf['leg%+d' % sg] = (Rt, hip)
         xf['shin%+d' % sg] = (Rs, hip + Rt @ np.array(KNEE))
+    if pose.get('fit'):
+        lo, zs = _fit_extent(xf, pose)
+        sh = np.array([0, -lo, -zs])
+        xf = {k: (R, t + sh) for k, (R, t) in xf.items()}
     return xf
+
+
+def _fit_extent(xf, pose):
+    """마네킹(skin) 상자 꼭짓점의 최저 y 와 z 중심 (엎드리기 접지/가운데 맞춤)."""
+    pts = []
+    sgn = np.array([[i, j, k] for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)], float)
+    for d in squash_defs(skin('light'), pose):
+        R, t = xf[d['bone']]
+        pts.append(t + (np.asarray(d['c'], float) + sgn * np.asarray(d['h'], float)) @ R.T)
+    pts = np.concatenate(pts)
+    return float(pts[:, 1].min()), float((pts[:, 2].min() + pts[:, 2].max()) / 2)
 
 
 def squash_pt(v, sq):

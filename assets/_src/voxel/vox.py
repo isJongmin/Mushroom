@@ -95,7 +95,7 @@ def _hash3(a, b, c):
 
 # ---------------------------------------------------------------- 점유 격자
 class Grid:
-    def __init__(self, boxes, V, lo=(-36, -16, -36), hi=(36, 98, 36)):
+    def __init__(self, boxes, V, lo=(-48, -16, -48), hi=(48, 98, 48)):
         self.lo = np.array(lo, float)
         n = np.ceil((np.array(hi) - self.lo) / GRID).astype(int)
         occ = np.zeros(n, np.float32)

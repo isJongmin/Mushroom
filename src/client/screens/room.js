@@ -62,6 +62,8 @@ export function mount(root, app, opts = {}) {
 
   /** user_id -> player */
   const players = new Map();
+  // Presence sync보다 먼저 도착한 move (네트워크 순서가 바뀐 경우): 그 사람이 목록에 생길 때 적용한다. 최대 40명분.
+  const earlyMoves = new Map();
   let me = null;
 
   // 레이아웃 (style-guide 6.1): P = 표시 배율 (CSS px / 월드 = P/2), view = 월드 단위 시야, k = 장치 px / 월드
@@ -299,6 +301,29 @@ export function mount(root, app, opts = {}) {
     }, SYS_LEAVE_DELAY_MS));
   }
 
+  /** 원격 move 적용: x 목표, 방향, 세로 운동(공중이면 (y, s)에서 속도를 되살린다), s */
+  function applyMove(pl, p) {
+    pl.targetX = clampX(p.x);
+    if (p.dir === 'left' || p.dir === -1) pl.dir = -1;
+    else if (p.dir === 'right' || p.dir === 1) pl.dir = 1;
+    // 세로: 공중이면 (y, s)에서 속도를 되살려 시뮬레이션한다. 화면 위치는 남은 오차(yOff)로 이어 붙인다.
+    const y = isNum(p.y) ? Math.min(WORLD.groundY, p.y) : WORLD.groundY;
+    const s = typeof p.s === 'string' ? p.s : null;
+    const a = pl.air;
+    if ((s === 'jump' || s === 'fall') && y < WORLD.groundY) {
+      a.y = y;
+      a.vy = velocityAt(y, s);
+      a.air = true;
+    } else {
+      a.y = WORLD.groundY;
+      a.vy = 0;
+      a.air = false;
+    }
+    pl.yOff = pl.y - a.y;
+    pl.s = s;
+    pl.lastMoveAt = performance.now();
+  }
+
   // 채널 하나(구독 1회)의 이벤트 처리기. token이 최신 구독이 아니면 버린다(지난 채널의 늦은 이벤트).
   const handlersFor = (token) => {
     const live = () => alive && token === openSeq && me;
@@ -318,9 +343,13 @@ export function mount(root, app, opts = {}) {
           } else {
             // Presence x는 입장 시점 값. 그 사람이 내 입장(presence join)을 보고 move로 현재 위치를 1회 보내 준다.
             const x = isNum(s.x) ? clampX(s.x) : WORLD.minX;
-            players.set(s.user_id, makePlayer(s.user_id, nickname, avatar, x, false));
+            const pl = makePlayer(s.user_id, nickname, avatar, x, false);
+            players.set(s.user_id, pl);
+            const early = earlyMoves.get(s.user_id);
+            if (early) { applyMove(pl, early); pl.x = pl.targetX; }
           }
         }
+        earlyMoves.clear();
         for (const uid of [...players.keys()]) if (!seen.has(uid)) players.delete(uid);
         updateCount();
       },
@@ -329,29 +358,15 @@ export function mount(root, app, opts = {}) {
       // 다른 사람이 (다시) 들어왔다: 내 현재 상태(x, y, dir, s)를 move로 1회 보낸다. 여러 명이면 한 번으로 합쳐진다.
       onPeerJoin() { if (live()) announce = true; },
       onMove(p) {
-        if (!live() || !p || typeof p !== 'object') return;
-        const pl = typeof p.user_id === 'string' ? players.get(p.user_id) : null;
-        if (!pl || pl.isSelf || !isNum(p.x)) return; // Presence에 없는 user_id는 버린다
-        pl.targetX = clampX(p.x);
-        if (p.dir === 'left' || p.dir === -1) pl.dir = -1;
-        else if (p.dir === 'right' || p.dir === 1) pl.dir = 1;
-        // 세로: 공중이면 (y, s)에서 속도를 되살려 시뮬레이션한다. 화면 위치는 남은 오차(yOff)로 이어 붙인다.
-        const y = isNum(p.y) ? Math.min(WORLD.groundY, p.y) : WORLD.groundY;
-        const s = typeof p.s === 'string' ? p.s : null;
-        const a = pl.air;
-        if ((s === 'jump' || s === 'fall') && y < WORLD.groundY) {
-          a.y = y;
-          a.vy = velocityAt(y, s);
-          a.air = true;
-        } else {
-          a.y = WORLD.groundY;
-          a.vy = 0;
-          a.air = false;
+        if (!live() || !p || typeof p !== 'object' || typeof p.user_id !== 'string' || !isNum(p.x)) return;
+        const pl = players.get(p.user_id);
+        if (!pl) { // Presence에 아직 없는 user_id: 다음 sync까지 마지막 값만 보관 (sync에 없으면 버려진다)
+          if (earlyMoves.size < 40 || earlyMoves.has(p.user_id)) earlyMoves.set(p.user_id, p);
+          return;
         }
-        pl.yOff = pl.y - a.y;
-        pl.s = s;
-        pl.lastMoveAt = performance.now();
+        if (!pl.isSelf) applyMove(pl, p);
       },
+      /** 서버 chat (어댑터가 id로 중복 제거, sendChat 반환값도 이 경로). 로그 + 말풍선 */
       /** 서버 chat (어댑터가 id로 중복 제거, sendChat 반환값도 이 경로). 로그 + 말풍선 */
       onChat(msg) {
         if (!live() || !msg) return;
@@ -797,6 +812,7 @@ export function mount(root, app, opts = {}) {
     for (const t of timers) clearTimeout(t);
     timers.clear();
     pendingLeaves.clear();
+    earlyMoves.clear();
     input.clear();
     if (app.providers.room) app.providers.room = null;
     avatarR?.clear();

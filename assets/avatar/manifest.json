@@ -16,7 +16,10 @@
     "walk1",
     "walk2",
     "walk3",
-    "back"
+    "back",
+    "jump",
+    "fall",
+    "crouch"
   ],
   "animations": {
     "idle_front": {
@@ -40,6 +43,24 @@
         6
       ],
       "ms": 150
+    },
+    "jump": {
+      "frames": [
+        8
+      ],
+      "ms": 200
+    },
+    "fall": {
+      "frames": [
+        9
+      ],
+      "ms": 200
+    },
+    "crouch": {
+      "frames": [
+        10
+      ],
+      "ms": 200
     }
   },
   "layerOrder": [
@@ -346,7 +367,8 @@
   "files": {
     "hair_back": [
       "black-twintail",
-      "pink-long"
+      "pink-long",
+      "sky-bob"
     ],
     "top_back": [
       "blouse-white",

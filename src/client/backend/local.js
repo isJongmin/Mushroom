@@ -293,8 +293,8 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
     healthy() {
       return !closed;
     },
-    async close() {
-      if (closed) return;
+    close() {
+      if (closed) return Promise.resolve();
       post({ type: 'presence-leave', user_id: uid });
       closed = true;
       stats.removeChannel++;
@@ -308,6 +308,7 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
       bc.close();
       members.clear();
       onClose(api);
+      return Promise.resolve();
     },
   };
   api.leave = api.close;

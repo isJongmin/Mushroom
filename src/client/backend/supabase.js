@@ -238,9 +238,13 @@ export function createSupabaseBackend(url, anonKey) {
     window.addEventListener('pagehide', onPageHide);
 
     let onAbort = null;
-    /** 채널을 완전히 정리한다(removeChannel). realtime-js의 자동 재구독(rejoinTimer)도 여기서 멈춘다. */
-    const close = async () => {
-      if (closed) return;
+    let closing = null;
+    /**
+     * 채널을 완전히 정리한다(removeChannel). realtime-js의 자동 재구독(rejoinTimer)도 여기서 멈춘다.
+     * 여러 번 불러도 같은 Promise(removeChannel 완료)를 돌려준다.
+     */
+    const close = () => closing || (closing = closeOnce());
+    const closeOnce = async () => {
       closed = true;
       mover.cancel();
       window.removeEventListener('pagehide', onPageHide);

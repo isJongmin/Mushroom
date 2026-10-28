@@ -178,9 +178,9 @@ def h_beanie_yellow(ctx):
     for i in range(16):
         a = math.radians(i * 22.5)
         r = 6.0 + (0.9 if i % 2 else 0)
-        pp.append((x + math.cos(a) * r, -76 + math.sin(a) * r))
+        pp.append((x + math.cos(a) * r, -74 + math.sin(a) * r))
     F(ctx, 'hat', cr(pp, 3), '#FFF4D8', sd=(1.0, 1.2),
-      shapes=[(ellipse(x - 2, -78, 2.2, 1.6, 10), '#FFFFFF', 0.9)])
+      shapes=[(ellipse(x - 2, -76, 2.2, 1.6, 10), '#FFFFFF', 0.9)])
 
 
 # ------------------------------------------------------------------ 리본

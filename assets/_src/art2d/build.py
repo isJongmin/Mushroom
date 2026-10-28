@@ -231,8 +231,9 @@ def compose_sheet(av_dir, av, files=None):
     return compose(get)
 
 
-def build(jobs=2, only=None, log=print):
-    out_av = os.path.join(OUT, 'avatar')
+def build(jobs=2, only=None, log=print, out=None):
+    out = out or OUT
+    out_av = os.path.join(out, 'avatar')
     t0 = time.time()
     if only is None and os.path.isdir(out_av):
         shutil.rmtree(out_av)
@@ -258,7 +259,7 @@ def build(jobs=2, only=None, log=print):
     with open(os.path.join(out_av, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(m, f, ensure_ascii=False, indent=2)
         f.write('\n')
-    td = os.path.join(OUT, 'truth')
+    td = os.path.join(out, 'truth')
     os.makedirs(td, exist_ok=True)
     for i, (lb, av) in enumerate(PRESETS):
         save_png(compose_sheet(out_av, av, m['files']), os.path.join(td, 'preset%d.png' % (i + 1)))

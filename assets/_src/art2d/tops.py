@@ -514,20 +514,20 @@ BAT = '#4C3B6E'
 BAT_W = '#6A4E94'
 
 
-def bat_wing(ctx, side, layer, span=26.0, flap=0.0):
+def bat_wing(ctx, side, layer, span=31.0, flap=0.0):
     """side: -1 왼쪽 / +1 오른쪽 (몸통 로컬). 손가락 뼈 + 물결 아래 가장자리."""
     root = np.array([side * 4.0, -21.0]) if not ctx.q else np.array([-6.0, -21.0])
-    up = -8 - flap * 6
-    tips = [(side * span, up - 6), (side * (span - 3), up + 8), (side * (span - 9), up + 16), (side * 9, -3)]
-    pts = [tuple(root + (0, -2))] + [(side * span * 0.55, up - 9)] + [tips[0] + ('c',)]
+    up = -30 - flap * 6
+    tips = [(side * span, up - 4), (side * (span - 2), up + 11), (side * (span - 9), up + 20), (side * 10, -6)]
+    pts = [tuple(root + (0, -2))] + [(side * span * 0.5, up - 3)] + [tips[0] + ('c',)]
     for i in range(1, len(tips)):
         a = np.array(tips[i - 1][:2]); b = np.array(tips[i][:2])
         m = (a + b) / 2 + np.array([-side * 2.0, -3.0])
         pts += [tuple(m), tuple(b) + ('c',)]
     pts += [tuple(root + (side * 2, 4))]
     bones = [(T(ctx, fold(np.array([root, t[:2]]), 0.9)), '#2E2244', 0.9) for t in tips[:3]]
-    memb = [(T(ctx, cr([tuple(root), tips[0][:2], tips[1][:2]], 3)), BAT_W, 0.55)]
-    ctx.fig(layer, T(ctx, cr(pts, 5)), '#3A2C58', shapes=memb + bones, sd=(1.2, 1.6))
+    memb = [(T(ctx, cr([tuple(root), tips[0][:2], tips[1][:2]], 3)), '#8A6CB8', 0.6)]
+    ctx.fig(layer, T(ctx, cr(pts, 5)), '#5E4A8A', shapes=memb + bones, sd=(1.2, 1.6))
 
 
 def t_bat_cape(ctx):
@@ -540,8 +540,8 @@ def t_bat_cape(ctx):
             bat_wing(ctx, s, 'top_back', flap=flap)
     elif ctx.q:
         # 옆에서는 두 날개가 등 뒤(왼쪽)로 겹쳐 보인다
-        bat_wing(ctx, -1, 'top_back', span=24, flap=flap + 0.4)
-        bat_wing(ctx, -1, 'top_back', span=20, flap=flap - 0.3)
+        bat_wing(ctx, -1, 'top_back', span=30, flap=flap + 0.4)
+        bat_wing(ctx, -1, 'top_back', span=25, flap=flap - 0.3)
     sh = body_folds(ctx, vest, hem)
     if not ctx.back:
         # V 앞섶 + 지그재그 밑단 무늬

@@ -12,6 +12,7 @@ HEAD_K = 0.93               # 머리(머리카락, 모자 포함) 배율
 UA, FA = 10.0, 9.0         # 위팔, 아래팔
 TH, SH, ANK = 16.0, 15.0, 4.6   # 허벅지, 정강이, 발목 높이
 HIP_Y = -(TH + SH + ANK)
+SHOE_K = 1.28              # 신발 배율 (shoes.py 와 같음)
 TORSO = 25.0               # 엉덩이 -> 어깨
 NECK_Y = -27.0             # 몸통 로컬: 머리 원점(턱 밑)
 
@@ -27,9 +28,9 @@ NECK = {'front': (0.0, NECK_Y), 'back': (0.0, NECK_Y), 'q': (1.5, NECK_Y)}
 
 
 def P(view='q', hip=None, torso=0.0, head=0.0, armN=(0, 0), armF=(0, 0), legN=(0, 0, 0), legF=(0, 0, 0),
-      ground=True, sway=0.0, lift=0.0, blink=False, breathe=0.0, prone=False):
+      ground=True, sway=0.0, lift=0.0, blink=False, breathe=0.0, prone=False, head_off=(0, 0), head_sq=1.0):
     return dict(view=view, hip=hip, torso=torso, head=head, armN=armN, armF=armF, legN=legN, legF=legF,
-                ground=ground, sway=sway, lift=lift, breathe=breathe, prone=prone)
+                ground=ground, sway=sway, lift=lift, breathe=breathe, prone=prone, head_off=head_off, head_sq=head_sq)
 
 
 POSES = {
@@ -44,13 +45,14 @@ POSES = {
                sway=-0.6),
     'walk3': P('q', torso=3, head=-2, armN=(6, 16), armF=(-6, 10), legN=(14, -50, 18), legF=(3, -2, 0), sway=-1.0),
     'back': P('back', armN=(7, -6), armF=(7, -6), legN=(-2, 0, 0), legF=(2, 0, 0)),
-    'jump': P('q', hip=(0, HIP_Y - 4), torso=-3, head=-5, armN=(150, -25), armF=(128, -10), legN=(62, -100, 15),
+    'jump': P('q', hip=(0, HIP_Y - 4), torso=-3, head=-5, armN=(104, -34), armF=(150, -20), legN=(62, -100, 15),
               legF=(-6, -38, 22), ground=False, sway=1.6, lift=1.0),
-    'fall': P('q', hip=(0, HIP_Y - 1), torso=3, head=4, armN=(-62, -20), armF=(78, 20), legN=(16, -10, 10),
+    'fall': P('q', hip=(0, HIP_Y - 5), torso=3, head=4, armN=(-62, -20), armF=(78, 20), legN=(16, -10, 10),
               legF=(-16, -16, 22), ground=False, sway=-1.8, lift=-1.0),
-    'prone': P('q', hip=(-13.0, -9.6), torso=90, head=-80, armN=(176, -94), armF=(170, -100),
+    'prone': P('q', hip=(-16.0, -9.6), torso=90, head=-92, armN=(66, 104), armF=(168, 24), head_off=(4.0, 9.5),
+               head_sq=0.9,
                legN=(-90, -72, 0), legF=(-86, -48, 0), ground=False, sway=0.4, prone=True),
-    'attack0': P('q', torso=-8, head=-6, armN=(205, -30), armF=(40, 34), legN=(-16, -4, 0), legF=(22, -10, -6),
+    'attack0': P('q', torso=-8, head=-6, armN=(-104, -28), armF=(40, 34), legN=(-16, -4, 0), legF=(22, -10, -6),
                  sway=0.8),
     'attack1': P('q', torso=13, head=6, armN=(78, 8), armF=(-38, 18), legN=(-24, -6, 4), legF=(28, -22, -8),
                  sway=-1.2),
@@ -101,7 +103,12 @@ class Ctx:
             ank = knee + dir_(sa) * SH
             legs[k] = dict(hip=h, knee=knee, ank=ank, a=a, sa=sa, f=f)
         if p['ground']:
-            low = max(legs['N']['ank'][1], legs['F']['ank'][1]) + ANK
+            low = -1e9
+            for L in legs.values():
+                r = -L['sa'] * 0.35 + L['f']
+                for fx in (-6.4 * SHOE_K, 11.0 * SHOE_K):
+                    q = Xf.R(r)(np.array([fx, ANK]))
+                    low = max(low, L['ank'][1] + q[1])
             dy = -low
             for L in legs.values():
                 for key in ('hip', 'knee', 'ank'):
@@ -128,7 +135,18 @@ class Ctx:
             arms[k] = dict(sh=s, el=el, wr=wr, a=a, e=e, d2=d2)
         self.arms = arms
         neck = NECK[v]
-        self.Th = self.Tt @ Xf.T(neck[0], neck[1] + self.breathe * 0.8) @ Xf.R(p['head']) @ Xf.S(HEAD_K)
+        self.Th = Xf.T(*p['head_off']) @ self.Tt @ Xf.T(neck[0], neck[1] + self.breathe * 0.8) @ Xf.R(p['head']) \
+            @ Xf.S(HEAD_K, HEAD_K * p['head_sq'])
+        if self.prone and not getattr(self, '_fitted', False):
+            # 엎드리기: 화면 최저점(턱, 팔꿈치, 손, 몸통)을 기준선에 맞춘다
+            from body import head_poly, torso_poly
+            lows = [self.Th(head_poly('q'))[:, 1].max(), self.Tt(torso_poly('q'))[:, 1].max()]
+            for a in arms.values():
+                lows += [a['el'][1] + 2.9, a['wr'][1] + a['d2'][1] * 2.2 + 4.0]
+            dy = -max(lows)
+            self._fitted = True
+            self.p = dict(p, hip=(hip[0], hip[1] + dy))
+            self._solve()
 
     # 보기 편의
     def side_sign(self, k):

@@ -3,10 +3,10 @@ import math
 import numpy as np
 from raster import cr, ellipse, ribbon, taper, quad, bez, rot, shade, light, deep, line_of, mix, sub, Xf
 from body import leg_line, leg_layer
-from rig import ANK
+from cloth import fold
+from rig import ANK, SHOE_K
 
 G = ANK
-SHOE_K = 1.28
 
 
 def foot_xf(ctx, k):

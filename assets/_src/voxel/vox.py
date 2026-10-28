@@ -63,15 +63,16 @@ class Box:
 
 
 # ---------------------------------------------------------------- 조명 (뷰 공간: x 오른쪽, y 위, z 카메라 쪽)
-KEY_DIR = norm([-0.42, 0.72, 0.56])
-KEY_COL = np.array([1.00, 0.87, 0.70]) * 1.9
-SKY_COL = np.array([0.52, 0.57, 0.74]) * 0.70
-GND_COL = np.array([0.40, 0.30, 0.24]) * 0.45
+# 사이클 10: 배경 그림(골든아워, 좌상단 따뜻한 빛, 갈색 그림자)에 맞춤. 하늘/정면 필을 회청색에서 따뜻한 회갈색으로.
+KEY_DIR = norm([-0.48, 0.70, 0.52])
+KEY_COL = np.array([1.00, 0.84, 0.64]) * 1.85
+SKY_COL = np.array([0.62, 0.58, 0.58]) * 0.70
+GND_COL = np.array([0.46, 0.32, 0.22]) * 0.50
 FILL_DIR = norm([0.45, 0.10, 0.90])
-FILL_COL = np.array([0.62, 0.66, 0.80]) * 0.40
+FILL_COL = np.array([0.74, 0.64, 0.58]) * 0.40
 BACK_DIR = norm([0.80, 0.35, -0.50])
-BACK_COL = np.array([1.00, 0.78, 0.58]) * 0.85
-RIM_COL = np.array([1.00, 0.82, 0.62]) * 0.95
+BACK_COL = np.array([1.00, 0.76, 0.54]) * 0.80
+RIM_COL = np.array([1.00, 0.80, 0.58]) * 0.90
 EXPOSURE = 1.05
 
 # 반구 AO 방향: 26 이웃 방향
@@ -267,7 +268,7 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
         tau[act] += grid.sample(pos[act]) * step
     shadow = np.exp(-tau * 2.2)
 
-    ao = ao[:, None] ** np.array([[0.85, 1.0, 1.2]])   # 따뜻한 틈 그림자
+    ao = ao[:, None] ** np.array([[0.80, 1.0, 1.30]])   # 따뜻한 틈 그림자 (사이클 10: 더 갈색)
     nd = lambda dv: np.clip(nbv @ dv, 0, 1)
     irr = (KEY_COL[None] * (nd(KEY_DIR) * shadow)[:, None]
            + SKY_COL[None] * (0.55 + 0.45 * nbv[:, 1])[:, None] * ao

@@ -1535,7 +1535,7 @@ CUBE_K = {'skin': 0.35, 'hair': 0.55, 'hat': 0.9, 'proxy': 0.0}     # 사이클 
 
 
 @functools.lru_cache(maxsize=None)
-def grade(col):
+def grade(col, deep=False):
     """(사이클 10) 배경 그림 팔레트로 색 보정: 채도를 조금 낮추고 따뜻하게, 순백은 크림, 순흑은 차콜로."""
     if not isinstance(col, str):
         return col
@@ -1543,7 +1543,8 @@ def grade(col):
     lum = c @ np.array([0.299, 0.587, 0.114])
     c = lum + (c - lum) * GRADE_SAT                               # 채도
     c = c * np.array(GRADE_WARM)                                  # 따뜻하게
-    c = GRADE_LO + c * (GRADE_HI - GRADE_LO)                      # 순흑 -> 차콜, 순백 -> 크림
+    lo = GRADE_LO * 0.4 if deep else GRADE_LO                     # 얼굴(눈동자)은 진하게 남긴다
+    c = lo + c * (GRADE_HI - lo)                                  # 순흑 -> 차콜, 순백 -> 크림
     c = np.clip(np.round(c * 255), 0, 255).astype(int)
     return '#%02X%02X%02X' % tuple(c)
 
@@ -1563,7 +1564,7 @@ def make_boxes(defs, xf, layer, tag, back_view=False):
         if 'bevel' in d:
             kw['bevel'] = d['bevel'] * UNIT * BEVK
         Rb = R @ _local_rot(d['rot']) if d.get('rot') else R
-        out.append(Box(UNIT * _xf_point(R, t, d['c']), UNIT * np.asarray(d['h'], float), Rb, grade(d['col']),
+        out.append(Box(UNIT * _xf_point(R, t, d['c']), UNIT * np.asarray(d['h'], float), Rb, grade(d['col'], tag == 'face'),
                        layer + '_under' if d.get('under') else layer, tag=tag, org=UNIT * np.asarray(t, float),
                        cube=d.get('cube', CUBE_K.get(tag, 1.0)), **kw))
     return out

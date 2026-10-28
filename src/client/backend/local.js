@@ -16,6 +16,7 @@ import { AppError } from '../errors.js';
 import { MOVE_INTERVAL_MS, ROOM_CAPACITY } from '../constants.js';
 import {
   isValidNickname, cleanRoomName, cleanRoomPassword, cleanChatText, cleanPresenceState, cleanChatMessage, createThrottle,
+  isGameEvent, cleanGameEvent, stampGameEvent, createEventGate,
 } from './common.js';
 import { localIdentity } from './identity.js';
 import { createTrackLimiter, TRACK_GAP_MS } from './room-link.js';
@@ -229,6 +230,13 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
         call('onMove', p);
         break;
       }
+      case 'ev': { // (사이클 9) 게임 이벤트 (atk, hp, mobs, drop, pick, picked)
+        const p = cleanGameEvent(msg.event, msg.payload);
+        if (!p || (msg.from === uid)) return;
+        stats.evRecv++;
+        call('onEvent', msg.event, p);
+        break;
+      }
       case 'chat': // 서버(sendChat) 송신 흉내. 아무 탭이나 같은 형식으로 보낼 수 있다는 점은 실제 서버와 같은 한계.
         deliver(msg.payload);
         break;
@@ -275,6 +283,7 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
   document.addEventListener('visibilitychange', onVisible);
 
   const mover = createThrottle(MOVE_INTERVAL_MS, (p) => { stats.moveSent++; post({ type: 'move', payload: p }); });
+  const gate = createEventGate((event, payload) => { stats.evSent++; post({ type: 'ev', event, payload, from: uid }); }, stats);
   const track = (type) => backend.trackLimiter.run(() => {
     if (closed) return 'closed';
     stats.track++;
@@ -292,6 +301,11 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
       mover.push(p, !!p.fx); // fx는 급송 (2초에 4회 상한)
       return Promise.resolve();
     },
+    /** (사이클 9) 게임 이벤트 송신 (supabase.js와 같은 규칙) */
+    send(event, payload) {
+      if (closed || !isGameEvent(event) || !payload || typeof payload !== 'object') return false;
+      return gate.push(event, stampGameEvent(event, payload, uid));
+    },
     /** 닉네임/아바타가 바뀌었을 때만 (최소 2초 간격) */
     async updateSelf(partial) {
       if (closed) throw new AppError('NETWORK');
@@ -307,6 +321,7 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
       closed = true;
       stats.removeChannel++;
       mover.cancel();
+      gate.cancel();
       clearInterval(presenceTimer);
       clearInterval(pruneTimer);
       window.removeEventListener('pagehide', onPageHide);
@@ -342,7 +357,7 @@ export function createLocalBackend() {
   const backend = {
     mode: 'local',
     // 계측 (getState().net.adapter): supabase.js와 같은 이름
-    stats: { track: 0, moveSent: 0, subscribe: 0, removeChannel: 0, joinRoom: 0, leaveRoom: 0, drops: 0 },
+    stats: { track: 0, moveSent: 0, subscribe: 0, removeChannel: 0, joinRoom: 0, leaveRoom: 0, drops: 0, evSent: 0, evRecv: 0, evDropped: 0 },
     trackLimiter: createTrackLimiter({ minGapMs: TRACK_GAP_MS }),
     failNext: 0,
 
@@ -536,7 +551,7 @@ export function createLocalBackend() {
       conns.add(conn);
       await ready;
       if (signal && signal.aborted) { await conn.close(); throw new AppError('NETWORK', 'aborted'); }
-      return { sendMove: conn.sendMove, updateSelf: conn.updateSelf, healthy: conn.healthy, close: conn.close, leave: conn.close };
+      return { sendMove: conn.sendMove, send: conn.send, updateSelf: conn.updateSelf, healthy: conn.healthy, close: conn.close, leave: conn.close };
     },
   };
   return backend;

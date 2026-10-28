@@ -11,7 +11,9 @@
 //   그 밖 → UNKNOWN
 import { AppError, ERROR_CODES } from '../errors.js';
 import { SUPABASE_CDN, MOVE_INTERVAL_MS } from '../constants.js';
-import { cleanPresenceState, cleanChatMessage, createThrottle } from './common.js';
+import {
+  cleanPresenceState, cleanChatMessage, createThrottle, GAME_EVENTS, isGameEvent, cleanGameEvent, stampGameEvent, createEventGate,
+} from './common.js';
 import { createTrackLimiter, TRACK_GAP_MS } from './room-link.js';
 import { cleanMove, isMoveState, isFx } from '../game/physics.js';
 
@@ -148,7 +150,7 @@ export function createSupabaseBackend(url, anonKey) {
   const settle = (p, ms) => Promise.race([p.catch(() => {}), new Promise((r) => setTimeout(r, ms))]);
 
   // 계측 (QA·코드 리뷰용): getState().net.adapter
-  const stats = { track: 0, moveSent: 0, subscribe: 0, removeChannel: 0, joinRoom: 0, leaveRoom: 0, drops: 0 };
+  const stats = { track: 0, moveSent: 0, subscribe: 0, removeChannel: 0, joinRoom: 0, leaveRoom: 0, drops: 0, evSent: 0, evRecv: 0, evDropped: 0 };
   // Presence track 최소 2초 간격 (어댑터 전체에서 하나: 빠른 재연결에서도 간격 유지)
   const trackLimiter = createTrackLimiter({ minGapMs: TRACK_GAP_MS });
 
@@ -228,6 +230,21 @@ export function createSupabaseBackend(url, anonKey) {
       call('onClosed', { room_id: roomId, by_nickname: typeof p.by_nickname === 'string' ? p.by_nickname.slice(0, 32) : '' });
     });
 
+    // (사이클 9) 게임 이벤트 atk, hp, mobs, drop, pick, picked (self: false라 내 송신은 돌아오지 않는다)
+    for (const ev of GAME_EVENTS) {
+      ch.on('broadcast', { event: ev }, (msg) => {
+        const p = cleanGameEvent(ev, msg && msg.payload);
+        if (!p || p.user_id === me && ev !== 'picked' || p.host === me) return;
+        stats.evRecv++;
+        call('onEvent', ev, p);
+      });
+    }
+    const gate = createEventGate((event, payload) => {
+      if (closed) return;
+      stats.evSent++;
+      ch.send({ type: 'broadcast', event, payload }).catch(() => {});
+    }, stats);
+
     // fx가 있는 move는 급송(간격 무시, 2초에 4회 상한)
     const mover = createThrottle(MOVE_INTERVAL_MS, (p) => {
       if (closed) return;
@@ -254,6 +271,7 @@ export function createSupabaseBackend(url, anonKey) {
     const closeOnce = async () => {
       closed = true;
       mover.cancel();
+      gate.cancel();
       window.removeEventListener('pagehide', onPageHide);
       if (signal && onAbort) signal.removeEventListener('abort', onAbort);
       conns.delete(conn);
@@ -273,6 +291,11 @@ export function createSupabaseBackend(url, anonKey) {
         if (isFx(fx)) p.fx = fx;
         mover.push(p, !!p.fx);
         return Promise.resolve();
+      },
+      /** (사이클 9) 게임 이벤트 송신. 반환 false = 형식 밖이거나 빈도 제한으로 버림 */
+      send(event, payload) {
+        if (closed || !isGameEvent(event) || !payload || typeof payload !== 'object') return false;
+        return gate.push(event, stampGameEvent(event, payload, me));
       },
       /** 닉네임/아바타가 바뀌었을 때만 (최소 2초 간격, 대기 중 요청은 하나로 합침) */
       async updateSelf(partial) {
@@ -402,14 +425,14 @@ export function createSupabaseBackend(url, anonKey) {
 
     /**
      * 채널 1회 구독 (재시도·하트비트·재입장은 room-link.js 상태기계가 한다). join_room 'OK' 뒤에만 부른다.
-     * @param handlers { onSync, onJoin, onLeave, onPeerJoin(user_id), onMove, onChat, onDrop(status), onClosed({ room_id, by_nickname }) }
+     * @param handlers { onSync, onJoin, onLeave, onPeerJoin(user_id), onMove, onChat, onDrop(status), onClosed({ room_id, by_nickname }), onEvent(event, payload) }
      * @param opts.signal AbortSignal: 구독 전에 abort되면 채널을 제거하고 NETWORK로 reject
-     * @returns { sendMove, updateSelf, healthy, close, leave(= close) }
+     * @returns { sendMove, send(event, payload), updateSelf, healthy, close, leave(= close) }
      */
     async connectRoom(roomId, handlers, self, opts = {}) {
       requireInit();
       const c = await connect(roomId, handlers, self, opts.signal);
-      return { sendMove: c.sendMove, updateSelf: c.updateSelf, healthy: c.healthy, close: c.close, leave: c.close };
+      return { sendMove: c.sendMove, send: c.send, updateSelf: c.updateSelf, healthy: c.healthy, close: c.close, leave: c.close };
     },
 
     /** 계측 카운터 (getState().net.adapter) */

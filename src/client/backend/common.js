@@ -133,3 +133,86 @@ export function createThrottle(intervalMs, send, { urgentMax = 4, urgentWindowMs
     cancel() { clearTimeout(timer); timer = 0; pending = null; },
   };
 }
+
+// ---------------------------------------------------------------------------
+// (사이클 9) 게임 broadcast 이벤트: atk, hp, mobs, drop, pick, picked (ARCHITECTURE "사이클 9 계약").
+// 두 어댑터가 같은 규칙으로 보내고(send) 받는다(onEvent). 형식이 틀리면 버린다.
+// 보낸 사람 표시: atk/hp/pick의 user_id와 mobs/drop/picked의 host는 어댑터가 자기 uid로 덮어쓴다(위장은 알려진 한계).
+export const GAME_EVENTS = Object.freeze(['atk', 'hp', 'mobs', 'drop', 'pick', 'picked']);
+const GAME_EVENT_SET = new Set(GAME_EVENTS);
+export const isGameEvent = (e) => typeof e === 'string' && GAME_EVENT_SET.has(e);
+const UID_OK = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
+const SID_RE = /^[a-z0-9]{1,16}$/i;
+const KIND_RE = /^[a-z0-9-]{1,32}$/;
+const ITEM_RE = /^(skin|hair|face|top|bottom|shoes|hat):[a-z0-9-]{1,32}$/;
+const MOB_S = new Set(['move', 'hit', 'die']);
+const numIn = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
+const COORD = 1e5;
+const MOBS_MAX = 80;
+
+/** 보낸 쪽 표시를 붙인다 (어댑터 송신 직전) */
+export function stampGameEvent(event, payload, uid) {
+  const p = { ...payload };
+  if (event === 'atk' || event === 'hp' || event === 'pick') p.user_id = uid;
+  else p.host = uid;
+  return p;
+}
+
+/** 수신 payload 정리. 깨진 값이면 null */
+export function cleanGameEvent(event, p) {
+  if (!isGameEvent(event) || !p || typeof p !== 'object') return null;
+  switch (event) {
+    case 'atk':
+      if (!UID_OK(p.user_id) || !numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
+      return { user_id: p.user_id, x: p.x, y: p.y, dir: p.dir === 'left' ? 'left' : 'right', seq: Number.isInteger(p.seq) ? p.seq : 0 };
+    case 'hp':
+      if (!UID_OK(p.user_id) || !numIn(p.hp, 0, 100000) || !numIn(p.max, 1, 100000)) return null;
+      return { user_id: p.user_id, hp: Math.min(p.hp, p.max), max: p.max, dead: p.dead === true, by: UID_OK(p.by) ? p.by : null };
+    case 'mobs': {
+      if (!UID_OK(p.host) || !Array.isArray(p.list) || p.list.length > MOBS_MAX) return null;
+      const list = [];
+      for (const m of p.list) {
+        if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !SID_RE.test(m.id) || typeof m.kind !== 'string' || !KIND_RE.test(m.kind)) continue;
+        if (!numIn(m.x, -COORD, COORD) || !numIn(m.y, -COORD, COORD) || !numIn(m.hp, 0, 1e6)) continue;
+        list.push({ id: m.id, kind: m.kind, x: m.x, y: m.y, dir: m.dir < 0 ? -1 : 1, hp: m.hp, s: MOB_S.has(m.s) ? m.s : 'move', z: Number.isInteger(m.z) && m.z >= 0 && m.z < 64 ? m.z : -1 });
+      }
+      return { host: p.host, t: isNum(p.t) ? p.t : 0, list };
+    }
+    case 'drop':
+      if (!UID_OK(p.host) || typeof p.id !== 'string' || !SID_RE.test(p.id) || typeof p.item !== 'string' || !ITEM_RE.test(p.item)) return null;
+      if (!numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
+      return { host: p.host, id: p.id, item: p.item, x: p.x, y: p.y, ttl: numIn(p.ttl, 1, 60000) ? p.ttl : null };
+    case 'pick':
+      if (!UID_OK(p.user_id) || typeof p.drop_id !== 'string' || !SID_RE.test(p.drop_id)) return null;
+      return { user_id: p.user_id, drop_id: p.drop_id };
+    case 'picked':
+      if (!UID_OK(p.host) || !UID_OK(p.user_id) || typeof p.drop_id !== 'string' || !SID_RE.test(p.drop_id) || typeof p.item !== 'string' || !ITEM_RE.test(p.item)) return null;
+      return { host: p.host, drop_id: p.drop_id, user_id: p.user_id, item: p.item };
+    default:
+      return null;
+  }
+}
+
+/**
+ * 게임 이벤트 송신 제한 (Supabase broadcast 한도 보호).
+ *   mobs: 최소 180ms 간격, 마지막 값만 보낸다(throttle).  그 밖: 이벤트마다 1초에 최대 12건, 넘으면 버린다(stats.evDropped).
+ * send(event, payload) 를 그대로 부르거나 미룬다. cancel()로 대기 중인 송신을 버린다.
+ */
+export function createEventGate(send, stats) {
+  const mobs = createThrottle(180, (p) => send('mobs', p), { urgentMax: 0 });
+  const recent = new Map(); // event -> [시각]
+  return {
+    push(event, payload) {
+      if (event === 'mobs') { mobs.push(payload); return true; }
+      const now = performance.now();
+      let r = recent.get(event);
+      if (!r) { r = []; recent.set(event, r); }
+      while (r.length && now - r[0] > 1000) r.shift();
+      if (r.length >= 12) { if (stats) stats.evDropped = (stats.evDropped || 0) + 1; return false; }
+      r.push(now);
+      send(event, payload);
+      return true;
+    },
+    cancel() { mobs.cancel(); recent.clear(); },
+  };
+}

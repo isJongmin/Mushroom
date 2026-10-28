@@ -1,0 +1,329 @@
+{
+  "density": 1.5,
+  "note": "frame/anchor = 에셋 px(시트 좌표), size = 월드 단위 판정 상자(기준점 = 상자 아래 중앙). 기본 방향은 오른쪽, 왼쪽은 좌우 반전. hop은 뜀 높이가 프레임에 들어 있다.",
+  "mobs": {
+    "snail": {
+      "name": "달팽이",
+      "hp": 25,
+      "speed": 22,
+      "touchDamage": 6,
+      "size": {
+        "w": 40,
+        "h": 28
+      },
+      "anchor": {
+        "x": 45,
+        "y": 66
+      },
+      "frame": {
+        "w": 90,
+        "h": 72
+      },
+      "sheet": "assets/mob/snail.png",
+      "frames": 9,
+      "animations": {
+        "move": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "hit": [
+          4
+        ],
+        "die": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "fps": 6,
+      "behavior": "walk",
+      "drops": [
+        {
+          "item": "hat:snail-shell",
+          "p": 0.18
+        },
+        {
+          "item": "shoes:snail-boots",
+          "p": 0.16
+        }
+      ]
+    },
+    "mushroom": {
+      "name": "주황버섯",
+      "hp": 45,
+      "speed": 48,
+      "touchDamage": 9,
+      "size": {
+        "w": 46,
+        "h": 46
+      },
+      "anchor": {
+        "x": 54,
+        "y": 118
+      },
+      "frame": {
+        "w": 108,
+        "h": 126
+      },
+      "sheet": "assets/mob/mushroom.png",
+      "frames": 11,
+      "animations": {
+        "move": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "hit": [
+          6
+        ],
+        "die": [
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "fps": 10,
+      "behavior": "hop",
+      "drops": [
+        {
+          "item": "hat:mushroom-cap",
+          "p": 0.16
+        },
+        {
+          "item": "bottom:mushroom-shorts",
+          "p": 0.16
+        }
+      ]
+    },
+    "slime": {
+      "name": "슬라임",
+      "hp": 60,
+      "speed": 42,
+      "touchDamage": 11,
+      "size": {
+        "w": 44,
+        "h": 38
+      },
+      "anchor": {
+        "x": 54,
+        "y": 106
+      },
+      "frame": {
+        "w": 108,
+        "h": 114
+      },
+      "sheet": "assets/mob/slime.png",
+      "frames": 11,
+      "animations": {
+        "move": [
+          0,
+          1,
+          2,
+          3,
+          4,
+          5
+        ],
+        "hit": [
+          6
+        ],
+        "die": [
+          7,
+          8,
+          9,
+          10
+        ]
+      },
+      "fps": 10,
+      "behavior": "hop",
+      "drops": [
+        {
+          "item": "top:slime-hood",
+          "p": 0.15
+        },
+        {
+          "item": "bottom:slime-pants",
+          "p": 0.15
+        }
+      ]
+    },
+    "bat": {
+      "name": "박쥐",
+      "hp": 35,
+      "speed": 70,
+      "touchDamage": 10,
+      "size": {
+        "w": 46,
+        "h": 34
+      },
+      "anchor": {
+        "x": 60,
+        "y": 88
+      },
+      "frame": {
+        "w": 120,
+        "h": 102
+      },
+      "sheet": "assets/mob/bat.png",
+      "frames": 9,
+      "animations": {
+        "move": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "hit": [
+          4
+        ],
+        "die": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "fps": 10,
+      "behavior": "fly",
+      "drops": [
+        {
+          "item": "top:bat-cape",
+          "p": 0.15
+        },
+        {
+          "item": "shoes:bat-boots",
+          "p": 0.15
+        }
+      ]
+    },
+    "golem": {
+      "name": "돌골렘",
+      "hp": 220,
+      "speed": 26,
+      "touchDamage": 20,
+      "size": {
+        "w": 84,
+        "h": 110
+      },
+      "anchor": {
+        "x": 108,
+        "y": 190
+      },
+      "frame": {
+        "w": 216,
+        "h": 198
+      },
+      "sheet": "assets/mob/golem.png",
+      "frames": 9,
+      "animations": {
+        "move": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "hit": [
+          4
+        ],
+        "die": [
+          5,
+          6,
+          7,
+          8
+        ]
+      },
+      "fps": 5,
+      "behavior": "walk",
+      "drops": [
+        {
+          "item": "hat:golem-helm",
+          "p": 0.2
+        },
+        {
+          "item": "top:golem-armor",
+          "p": 0.2
+        },
+        {
+          "item": "shoes:snail-boots",
+          "p": 0.1
+        }
+      ]
+    }
+  },
+  "ghost": {
+    "sheet": "assets/mob/ghost.png",
+    "frame": {
+      "w": 84,
+      "h": 99
+    },
+    "anchor": {
+      "x": 42,
+      "y": 96
+    },
+    "size": {
+      "w": 50,
+      "h": 60
+    },
+    "frames": 2,
+    "animations": {
+      "idle": [
+        0,
+        1
+      ]
+    },
+    "fps": 3,
+    "note": "반투명이 PNG에 들어 있다(추가 alpha 불필요). 기준점 = 캐릭터 발 위치. 오른쪽 기본, 좌우 반전."
+  },
+  "tombstone": {
+    "sheet": "assets/mob/tombstone.png",
+    "frame": {
+      "w": 60,
+      "h": 72
+    },
+    "anchor": {
+      "x": 30,
+      "y": 69
+    },
+    "size": {
+      "w": 34,
+      "h": 44
+    },
+    "note": "기준점 = 바닥 중앙(땅에 꽂히는 선). 좌우 반전하지 않는다."
+  },
+  "dropBag": {
+    "sheet": "assets/mob/drop_bag.png",
+    "frame": {
+      "w": 72,
+      "h": 72
+    },
+    "anchor": {
+      "x": 36,
+      "y": 66
+    },
+    "frames": 2,
+    "fps": 3,
+    "note": "드롭 아이템 아래 깔리는 반짝이 받침. 아이콘(64x64)은 기준점 위 월드 약 6 높이에 32x32 월드로 얹는 것을 권장."
+  },
+  "fx": {
+    "slash": {
+      "sheet": "assets/fx/slash.png",
+      "frame": {
+        "w": 150,
+        "h": 135
+      },
+      "anchor": {
+        "x": 24,
+        "y": 128
+      },
+      "frames": 2,
+      "fps": 16,
+      "note": "기준점 = 공격자 발 위치. 오른쪽 공격 기준, 왼쪽은 좌우 반전. 호가 판정 상자(앞 70 x 발 위 5~75)를 덮는다."
+    }
+  }
+}

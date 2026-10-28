@@ -10,6 +10,8 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
   const acts = new Map(); // sourceId -> 'jump' | 'prone'
   let seq = 0;
   let jumpAt = -Infinity; // 마지막 점프 누름 시각 (performance.now 기준)
+  let attackAt = -Infinity; // (사이클 9) 마지막 공격 누름 시각
+  let pickAt = -Infinity; // (사이클 9) 마지막 줍기 누름 시각
   let lastTap = null; // { group, at }
   let superReq = null; // { kind, firstAt, at }
   const holding = (action) => {
@@ -26,6 +28,8 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
       if (acts.has(sourceId)) return; // 키 반복 무시
       acts.set(sourceId, action);
       if (action === 'jump') jumpAt = now;
+      else if (action === 'attack') attackAt = now;
+      else if (action === 'pick') pickAt = now;
     },
     /** 더블탭 묶음 누름 ('left' | 'right' | 'up'). 키 반복은 부르는 쪽이 거른다. */
     tap(group, now) {
@@ -52,6 +56,8 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
       held.clear();
       acts.clear();
       jumpAt = -Infinity;
+      attackAt = -Infinity;
+      pickAt = -Infinity;
       lastTap = null;
       superReq = null;
     },
@@ -71,6 +77,17 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
     },
     proning() {
       return holding('prone');
+    },
+    /** (사이클 9) 공격: 최근 bufferMs 안에 눌렀거나 누르고 있음(누르고 있으면 쿨다운마다 계속 공격) */
+    wantsAttack(now, bufferMs = 150) {
+      return now - attackAt <= bufferMs || holding('attack');
+    },
+    consumeAttack() { attackAt = -Infinity; },
+    /** (사이클 9) 줍기 요청 1회 (꺼내면 지운다) */
+    takePick(now, bufferMs = 150) {
+      const r = now - pickAt <= bufferMs;
+      pickAt = -Infinity;
+      return r;
     },
   };
 }
@@ -100,3 +117,7 @@ export const KEY_TAP = Object.freeze({
   ArrowUp: 'up',
   KeyW: 'up',
 });
+
+/** (사이클 9) 공격 = Ctrl / J / X, 줍기 = Z */
+export const KEY_ATTACK = Object.freeze({ ControlLeft: true, ControlRight: true, KeyJ: true, KeyX: true });
+export const KEY_PICK = Object.freeze({ KeyZ: true });

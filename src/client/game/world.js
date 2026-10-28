@@ -41,17 +41,19 @@ export function drawLayer(ctx, layer, camX, camY, k, Wd) {
 // 폴백: 하늘 밴드, 먼 언덕, 잔디/흙 (월드 단위)
 const SKY_BANDS = [[PAL.k1, -400, 120], [PAL.k2, 120, 210], [PAL.k3, 210, 280], [PAL.k4, 280, 340], [PAL.k5, 340, 440]];
 
-export function drawFallbackMap(ctx, camX, camY, k, Wd, Hd) {
+export function drawFallbackMap(ctx, camX, camY, k, Wd, Hd, groundY = WORLD.groundY) {
+  const off = groundY - WORLD.groundY; // (사이클 9) 큰 맵: 하늘/언덕을 지면 기준으로 내린다
   const rect = (col, x, y, w, h) => { ctx.fillStyle = col; ctx.fillRect(R(x * k), R(y * k), Math.ceil(w * k), Math.ceil(h * k)); };
-  for (const [col, y0, y1] of SKY_BANDS) rect(col, 0, y0 - camY, Wd / k, y1 - y0);
+  for (const [col, y0, y1] of SKY_BANDS) rect(col, 0, y0 + off - camY - (y0 === -400 ? 2000 : 0), Wd / k, y1 - y0 + (y0 === -400 ? 2000 : 0));
   for (const [col, base, a, b, par] of [[PAL.m1, 330, 120, 46, 0.2], [PAL.m2, 380, 90, 34, 0.3]]) {
     const ox = camX * par;
+    const bb = base + off;
     for (let x = 0; x < Wd / k; x += 4) {
-      const hy = base + Math.sin((x + ox) / a) * 20 + Math.sin((x + ox) / b + 1.3) * 10;
-      rect(col, x, hy - camY, 4, WORLD.groundY - hy);
+      const hy = bb + Math.sin((x + ox) / a) * 20 + Math.sin((x + ox) / b + 1.3) * 10;
+      rect(col, x, hy - camY, 4, groundY - hy);
     }
   }
-  const g = WORLD.groundY - camY;
+  const g = groundY - camY;
   rect(PAL.g1, 0, g, Wd / k, 2);
   rect(PAL.g2, 0, g + 2, Wd / k, 10);
   rect(PAL.g4, 0, g + 12, Wd / k, 4);
@@ -73,7 +75,7 @@ export function drawMap(ctx, map, camX, camY, k, Wd, Hd) {
   if (map && map.layers.length) {
     for (const layer of map.layers) drawLayer(ctx, layer, camX, camY, k, Wd);
   } else {
-    drawFallbackMap(ctx, camX, camY, k, Wd, Hd);
+    drawFallbackMap(ctx, camX, camY, k, Wd, Hd, map && typeof map.groundY === 'number' ? map.groundY : WORLD.groundY);
   }
 }
 
@@ -96,9 +98,9 @@ export function drawFootShadow(ctx, x, y, k, h = 0) {
 /**
  * 카메라 (월드 단위): 플레이어를 가로 가운데. 세로는 camY(없으면 화면 아래 끝 = 월드 bottomY(540)). k로 장치 px 정수에 맞춘다.
  */
-export function cameraFor(playerX, viewW, viewH, k, camYIn) {
-  let camX = Math.min(Math.max(playerX - viewW / 2, 0), Math.max(0, WORLD.width - viewW));
-  let camY = typeof camYIn === 'number' && Number.isFinite(camYIn) ? camYIn : WORLD.bottomY - viewH;
+export function cameraFor(playerX, viewW, viewH, k, camYIn, world = WORLD) {
+  let camX = Math.min(Math.max(playerX - viewW / 2, 0), Math.max(0, world.width - viewW));
+  let camY = typeof camYIn === 'number' && Number.isFinite(camYIn) ? camYIn : world.bottomY - viewH;
   if (k > 0) { camX = R(camX * k) / k; camY = R(camY * k) / k; }
   return { camX, camY };
 }
@@ -109,8 +111,8 @@ export function cameraFor(playerX, viewW, viewH, k, camYIn) {
  * 지면 근처(refY 440)에서는 지금 구도 그대로다. 시야가 맵 세로보다 크면 지금 구도 고정.
  */
 export const CAM_FOOT_RATIO = 0.66;
-export function camYTarget(refY, viewH, top = 0) {
-  const base = WORLD.bottomY - viewH;
+export function camYTarget(refY, viewH, top = 0, bottomY = WORLD.bottomY) {
+  const base = bottomY - viewH;
   if (base <= top) return base;
   return Math.min(base, Math.max(top, refY - viewH * CAM_FOOT_RATIO));
 }
@@ -129,4 +131,29 @@ export function drawPlatformDebug(ctx, platforms, camX, camY, k) {
     ctx.fillRect(x, y, w, Math.max(2, R(3 * k)));
   }
   ctx.restore();
+}
+
+/**
+ * (사이클 9) 맵 manifest(width, height, groundY, spawn)에서 월드 값을 만든다. 값이 없으면 기존 2400 / 540 / 440.
+ * height가 없으면 groundY 440일 때 540, 그 밖은 groundY + 100. spawn = { x, y } (y 없으면 groundY).
+ * @returns { width, height, groundY, bottomY, minX, maxX, speed, maxDt, minViewH, spawn: { x, y } | null }
+ */
+export function worldFromMap(map) {
+  const n = (v, lo, hi) => (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
+  const width = n(map && map.width, 400, 40000) ?? WORLD.width;
+  const groundY = n(map && map.groundY, 60, 20000) ?? WORLD.groundY;
+  let height = n(map && map.height, groundY + 10, 40000);
+  if (height === null) height = groundY === WORLD.groundY ? WORLD.height : groundY + 100;
+  const minX = WORLD.minX;
+  const maxX = Math.max(minX + 1, width - (WORLD.width - WORLD.maxX));
+  let spawn = null;
+  let sp = map && map.spawn;
+  if (Array.isArray(sp)) sp = sp.length ? sp[Math.floor(Math.random() * sp.length)] : null;
+  if (sp && typeof sp === 'object' && n(sp.x, -1e6, 1e6) !== null) {
+    const y = n(sp.y, 0, groundY);
+    spawn = { x: Math.min(maxX, Math.max(minX, sp.x)), y: y === null ? groundY : y };
+  }
+  return Object.freeze({
+    width, height, groundY, bottomY: height, minX, maxX, speed: WORLD.speed, maxDt: WORLD.maxDt, minViewH: WORLD.minViewH, spawn,
+  });
 }

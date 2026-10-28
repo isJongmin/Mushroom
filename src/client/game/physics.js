@@ -25,7 +25,10 @@ export const PHYS = Object.freeze({
   doubleTapMs: 300,
   ceilY: 0, // 발이 이보다 위로는 못 간다 (맵 위 끝)
 });
-export const MOVE_STATES = Object.freeze(['idle', 'walk', 'jump', 'fall', 'prone']);
+// (사이클 9) 'attack'(공격 중), 'ghost'(사망 후 유령)를 더한다.
+export const MOVE_STATES = Object.freeze(['idle', 'walk', 'jump', 'fall', 'prone', 'attack', 'ghost']);
+export const KNOCK = Object.freeze({ vx: 300, vy: 250, t: 0.3 }); // (사이클 9) 넉백
+export const MAX_WORLD_Y = 5000; // 수신 y 상한 (화면이 맵 groundY로 다시 자른다)
 const STATE_SET = new Set(MOVE_STATES);
 export const isMoveState = (s) => typeof s === 'string' && STATE_SET.has(s);
 /** 수신 상태 정리: 옛 'crouch' → 'prone', 목록 밖 → null */
@@ -42,7 +45,7 @@ export const SUPER_APEX = (PHYS.superUpV * PHYS.superUpV) / (2 * PHYS.gravity);
  * manifest platforms 정리: [{ id, x1, x2, y }] (x1 < x2, 0 < y < 지면). 형식이 틀린 항목은 버린다. 최대 64개.
  * 반환은 y 오름차순(높은 발판 먼저) 고정 배열. 없거나 깨졌으면 [] (지면만).
  */
-export function normalizePlatforms(raw, { width = 2400 } = {}) {
+export function normalizePlatforms(raw, { width = 2400, groundY = PHYS.groundY } = {}) {
   if (!Array.isArray(raw)) return Object.freeze([]);
   const out = [];
   const fin = (v) => typeof v === 'number' && Number.isFinite(v);
@@ -50,7 +53,7 @@ export function normalizePlatforms(raw, { width = 2400 } = {}) {
     if (!p || typeof p !== 'object' || !fin(p.x1) || !fin(p.x2) || !fin(p.y)) continue;
     const x1 = Math.max(0, Math.min(p.x1, p.x2));
     const x2 = Math.min(width, Math.max(p.x1, p.x2));
-    if (x2 - x1 < 1 || p.y <= 0 || p.y >= PHYS.groundY) continue;
+    if (x2 - x1 < 1 || p.y <= 0 || p.y >= groundY) continue;
     const id = typeof p.id === 'string' && p.id.length <= 32 ? p.id : `p${out.length}`;
     out.push(Object.freeze({ id, x1, x2, y: p.y }));
   }
@@ -59,8 +62,8 @@ export function normalizePlatforms(raw, { width = 2400 } = {}) {
 }
 
 /** (x, y)에서 아래로 처음 만나는 면의 y (발판 윗면 또는 지면). 그림자 위치용. */
-export function surfaceBelow(platforms, x, y) {
-  let best = PHYS.groundY;
+export function surfaceBelow(platforms, x, y, groundY = PHYS.groundY) {
+  let best = groundY;
   for (const p of platforms) {
     if (p.y >= y - 0.5 && p.y < best && x >= p.x1 && x <= p.x2) best = p.y;
   }
@@ -68,9 +71,10 @@ export function surfaceBelow(platforms, x, y) {
 }
 
 /** 몸 상태 초기값 */
-export function createBody(x, y = PHYS.groundY) {
+export function createBody(x, y = PHYS.groundY, groundY = PHYS.groundY) {
   return {
-    x, y, vy: 0, grounded: y >= PHYS.groundY, on: null, prone: false, s: 'idle',
+    x, y, vy: 0, grounded: y >= groundY,
+    kbT: 0, kbDir: 0, // (사이클 9) 넉백 남은 시간, 방향 on: null, prone: false, s: 'idle',
     t: 0, // 몸 시계 (초)
     airT: 0, // 마지막으로 땅/발판을 떠난 뒤 지난 시간
     airCharge: true, // 공중 슈퍼 점프 1회
@@ -88,6 +92,7 @@ function land(b, y, plat, prone) {
   b.airT = 0;
   b.airCharge = true;
   b.dashT = 0;
+  b.kbT = 0;
   b.prone = !!prone; // 착지 순간 ↓를 누르고 있으면 바로 엎드림
 }
 
@@ -119,6 +124,7 @@ function crossed(platforms, b, yTop, yEnd) {
  */
 export function stepBody(b, inp, dt, opt) {
   const g = PHYS.gravity;
+  const groundY = typeof opt.groundY === 'number' ? opt.groundY : PHYS.groundY;
   const plats = opt.platforms || [];
   const clampX = (x) => Math.min(opt.maxX, Math.max(opt.minX, x));
   const out = { jumped: false, dropped: false, landed: false, fx: null };
@@ -182,7 +188,7 @@ export function stepBody(b, inp, dt, opt) {
       const dashing = b.dashT > 0;
       const h = dashing ? Math.min(rem, b.dashT) : rem;
       const gg = dashing ? g * PHYS.dashGravity : g;
-      const vx = dashing ? b.dashDir * PHYS.dashVX : walkDir * opt.speed;
+      const vx = dashing ? b.dashDir * PHYS.dashVX : (b.kbT > 0 ? b.kbDir * KNOCK.vx : walkDir * opt.speed);
       if (vx !== 0) b.x = clampX(b.x + vx * h);
       const y0 = b.y;
       const v0 = b.vy;
@@ -190,18 +196,28 @@ export function stepBody(b, inp, dt, opt) {
       b.vy = v0 + gg * h;
       b.airT += h;
       if (dashing) { b.dashT -= h; if (b.dashT < 1e-9) b.dashT = 0; }
+      if (b.kbT > 0) b.kbT = Math.max(0, b.kbT - h);
       rem -= h;
       if (b.y < PHYS.ceilY) { b.y = PHYS.ceilY; if (b.vy < 0) b.vy = 0; }
       if (b.vy >= 0) { // 내려오는 중: 이 구간의 가장 높은 점(꼭대기를 지났으면 꼭대기)부터 끝까지 지난 윗면
         const yTop = v0 < 0 ? y0 - (v0 * v0) / (2 * gg) : y0;
         const p = crossed(plats, b, Math.max(PHYS.ceilY, yTop), b.y);
         if (p) { land(b, p.y, p, inp.prone); out.landed = true; break; }
-        if (b.y >= PHYS.groundY) { land(b, PHYS.groundY, null, inp.prone); out.landed = true; break; }
+        if (b.y >= groundY) { land(b, groundY, null, inp.prone); out.landed = true; break; }
       }
     }
   }
   b.s = stateOf(b, walkDir);
   return out;
+}
+
+/** (사이클 9) 넉백: dir 방향으로 수평 300(0.3초), 위로 250. 땅/발판에서 떠오른다. 대시는 끝난다. */
+export function knockBody(b, dir) {
+  if (b.grounded) leaveGround(b);
+  b.vy = -KNOCK.vy;
+  b.kbDir = dir < 0 ? -1 : 1;
+  b.kbT = KNOCK.t;
+  b.dashT = 0;
 }
 
 export function stateOf(b, dir) {
@@ -216,7 +232,7 @@ export function cleanMove(p) {
   if (typeof p.user_id !== 'string' || !p.user_id || p.user_id.length > 64) return null;
   if (typeof p.x !== 'number' || !Number.isFinite(p.x)) return null;
   const y = typeof p.y === 'number' && Number.isFinite(p.y)
-    ? Math.min(PHYS.groundY, Math.max(PHYS.ceilY, p.y)) : PHYS.groundY;
+    ? Math.min(MAX_WORLD_Y, Math.max(PHYS.ceilY, p.y)) : null;
   const dir = p.dir === 'left' || p.dir === -1 ? 'left' : (p.dir === 'right' || p.dir === 1 ? 'right' : null);
   const out = { user_id: p.user_id, x: p.x, y, dir, s: normState(p.s) };
   if (isFx(p.fx)) out.fx = p.fx;

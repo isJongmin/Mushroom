@@ -8,6 +8,9 @@
 //            점프: game/physics.js (중력 2000, 초속 650).
 // (사이클 8) 발판(한 방향 통과, 맵 manifest platforms), 엎드리기(prone), ↓+점프 내려가기, 슈퍼 점프(더블탭) + 이펙트(game/fx.js),
 //            원격 세로는 받은 y를 그대로 보간(물리 재계산 없음), 세로 카메라, 방 삭제(방장 HUD 버튼, room_closed → 로비 + 배너).
+// (사이클 9) 큰 맵(맵 manifest width/height/groundY/spawn, 없으면 2400/540/440), 공격과 PvP(피격자 권위), 사망·유령·비석·부활,
+//            몬스터(호스트 = Presence user_id 사전순 최소, 호스트가 시뮬레이션해 mobs 5회/초), 드롭과 줍기, 인벤토리(가방 패널).
+//            게임 이벤트는 어댑터 send(event, payload) / handlers.onEvent(event, payload). ?debug = 호스트와 판정 상자 표시.
 import { h, setText, wait } from '../dom.js';
 import {
   WORLD, HEAD, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, MOBILE_MIN_CANVAS_H, DESKTOP_RESERVED_H, NICK_RE,
@@ -15,15 +18,23 @@ import {
 } from '../constants.js';
 import { ROOM_MESSAGES as M, LOBBY_MESSAGES as LM, AppError, toAppError } from '../errors.js';
 import { createAvatarRenderer, smooth } from '../avatar.js';
-import { drawMap, drawFootShadow, cameraFor, camYTarget, drawPlatformDebug } from '../game/world.js';
+import { drawMap, drawFootShadow, cameraFor, camYTarget, drawPlatformDebug, worldFromMap } from '../game/world.js';
 import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overlay.js';
-import { createMoveInput, KEY_DIR, KEY_ACTION, KEY_TAP } from '../game/input.js';
-import { PHYS, createBody, stepBody, surfaceBelow, normState, isFx } from '../game/physics.js';
+import { createMoveInput, KEY_DIR, KEY_ACTION, KEY_TAP, KEY_ATTACK, KEY_PICK } from '../game/input.js';
+import { PHYS, createBody, stepBody, surfaceBelow, normState, isFx, knockBody } from '../game/physics.js';
+import {
+  COMBAT, attackBox, hurtBox, overlaps, randInt, createDamageNumbers, createSlashes, createTombstones, drawGhost, drawHpBar, HPBAR, blinkAlpha,
+} from '../game/combat.js';
+import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob, parseItem } from '../game/mobs.js';
+import { createDrops, createItemIcons, ITEM_CROP, PICK_RANGE } from '../game/drops.js';
+import { createInventoryPanel } from '../ui/inventory.js';
+import { loadImage } from '../assets.js';
+import { pickAvatar } from '../avatar-data.js';
 import { createFx, prefersReducedMotion } from '../game/fx.js';
 import { openModal } from '../ui/modal.js';
 import { createRoomLink } from '../backend/room-link.js';
 import { createChatLog } from '../ui/chatlog.js';
-import { clearRoomSession } from '../store.js';
+import { clearRoomSession, writeProfile, inventoryKey, readInventory, writeInventory } from '../store.js';
 import { cleanChatText } from '../backend/common.js';
 
 const REMOTE_SNAP_DIST = 400; // 이보다 멀면 순간 이동
@@ -38,8 +49,11 @@ const CAM_HEAD = 110; // 세로 카메라: 공중에서 머리(발 위 110)가 �
 const RECONNECT_BUTTON_MIN_MS = 4000; // 백오프 대기가 이보다 길면 배너에 "지금 연결" 버튼
 const CLEANUP_WAIT_MS = 2000; // 화면 정리 때 채널 정리를 기다리는 최대 시간
 const DESKTOP_MAX_VIEW_W = 1280; // 데스크톱 시야 가로 최대 (월드): P=2 → 1280px, P=3 → 1920px
-
-const clampX = (x) => Math.min(WORLD.maxX, Math.max(WORLD.minX, x));
+const MOBS_SEND_MS = 200; // (사이클 9) 호스트 mobs 송신 5회/초
+const HOST_START_MS = 1500; // (사이클 9) 첫 연결 뒤 이 시간이 지나야 호스트 시뮬레이션 시작 (Presence 목록이 다 차기 전 잘못된 호스트 방지)
+const SLASH_SRC = new URL('../../../assets/fx/slash.png', import.meta.url);
+const ATTACK_BOX_SHOW_MS = 200; // ?debug 공격 상자 표시 시간
+const randId = () => Math.random().toString(36).slice(2, 8);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 // 입력 단계: 제어 문자(줄바꿈 포함)는 공백으로 (서버는 제어문자를 거부한다)
 const cleanInput = (s) => s.replace(/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g, ' ');
@@ -56,11 +70,15 @@ export function mount(root, app, opts = {}) {
   const profile = app.profile;
   const isOwner = opts.owner === true; // (사이클 8) 방장: 로비 mine / createRoom 결과 / 새로고침 때 list_rooms mine 또는 sessionStorage
   let platforms = Object.freeze([]); // 맵 manifest platforms (없으면 지면만)
-  let debugPlatforms = false;
-  try { debugPlatforms = sessionStorage.getItem('mushroom.debug.platforms') === '1'; } catch { /* 무시 */ }
+  let world = worldFromMap(null); // (사이클 9) 맵 manifest에서 (없으면 2400 / 540 / 440)
+  const clampX = (x) => Math.min(world.maxX, Math.max(world.minX, x));
+  let debug = false; // (사이클 9) ?debug: 호스트·판정 상자 표시
+  try { debug = new URLSearchParams(location.search).has('debug'); } catch { /* 무시 */ }
+  let debugPlatforms = debug;
+  try { debugPlatforms = debugPlatforms || sessionStorage.getItem('mushroom.debug.platforms') === '1'; } catch { /* 무시 */ }
   const fx = createFx({ reduced: prefersReducedMotion() });
   let camY = null; // 세로 카메라 (월드). null = 아직 없음
-  let camRef = WORLD.groundY; // 세로 카메라 기준 발 높이
+  let camRef = WORLD.groundY; // 세로 카메라 기준 발 높이 (맵을 받으면 world.groundY)
   let pendingFx = null; // 다음 move에 1회 실을 fx
   let closingRoom = false; // room_closed 처리 중 (한 번만)
   let deletingSelf = false; // 내가 삭제를 요청했음 → 배너 문구 구분
@@ -95,6 +113,39 @@ export function mount(root, app, opts = {}) {
   let lastChatAt = -Infinity;
   const stats = { superJumps: 0, fxSent: 0 }; // (사이클 8) 계측
 
+  // --- (사이클 9) 전투·몬스터·드롭 상태 ---------------------------------------
+  const dmgNums = createDamageNumbers();
+  const slashes = createSlashes();
+  const stones = createTombstones();
+  const drops = createDrops();
+  let mobDefs = null; // normalizeMobManifest 결과 | null (몬스터 없음)
+  let mobFetched = false; // manifest 요청을 이미 했는지 (없을 때 404를 한 번만)
+  let zones = [];
+  let sim = null; // 호스트일 때만
+  let mobView = null;
+  let mobSprites = null;
+  let ghostSprite = null;
+  let tombSprite = null;
+  let spritesTried = false;
+  let slashTried = false;
+  let hostId = null;
+  let hostSince = 0; // 내가 호스트가 된 시각
+  let connectedAt = 0;
+  let lastMobsSent = -Infinity;
+  let announceHp = false; // 새 멤버에게 내 hp 1회
+  let resendDrops = false; // 호스트: 새 멤버에게 드롭 다시 알림
+  let atkSeq = 0;
+  const atkBoxes = []; // ?debug: [{ box, at }]
+  const earlyHp = new Map(); // Presence보다 먼저 온 hp
+  const invKey = inventoryKey(app.as);
+  let inventory = readInventory(invKey);
+  const cstats = {
+    atkSent: 0, atkRecv: 0, pvpHits: 0, hurt: 0, touchHits: 0, mobHits: 0, kills: 0, deaths: 0, revives: 0, hpSent: 0, hpRecv: 0,
+    mobsSent: 0, mobsRecv: 0, dropsSpawned: 0, dropsRecv: 0, picksSent: 0, picked: 0, equips: 0, hostChanges: 0,
+  };
+  let iconsRepaint = false;
+  const icons = createItemIcons({ onLoad: () => { iconsRepaint = true; } });
+
   // --- DOM (room.md 2~4장, ui-kit 22~23절) ------------------------------------------
   const roomChip = h('span', { class: 'bk-chip hud-room', testid: 'room-title', title: roomName },
     locked ? h('span', { class: 'bk-ico bk-ico--lock', 'aria-hidden': 'true' }) : null,
@@ -112,8 +163,12 @@ export function mount(root, app, opts = {}) {
   const leaveBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--sm', testid: 'room-leave' }, leaveIcon, leaveDots, leaveText);
   // (사이클 8) 방장에게만 보이는 방 삭제 버튼 (확인 모달을 거친다)
   const deleteBtn = isOwner ? h('button', { type: 'button', class: 'bk-btn bk-btn--sm bk-btn--danger', testid: 'room-delete' }, M.DELETE) : null;
-  const hudL = h('div', { class: 'hud-l' }, roomChip, countChip, modeSlot);
-  const hud = h('div', { class: 'hud' }, hudL, h('div', { class: 'hud-r' }, hint, deleteBtn, leaveBtn));
+  // (사이클 9) 가방 버튼 (인벤토리 패널)
+  const bagCount = h('span', { class: 'bk-badge bag-count', testid: 'bag-count', hidden: true });
+  const bagBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--sm', testid: 'bag-button', 'aria-haspopup': 'true', 'aria-expanded': 'false' }, '가방', bagCount);
+  const hostChip = debug ? h('span', { class: 'bk-chip debug-host', testid: 'debug-host' }, '호스트 -') : null;
+  const hudL = h('div', { class: 'hud-l' }, roomChip, countChip, modeSlot, hostChip);
+  const hud = h('div', { class: 'hud' }, hudL, h('div', { class: 'hud-r' }, hint, bagBtn, deleteBtn, leaveBtn));
   const modeSlot2 = h('span', { class: 'mode-slot' });
 
   const bannerText = h('span', {});
@@ -125,7 +180,15 @@ export function mount(root, app, opts = {}) {
     'aria-label': `${roomName} 맵. 좌우 방향키로 이동, Enter로 채팅`,
   });
   const loadingDots = h('span', { class: 'bk-dots canvas-dots', 'aria-hidden': 'true' }, h('i'), h('i'), h('i'));
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots);
+  // (사이클 9) 부활 안내 (사망 5초 뒤 버튼)
+  const reviveText = h('p', { class: 'revive-text', testid: 'revive-text' });
+  const reviveBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary', testid: 'revive', hidden: true }, '마을에서 부활');
+  const reviveBox = h('div', { class: 'bk-panel revive-box', testid: 'revive-box', role: 'status', hidden: true }, reviveText, reviveBtn);
+  // (사이클 9) 모바일 공격·줍기 버튼 (캔버스 오른쪽 아래)
+  const pickBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--touch touch-act', testid: 'pick', 'aria-label': '줍기' }, '줍기');
+  const attackBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary bk-btn--touch touch-act', testid: 'attack', 'aria-label': '공격 (누르고 있으면 계속)' }, '공격');
+  const touchFloat = h('div', { class: 'touch-float' }, pickBtn, attackBtn);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -252,7 +315,9 @@ export function mount(root, app, opts = {}) {
     countDot.hidden = !(next === 'disconnected' || next === 'failed');
     const interactive = next === 'connected' || next === 'disconnected';
     chatInput.disabled = next !== 'connected';
-    for (const b of [leftBtn, rightBtn, crouchBtn, jumpBtn]) b.disabled = !interactive;
+    for (const b of [leftBtn, rightBtn, crouchBtn, jumpBtn, attackBtn, pickBtn]) b.disabled = !interactive;
+    touchFloat.classList.toggle('is-hidden', !full);
+    bagBtn.hidden = !full;
     updateSendBtn();
     if (next !== 'connected') input.clear();
 
@@ -292,13 +357,15 @@ export function mount(root, app, opts = {}) {
   // --- 플레이어 -------------------------------------------------------------
   function makePlayer(uid, nickname, avatar, x, isSelf) {
     return {
-      user_id: uid, nickname, avatar, x, targetX: x, y: WORLD.groundY, dir: 1,
+      user_id: uid, nickname, avatar, x, targetX: x, y: world.groundY, dir: 1,
       moving: false, lastMoveAt: 0, lastMovedAt: -Infinity, anim: 'idle', animSince: performance.now(),
       bubble: null, lastChat: null, isSelf,
       s: 'idle', // 이동 상태 idle | walk | jump | fall | prone (원격은 받은 값, 없으면 null → 추정)
-      body: isSelf ? createBody(x) : null, // 내 캐릭터 물리
+      body: isSelf ? createBody(x, world.groundY, world.groundY) : null, // 내 캐릭터 물리
       // 원격 세로: 받은 y 기록 [{ t(도착 performance.now), y }] → Y_INTERP_DELAY_MS 늦게 직선 보간 (물리 재계산 없음)
-      yBuf: [], yTo: WORLD.groundY,
+      yBuf: [], yTo: world.groundY,
+      // (사이클 9) 전투: HP, 사망(유령), 무적 끝 시각, 공격 애니메이션 끝 시각, 마지막 공격 시각(나)
+      hp: COMBAT.maxHp, max: COMBAT.maxHp, dead: false, deadAt: 0, invulnUntil: 0, attackUntil: 0, lastAtkAt: -Infinity,
       fastUntil: 0, // 원격 대시: x 추적 속도 하한을 높이는 시각
     };
   }
@@ -331,7 +398,7 @@ export function mount(root, app, opts = {}) {
     pl.targetX = clampX(p.x);
     if (p.dir === 'left' || p.dir === -1) pl.dir = -1;
     else if (p.dir === 'right' || p.dir === 1) pl.dir = 1;
-    const y = isNum(p.y) ? Math.min(WORLD.groundY, Math.max(PHYS.ceilY, p.y)) : WORLD.groundY;
+    const y = isNum(p.y) ? Math.min(world.groundY, Math.max(PHYS.ceilY, p.y)) : world.groundY;
     const buf = pl.yBuf;
     // 오래 소식이 없었으면(정지 후 다시 움직임) 지금 보이는 높이를 기점으로 다시 시작한다
     const last = buf[buf.length - 1];
@@ -344,6 +411,7 @@ export function mount(root, app, opts = {}) {
     pl.yTo = y;
     pl.s = normState(p.s);
     pl.lastMoveAt = now;
+    if (pl.s === 'attack' && now >= pl.attackUntil) pl.attackUntil = now + COMBAT.attackAnimMs;
     if (isFx(p.fx)) playFx(pl, p.fx, pl.x, pl.y, now);
   }
 
@@ -377,16 +445,34 @@ export function mount(root, app, opts = {}) {
             players.set(s.user_id, pl);
             const early = earlyMoves.get(s.user_id);
             if (early) { applyMove(pl, { ...early, fx: null }); pl.x = pl.targetX; pl.y = pl.yTo; pl.yBuf.length = 0; } // 늦은 fx는 재생하지 않는다
+            const eh = earlyHp.get(s.user_id);
+            if (eh) applyHp(pl, eh, performance.now(), true);
           }
         }
         earlyMoves.clear();
-        for (const uid of [...players.keys()]) if (!seen.has(uid)) { fx.forget(players.get(uid)); players.delete(uid); }
+        earlyHp.clear();
+        for (const uid of [...players.keys()]) {
+          if (seen.has(uid)) continue;
+          const gone = players.get(uid);
+          fx.forget(gone);
+          slashes.forget(gone);
+          stones.remove(uid);
+          players.delete(uid);
+        }
         updateCount();
+        electHost();
       },
       onJoin(st) { if (live() && st && st.user_id !== me.user_id) sysJoin(st); },
       onLeave(st) { if (live() && st && st.user_id !== me.user_id) sysLeave(st); },
       // 다른 사람이 (다시) 들어왔다: 내 현재 상태(x, y, dir, s)를 move로 1회 보낸다. 여러 명이면 한 번으로 합쳐진다.
-      onPeerJoin() { if (live()) announce = true; },
+      onPeerJoin() {
+        if (!live()) return;
+        announce = true;
+        announceHp = true; // (사이클 9) 새 입장자에게 내 hp 1회
+        resendDrops = true; // 호스트면 바닥 드롭을 다시 알린다
+      },
+      /** (사이클 9) 게임 이벤트 atk, hp, mobs, drop, pick, picked (어댑터가 형식 검사) */
+      onEvent(event, p) { if (live()) onGameEvent(event, p); },
       onMove(p) {
         if (!live() || !p || typeof p !== 'object' || typeof p.user_id !== 'string' || !isNum(p.x)) return;
         const pl = players.get(p.user_id);
@@ -515,8 +601,286 @@ export function mount(root, app, opts = {}) {
     rl.start({ joined: true });
   }
 
+  // --- (사이클 9) 전투 ---------------------------------------------------------
+  const headOf = (p) => (avatarR ? avatarR.headTop(p.avatar) : 100);
+  const groundAt = (x, y) => surfaceBelow(platforms, x, y, world.groundY);
+  const send = (event, payload) => (link && connection === 'connected' && typeof link.send === 'function' ? link.send(event, payload) : false);
+
+  function sendHp(by) {
+    if (send('hp', { hp: me.hp, max: me.max, dead: me.dead, by: by || null })) cstats.hpSent++;
+  }
+
+  /** 유령·비석 그림: 처음 필요할 때(첫 사망) 받는다. 몬스터 manifest가 없으면 대체 그림 */
+  function ensureSprites() {
+    if (spritesTried) return;
+    spritesTried = true;
+    (async () => {
+      let defs = mobDefs;
+      if (!defs && !mobFetched) { mobFetched = true; defs = await loadMobManifest(); }
+      if (!alive || !defs) return;
+      const [g, t] = await Promise.all([loadSprite(defs.ghost), loadSprite(defs.tombstone)]);
+      if (!alive) return;
+      ghostSprite = g;
+      tombSprite = t;
+    })();
+  }
+
+  function doAttack(now) {
+    me.lastAtkAt = now;
+    me.attackUntil = now + COMBAT.attackAnimMs;
+    const dir = me.dir < 0 ? 'left' : 'right';
+    slashes.add(me, me.dir);
+    if (!slashTried) {
+      slashTried = true;
+      loadImage(SLASH_SRC).then((img) => { if (alive && img) slashes.setImage(img); });
+    }
+    const x = Math.round(me.x);
+    const y = Math.round(me.y);
+    if (debug) atkBoxes.push({ box: attackBox(x, y, dir), at: now });
+    if (send('atk', { x, y, dir, seq: ++atkSeq })) cstats.atkSent++;
+    if (isHost()) hostAttack(x, y, dir);
+  }
+
+  /** 내가 맞음 (피격자 권위): 피해, 무적, 넉백 또는 사망, hp 송신 */
+  function takeDamage(dmg, dir, by, now) {
+    me.hp = Math.max(0, me.hp - dmg);
+    me.invulnUntil = now + COMBAT.invuln * 1000;
+    cstats.hurt++;
+    dmgNums.add(dmg, me.x, me.y - headOf(me), 'hurt', now);
+    if (me.hp <= 0) die(now);
+    else knockBody(me.body, dir);
+    sendHp(by);
+  }
+
+  function die(now) {
+    me.dead = true;
+    me.deadAt = now;
+    me.attackUntil = 0;
+    me.body.kbT = 0;
+    me.body.dashT = 0;
+    me.body.prone = false;
+    cstats.deaths++;
+    stones.drop(me.user_id, me.x, groundAt(me.x, me.y), now);
+    ensureSprites();
+    reviveBtn.hidden = true;
+    reviveBox.hidden = false;
+    setText(reviveText, `유령이 되었어요. ${COMBAT.reviveDelay}초 뒤에 부활할 수 있어요.`);
+  }
+
+  function spawnPoint() {
+    if (world.spawn) return { x: world.spawn.x, y: world.spawn.y };
+    return { x: clampX(300 + Math.floor(Math.random() * 600)), y: world.groundY };
+  }
+
+  function revive() {
+    if (!me || !me.dead || connection !== 'connected') return;
+    const now = performance.now();
+    if (now - me.deadAt < COMBAT.reviveDelay * 1000) return;
+    const sp = spawnPoint();
+    me.body = createBody(sp.x, sp.y, world.groundY);
+    me.x = sp.x;
+    me.y = sp.y;
+    me.hp = me.max;
+    me.dead = false;
+    me.invulnUntil = now + COMBAT.reviveInvuln * 1000;
+    camRef = sp.y;
+    camY = null;
+    stones.remove(me.user_id);
+    reviveBox.hidden = true;
+    cstats.revives++;
+    announce = true; // 새 위치를 바로 알린다
+    sendHp(null);
+    canvas.focus({ preventScroll: true });
+  }
+
+  /** 원격 hp 적용: 사망/부활 전환(비석), 피해 숫자, 무적 깜빡임 */
+  function applyHp(pl, p, now, quiet = false) {
+    if (!pl.dead && p.dead) {
+      pl.deadAt = now;
+      stones.drop(pl.user_id, pl.x, groundAt(pl.x, pl.y), quiet ? now - 2000 : now);
+      ensureSprites();
+    } else if (pl.dead && !p.dead) {
+      stones.remove(pl.user_id);
+      pl.invulnUntil = now + COMBAT.reviveInvuln * 1000;
+    } else if (!p.dead && p.hp < pl.hp && !quiet) {
+      dmgNums.add(pl.hp - p.hp, pl.x, pl.y - headOf(pl), 'hit', now);
+      pl.invulnUntil = now + COMBAT.invuln * 1000;
+    }
+    pl.hp = p.hp;
+    pl.max = p.max;
+    pl.dead = p.dead;
+  }
+
+  // --- (사이클 9) 호스트와 몬스터 ------------------------------------------------
+  const isHost = () => !!me && hostId === me.user_id;
+
+  /** 호스트 = Presence 멤버(나 포함) 중 user_id 사전순 최소. 바뀌면 시뮬레이션을 넘겨받거나 내려놓는다. */
+  function electHost() {
+    if (!me) return;
+    let min = me.user_id;
+    for (const uid of players.keys()) if (uid < min) min = uid;
+    if (min === hostId) return;
+    const was = isHost();
+    hostId = min;
+    cstats.hostChanges++;
+    if (hostChip) setText(hostChip, `호스트 ${min === me.user_id ? '나' : nickOf(players.get(min))}`);
+    if (was && !isHost()) sim = null; // 내려놓음: 이후 받은 mobs로 그린다
+    if (isHost()) hostSince = performance.now();
+  }
+
+  /** 호스트 시뮬레이션 시작(첫 연결 1.5초 뒤). 받은 상태가 있으면 이어서, 없으면 처음부터 채운다 */
+  function startSim(now) {
+    if (sim || !mobDefs || !zones.length || !mobView) return;
+    sim = createMobSim({ kinds: mobDefs.kinds, zones });
+    const known = mobView.latest();
+    if (known.length) sim.load(known, now);
+    else sim.fill(now);
+  }
+
+  function hostAttack(x, y, dir) {
+    if (!sim) return;
+    const r = sim.hit(attackBox(x, y, dir), x, dir === 'left' ? -1 : 1, randInt(COMBAT.mobDmgMin, COMBAT.mobDmgMax));
+    if (!r) return;
+    cstats.mobHits++;
+    if (r.killed) {
+      cstats.kills++;
+      if (r.item) spawnDrop(r.item, r.mob.x, r.mob.y);
+    }
+  }
+
+  function spawnDrop(item, x, y) {
+    const d = { id: randId(), item, x: Math.round(x), y: Math.round(y) };
+    drops.add(d, groundAt(d.x, d.y - 1));
+    cstats.dropsSpawned++;
+    send('drop', d);
+  }
+
+  /** 호스트: 첫 요청자에게 확정 (이미 없으면 무시). 너무 먼 요청은 거절 */
+  function hostPick(uid, dropId) {
+    const d = drops.get(dropId);
+    if (!d) return;
+    const pl = players.get(uid);
+    if (!pl || pl.dead || Math.abs(pl.x - d.x) > PICK_RANGE.x + 80 || Math.abs(pl.y - d.y) > PICK_RANGE.y + 80) return;
+    drops.remove(dropId);
+    send('picked', { drop_id: dropId, user_id: uid, item: d.item });
+    if (uid === me.user_id) gainItem(d.item);
+  }
+
+  function tryPick() {
+    if (!me || me.dead) return;
+    const d = drops.nearest(me.x, me.y);
+    if (!d || d.asked && performance.now() - d.asked < 1000) return;
+    d.asked = performance.now();
+    cstats.picksSent++;
+    if (isHost()) hostPick(me.user_id, d.id);
+    else send('pick', { drop_id: d.id });
+  }
+
+  function onGameEvent(event, p) {
+    const now = performance.now();
+    switch (event) {
+      case 'atk': {
+        cstats.atkRecv++;
+        const pl = players.get(p.user_id);
+        if (!pl || pl.isSelf || pl.dead) return;
+        pl.attackUntil = now + COMBAT.attackAnimMs;
+        pl.dir = p.dir === 'left' ? -1 : 1;
+        slashes.add(pl, pl.dir);
+        if (debug) atkBoxes.push({ box: attackBox(p.x, p.y, p.dir), at: now });
+        // PvP: 피격자 권위 (내 위치로 판정)
+        if (!me.dead && now >= me.invulnUntil && overlaps(attackBox(p.x, p.y, p.dir), hurtBox(me.x, me.y, me.body.prone))) {
+          cstats.pvpHits++;
+          takeDamage(randInt(COMBAT.dmgMin, COMBAT.dmgMax), pl.dir, p.user_id, now);
+        }
+        if (isHost()) hostAttack(p.x, p.y, p.dir);
+        break;
+      }
+      case 'hp': {
+        cstats.hpRecv++;
+        const pl = players.get(p.user_id);
+        if (!pl) { if (earlyHp.size < 40 || earlyHp.has(p.user_id)) earlyHp.set(p.user_id, p); return; }
+        if (!pl.isSelf) applyHp(pl, p, now);
+        break;
+      }
+      case 'mobs':
+        if (!mobView || isHost()) return; // 호스트는 자기 시뮬레이션만 믿는다
+        cstats.mobsRecv++;
+        mobView.apply(p.list.filter((m) => mobDefs.kinds.has(m.kind)), now, false);
+        break;
+      case 'drop':
+        cstats.dropsRecv++;
+        drops.add(p, groundAt(p.x, p.y - 1), now);
+        break;
+      case 'pick':
+        if (isHost()) hostPick(p.user_id, p.drop_id);
+        break;
+      case 'picked':
+        drops.remove(p.drop_id);
+        if (p.user_id === me.user_id) gainItem(p.item);
+        break;
+      default:
+        break;
+    }
+  }
+
+  // --- (사이클 9) 인벤토리 ------------------------------------------------------
+  function gainItem(item) {
+    cstats.picked++;
+    const it = parseItem(item);
+    const label = it && assets ? assets.labelOf(it.part, it.id) : item;
+    if (!inventory.includes(item)) {
+      inventory = [...inventory, item];
+      writeInventory(invKey, inventory);
+      chatLog.addSystem(`${label}을(를) 주웠어요. 가방에서 입어 볼 수 있어요`);
+    } else {
+      chatLog.addSystem(`${label}을(를) 또 주웠어요`);
+    }
+    updateBag();
+    bag.refresh();
+  }
+
+  function updateBag() {
+    bagCount.hidden = !inventory.length;
+    setText(bagCount, String(inventory.length));
+  }
+
+  /** 가방에서 아이템 누름 → 즉시 착용 (프로필 저장 + updateSelf). manifest에 아직 없는 id면 false */
+  function equip(item) {
+    const it = parseItem(item);
+    if (!it || !assets || !me || !assets.parts[it.part].some((o) => o.id === it.id)) return false;
+    const avatar = assets.sanitizeAvatar({ ...me.avatar, [it.part]: it.id });
+    me.avatar = avatar;
+    avatarR?.ready(avatar);
+    const profileNext = { nickname: app.profile.nickname, avatar: pickAvatar(avatar) };
+    app.profile = profileNext;
+    if (!writeProfile(app.profileKey, profileNext)) app.storageFailed = true;
+    if (link) link.updateSelf({ avatar: pickAvatar(avatar) }).catch(() => {});
+    cstats.equips++;
+    return true;
+  }
+
+  function thumbFor(item) {
+    const it = parseItem(item);
+    if (!it || !assets || !avatarR || !assets.parts[it.part].some((o) => o.id === it.id)) return null;
+    const src = avatarR.thumb({ ...assets.defaultAvatar, [it.part]: it.id }, [it.part]);
+    return src ? { src, crop: ITEM_CROP[it.part] } : null;
+  }
+
+  const bag = createInventoryPanel({
+    items: () => inventory,
+    avatar: () => (me ? me.avatar : null),
+    labelOf: (part, id) => (assets ? assets.labelOf(part, id) : id),
+    icons,
+    thumbFn: thumbFor,
+    onEquip: equip,
+    onClose: () => { bagBtn.setAttribute('aria-expanded', 'false'); bagBtn.focus({ preventScroll: true }); },
+    on,
+  });
+  stage.append(bag.el);
+  updateBag();
+
   // --- 업데이트/렌더 ---------------------------------------------------------
-  const BODY_OPT = { speed: WORLD.speed, minX: WORLD.minX, maxX: WORLD.maxX, platforms };
+  const BODY_OPT = { speed: WORLD.speed, minX: WORLD.minX, maxX: WORLD.maxX, platforms, groundY: WORLD.groundY };
   const NO_INPUT = { dir: 0, jump: false, prone: false, superKind: null };
 
   function update(dt, now) {
@@ -542,11 +906,31 @@ export function mount(root, app, opts = {}) {
         pendingFx = r.fx;
         stats.superJumps++;
       }
-      if (inp.dir !== 0 && !b.prone && b.dashT <= 0) me.dir = inp.dir;
+      if (inp.dir !== 0 && !b.prone && b.dashT <= 0 && b.kbT <= 0) me.dir = inp.dir;
       me.x = b.x;
       me.y = b.y;
-      me.s = b.s;
+      // (사이클 9) 공격: 쿨다운 0.45초, 누르고 있으면 계속. 유령은 공격·줍기 불가
+      if (connection === 'connected' && !me.dead) {
+        if (input.wantsAttack(now) && now - me.lastAtkAt >= COMBAT.cooldown * 1000) { input.consumeAttack(); doAttack(now); }
+        if (input.takePick(now)) tryPick();
+      }
+      me.s = me.dead ? 'ghost' : now < me.attackUntil ? 'attack' : b.s;
       me.moving = b.s === 'walk';
+      // 몬스터 접촉 피해 (스스로 판정, PvP와 같은 무적·넉백)
+      if (mobView && !me.dead && now >= me.invulnUntil && connection === 'connected') {
+        const hb = hurtBox(me.x, me.y, b.prone);
+        for (const v of mobView.list) {
+          if (v.s === 'die' || !v.spec.touchDamage || !overlaps(hb, mobView.box(v))) continue;
+          cstats.touchHits++;
+          takeDamage(v.spec.touchDamage, me.x < v.x ? -1 : 1, `mob:${v.kind}`, now);
+          break;
+        }
+      }
+      if (me.dead && !reviveBox.hidden) {
+        const left = Math.ceil(COMBAT.reviveDelay - (now - me.deadAt) / 1000);
+        if (left <= 0 && reviveBtn.hidden) { reviveBtn.hidden = false; setText(reviveText, '유령이 되었어요.'); }
+        else if (left > 0) { const t = `유령이 되었어요. ${left}초 뒤에 부활할 수 있어요.`; if (reviveText.textContent !== t) setText(reviveText, t); }
+      }
       // move 송신: 최대 10회/초. 위치·방향·상태 중 하나라도 바뀌었을 때만(점프 중에는 y가 계속 바뀐다).
       // 정지·착지 후 마지막 상태도 이 규칙으로 1회 나간다. announce = 바뀐 것이 없어도 1회.
       // (사이클 8) fx가 있으면 간격을 기다리지 않고 바로 1회 (어댑터도 급송, 2초에 4회 상한)
@@ -564,6 +948,7 @@ export function mount(root, app, opts = {}) {
           pendingFx = null;
           link.sendMove(payload).catch(() => {});
         }
+        if (announceHp) { announceHp = false; sendHp(null); } // (사이클 9) 새 멤버에게 hp 1회
       } else if (connection !== 'connected') pendingFx = null;
       updateCamera(dt);
     }
@@ -592,7 +977,32 @@ export function mount(root, app, opts = {}) {
       if (next !== p.anim) { p.anim = next; p.animSince = now; } // 상태가 바뀌면 첫 프레임부터
     }
     fx.update(dt, (p) => frameOf(p, now));
+    // (사이클 9) 몬스터: 호스트는 시뮬레이션 → 표시 + 5회/초 송신, 나머지는 받은 기록 보간
+    if (me && mobView) {
+      if (isHost() && connection === 'connected' && now - Math.max(connectedAt, hostSince) >= HOST_START_MS) startSim(now);
+      if (sim && isHost()) {
+        sim.step(dt, now);
+        const list = sim.snapshot();
+        mobView.apply(list, now, true);
+        if (now - lastMobsSent >= MOBS_SEND_MS && connection === 'connected') {
+          lastMobsSent = now;
+          if (send('mobs', { t: Date.now(), list })) cstats.mobsSent++;
+        }
+      }
+      mobView.update(now);
+    }
+    if (resendDrops && connection === 'connected') {
+      resendDrops = false;
+      if (isHost()) for (const d of drops.list().slice(-10)) send('drop', { id: d.id, item: d.item, x: Math.round(d.x), y: Math.round(d.y), ttl: Math.max(1, Math.round(d.expires - now)) });
+    }
+    drops.update(now);
+    dmgNums.update(now);
+    slashes.update(now);
+    stones.update(dt, now);
+    while (atkBoxes.length && now - atkBoxes[0].at > ATTACK_BOX_SHOW_MS) atkBoxes.shift();
+    if (bag.isOpen && (iconsRepaint || now - lastBagPaint > 500)) { iconsRepaint = false; lastBagPaint = now; bag.repaint(); }
   }
+  let lastBagPaint = 0;
 
   function sampleY(buf, t, fallback) {
     if (!buf.length) return fallback;
@@ -617,14 +1027,17 @@ export function mount(root, app, opts = {}) {
     if (b.grounded) camRef = b.y;
     else if (b.y > camRef) camRef = b.y;
     else if (camY !== null && b.y - CAM_HEAD < camY + viewH * 0.08) camRef = Math.min(camRef, b.y - CAM_HEAD + viewH * (0.66 - 0.08));
-    const target = camYTarget(camRef, viewH, 0);
+    const target = camYTarget(camRef, viewH, 0, world.bottomY);
     if (camY === null || !Number.isFinite(camY)) camY = target;
     else camY += (target - camY) * (1 - Math.exp(-dt / CAM_SMOOTH_S));
     if (Math.abs(target - camY) < 0.05) camY = target;
   }
 
-  /** 애니메이션 이름: idle | walk | jump | fall | prone (manifest에 없으면 prone → crouch → idle, 그 밖은 idle) */
+  /** 애니메이션 이름: idle | walk | jump | fall | prone | attack | ghost (manifest에 없으면 prone → crouch → idle, attack → idle) */
   function animOf(p) {
+    const now = performance.now();
+    if (p.dead || p.s === 'ghost') return 'ghost';
+    if (now < p.attackUntil) return 'attack';
     if (p.isSelf) return p.s === 'walk' || p.s === 'jump' || p.s === 'fall' || p.s === 'prone' ? p.s : 'idle';
     if (p.s === 'jump' || p.s === 'fall' || p.s === 'prone') return p.s;
     return p.moving ? 'walk' : 'idle'; // s가 없거나 idle/walk: 실제 움직임으로 (멈췄는데 걷는 모습 방지)

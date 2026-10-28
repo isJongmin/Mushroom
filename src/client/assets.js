@@ -72,7 +72,7 @@ const posNum = (v, d) => (typeof v === 'number' && Number.isFinite(v) && v > 0 &
 // 아바타
 
 const ANIM_NAMES = Object.keys(AVATAR.animations);
-const OPTIONAL_ANIMS = Object.freeze(['jump', 'fall', 'prone', 'crouch']);
+const OPTIONAL_ANIMS = Object.freeze(['jump', 'fall', 'prone', 'crouch', 'attack']); // (사이클 9) attack [11,12] 120ms
 
 function normalizeAnimations(raw, frameCount) {
   const out = {};
@@ -150,7 +150,8 @@ function normalizeAvatarManifest(raw) {
     for (const o of list.slice(0, 64)) {
       if (!o || typeof o.id !== 'string' || !PART_ID_RE.test(o.id) || seen.has(o.id)) continue;
       seen.add(o.id);
-      clean.push({ id: o.id, label: typeof o.label === 'string' && o.label.trim() ? o.label.trim().slice(0, 40) : o.id });
+      // (사이클 9) drop: true = 드롭 전용 파츠 (인벤토리에 있어야 고를 수 있다)
+      clean.push({ id: o.id, label: typeof o.label === 'string' && o.label.trim() ? o.label.trim().slice(0, 40) : o.id, drop: o.drop === true });
     }
     if (!clean.length) return null; // 파츠 하나라도 비면 계약 형식이 아니다
     parts[part] = clean;
@@ -175,7 +176,7 @@ function normalizeAvatarManifest(raw) {
 }
 
 function fallbackManifest() {
-  const parts = Object.fromEntries(PART_KEYS.map((p) => [p, [{ id: DEFAULT_AVATAR[p], label: DEFAULT_AVATAR[p] }]]));
+  const parts = Object.fromEntries(PART_KEYS.map((p) => [p, [{ id: DEFAULT_AVATAR[p], label: DEFAULT_AVATAR[p], drop: false }]]));
   return {
     parts,
     layerOrder: DEFAULT_LAYER_ORDER,
@@ -271,6 +272,11 @@ export async function loadAvatarAssets() {
     presets: Object.freeze(presets),
     /** 네트워크/DB에서 온 아바타를 manifest에 있는 id 7개로 맞춘다 (avatar-data.js 규칙). */
     sanitizeAvatar,
+    /** (사이클 9) 드롭 전용 파츠인지 */
+    isDropPart(part, id) {
+      const o = base.parts[part] && base.parts[part].find((x) => x.id === id);
+      return !!(o && o.drop);
+    },
     labelOf(part, id) {
       const o = base.parts[part] && base.parts[part].find((x) => x.id === id);
       return o ? o.label : id;
@@ -292,13 +298,13 @@ export async function loadMapAssets() {
   if (!list || !list.length) {
     warnOnce('map:manifest', 'assets/map/manifest.json이 없습니다 (단색 맵으로 그립니다)');
     return Object.freeze({
-      source: 'fallback', layers: [], ground: null, groundY: WORLD.groundY, width: WORLD.width, density: 1.5, layerCount: 0,
-      platforms: normalizePlatforms(raw && raw.platforms),
+      source: 'fallback', layers: [], ground: null, groundY: num(raw && raw.groundY, WORLD.groundY), width: num(raw && raw.width, WORLD.width),
+      height: raw && raw.height, spawn: raw && raw.spawn, spawns: raw && Array.isArray(raw.spawns) ? raw.spawns : null, density: 1.5, layerCount: 0,
+      platforms: normalizePlatforms(raw && raw.platforms, { width: num(raw && raw.width, WORLD.width), groundY: num(raw && raw.groundY, WORLD.groundY) }),
     });
   }
   const density = posNum(raw.density, 1.5);
   const groundY = num(raw.groundY, WORLD.groundY);
-  if (groundY !== WORLD.groundY) warnOnce('map:groundY', `맵 groundY(${groundY})가 계약 값(${WORLD.groundY})과 다릅니다`);
   const width = num(raw.width, WORLD.width);
   const specs = list.slice(0, 16).map((l) => {
     const url = l && resolveSrc(l.src);
@@ -334,6 +340,10 @@ export async function loadMapAssets() {
     density,
     layerCount: layers.length,
     // (사이클 8) 발판 [{ id, x1, x2, y }] (한 방향 통과). 없으면 [] → 지면만.
-    platforms: normalizePlatforms(raw.platforms, { width }),
+    platforms: normalizePlatforms(raw.platforms, { width, groundY }),
+    // (사이클 9) 큰 맵: height, spawn {x, y}, 몬스터 스폰 구역 spawns (정리는 화면/game/mobs.js)
+    height: raw.height,
+    spawn: raw.spawn,
+    spawns: Array.isArray(raw.spawns) ? raw.spawns : null,
   });
 }

@@ -81,7 +81,7 @@ def ground_base(seed=11, x0=-24, x1=1224):
 def waterfall(x, top, z, w=7.0, seed=0):
     """x 중심, top 에서 지면(0)까지 떨어지는 폭포 + 물보라."""
     rng = np.random.default_rng(seed)
-    bx = []
+    bx = [B(x, top + 0.6, z - 1.0, w + 3.0, 2.4, 6.0, '#DDF4FF', noise=0.03, bevel=0.4, emit=('#FFFFFF', 0.15))]
     yy = top
     k = 0
     while yy > 0.5:
@@ -90,13 +90,13 @@ def waterfall(x, top, z, w=7.0, seed=0):
         bx.append(B(x + rng.uniform(-0.25, 0.25), yy - hh / 2, z, ww, hh + 0.15, 3.0,
                     ('#A8DEFA', '#C4EAFE', '#B6E4FC')[k % 3], noise=0.05, bevel=0.3, emit=('#DDF4FF', 0.10)))
         # 흰 물줄기 결
-        if k % 2 == 0:
-            bx.append(B(x + rng.uniform(-w / 3, w / 3), yy - hh / 2, z + 1.6, 1.0, hh * 0.8, 0.4, '#FFFFFF', noise=0,
+        for _ in range(2):
+            bx.append(B(x + rng.uniform(-w / 2.6, w / 2.6), yy - hh / 2, z + 1.6, 1.0, hh * 0.8, 0.4, '#FFFFFF', noise=0,
                         bevel=0.1, emit=('#FFFFFF', 0.15)))
         yy -= hh; k += 1
     # 물보라 큐브
-    for j in range(10):
-        s_ = rng.uniform(1.6, 3.6)
+    for j in range(18):
+        s_ = rng.uniform(1.6, 4.2)
         bx.append(B(x + rng.uniform(-w, w), rng.uniform(0.5, 4.5), z + rng.uniform(-2, 4), s_, s_, s_, '#FFFFFF',
                     noise=0.02, bevel=0.3))
     return bx
@@ -225,7 +225,7 @@ def platform_props():
     add(P.mushroom_house('red', 40, seed=77, chimney=True), i['cx'] - 12, i['Yt'], i['zb'] + 9, 14, 0.3)
     add(P.pine(78, h=36, r=9), i['cx'] + 22, i['Yt'], i['zb'] + 6)
     add(P.flowers(79, 14, 3, 5), i['cx'] + 6, i['Yt'], i['zb'] + 5)
-    L.extend(waterfall(byid['isle-falls']['x2'] / 2 - 6.5, i['Yt'] - 5.0, -30.0, 10.0, 80))
+    L.extend(waterfall(byid['isle-falls']['x2'] / 2 - 9.0, i['Yt'] - 5.0, -30.0, 15.0, 80))
     # 파란 갓 윗면 뒤
     h = I['blue-cap']
     add(P.mushroom_small(81, 'blue', 0.8), 878, h['Yt'], h['z0'] - 17, -10)

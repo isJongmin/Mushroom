@@ -28,7 +28,7 @@ import {
 import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob } from '../game/mobs.js';
 import { createDrops, PICK_RANGE, TOUCH_RANGE } from '../game/drops.js';
 import {
-  BUFF, BUFF_IDS, BUFF_LABEL, isBuff, HEAL, HEAL_AMOUNT, attackStats, clampAttack, rollHits, createBuffs, drawBuffOrb,
+  BUFF_IDS, BUFF_LABEL, isBuff, hitGap, HEAL, HEAL_AMOUNT, attackStats, clampAttack, rollHits, createBuffs, drawBuffOrb,
 } from '../game/buffs.js';
 import { createFx, prefersReducedMotion } from '../game/fx.js';
 import { openModal } from '../ui/modal.js';
@@ -616,13 +616,14 @@ export function mount(root, app, opts = {}) {
   /** hp 송신. dm = 이번에 받은 타별 피해 (다른 화면의 피해 숫자용, 사이클 10 확장) */
   function sendHp(by, dm) {
     const p = { hp: me.hp, max: me.max, dead: me.dead, by: by || null };
-    if (dm && dm.length) p.dm = dm.slice(0, 8);
+    if (dm && dm.length) p.dm = dm.slice(0, 12);
     if (send('hp', p)) cstats.hpSent++;
   }
 
-  /** 타별 피해 숫자를 80ms 간격으로 (multi 버프) */
+  /** 타별 피해 숫자를 min(80, 600/타수) ms 간격, 한 줄씩 위로 쌓아서 (multi 버프) */
   function showHits(dms, x, y, kind, now) {
-    dms.forEach((d, i) => dmgNums.add(d, x, y, kind, now + i * BUFF.hitGapMs));
+    const gap = hitGap(dms.length); // min(80, 600/타수) ms
+    dms.forEach((d, i) => dmgNums.add(d, x, y, kind, now + i * gap, dms.length > 1 ? i : null));
   }
 
   /** 유령·비석·슬래시(기본/속성 3종)·드롭 받침·버프 구슬·버프 아이콘 (몬스터 manifest의 ghost, tombstone, fx.*, dropBag).

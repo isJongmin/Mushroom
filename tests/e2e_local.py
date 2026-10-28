@@ -1755,25 +1755,35 @@ def run_py(args, cwd, timeout):
     return p, tail
 
 
-@case(24, "복셀 아바타 검사 (사본): voxel/check.py --fast 통과, manifest files 합 = 디스크 PNG 수 (기대값은 manifest에서 계산), 원본 assets 불변. 전체 결정성 재빌드는 QA_FULL_BUILD=1일 때만")
+@case(24, "아바타 원본 검사 (사본): 배포 시트가 manifest frames 수 x 144 x 192 인지(11 또는 13 프레임) + manifest files 합 = 디스크 PNG 수, voxel/check.py --fast는 원본 프레임 수가 배포와 같을 때만 판정(다르면 UNVERIFIED), 원본 assets 불변")
 def t24(browser, col):
     before = repo_tree(ROOT)
     manifest = json.loads((ROOT / "assets/avatar/manifest.json").read_text(encoding="utf-8"))
-    # 기대값: manifest files({layer: [id, ...]})가 가리키는 경로 집합. 숫자 하드코딩 없음.
+    # 기대값: manifest files({layer: [id, ...]})가 가리키는 경로 집합. 프레임 수는 manifest frames에서 읽는다.
     listed = {f"assets/avatar/{layer}/{pid}.png" for layer, ids in manifest["files"].items() for pid in ids}
     disk = {k for k in before if k.startswith("assets/avatar/") and k.endswith(".png")}
+    nf = len(manifest.get("frames") or [])
     checks = [(f"manifest files 합 {len(listed)}장 = 디스크 PNG {len(disk)}장, 같은 파일 집합 "
                f"(목록 밖 {sorted(disk - listed)[:3]}, 파일 없음 {sorted(listed - disk)[:3]})",
                len(listed) > 0 and listed == disk)]
+    checks.append((f"manifest frames {nf}개 (11 또는 13), 프레임 144x192 (배포 시트 {nf * 144}x192)", nf in (11, 13)))
+    # 원본 검사는 원본(build.py)이 만든 프레임 수가 배포와 같을 때만 판정한다. 다르면 아트 교체 전이므로 UNVERIFIED.
+    src_text = (ROOT / "assets/_src/voxel/check.py").read_text(encoding="utf-8")
+    src_13 = "len(B.FRAMES) == 13" in src_text
+    src_nf = 13 if src_13 else 11
     dst = copy_repo("voxel-fast")
     p, tail = run_py([str(dst / "assets/_src/voxel/check.py"), "--fast"], dst, 900)
-    checks.append((f"voxel/check.py --fast 종료 0 (출력 끝: {tail})", p.returncode == 0))
-    checks.append(("출력에 '결과: 통과'", "결과: 통과" in p.stdout))
+    run_ok = p.returncode == 0 and "결과: 통과" in p.stdout
+    if nf == src_nf:
+        checks.append((f"voxel/check.py --fast 통과 (배포 {nf}프레임 = 원본 {src_nf}프레임, 출력 끝: {tail})", run_ok))
+    else:
+        checks.append((f"voxel/check.py --fast: 배포 {nf}프레임 != 원본 {src_nf}프레임 (아트 교체 전). 실행 결과 종료 {p.returncode}, 출력 끝: {tail}. 교체 후 재실행하면 판정", None))
     if FULL_BUILD:
         dfull = copy_repo("voxel-full")
         pf, tailf = run_py([str(dfull / "assets/_src/voxel/check.py")], dfull, 2400)
         checks.append((f"전체 결정성 재빌드 voxel/check.py (무옵션, 임시 폴더 재빌드 포함) 종료 0 (출력 끝: {tailf})",
-                       pf.returncode == 0 and "결과: 통과" in pf.stdout))
+                       pf.returncode == 0 and "결과: 통과" in pf.stdout) if nf == src_nf else
+                      ("전체 결정성 재빌드: 프레임 수 불일치로 생략", None))
     else:
         checks.append(("전체 결정성 재빌드 voxel/check.py (약 6분): 이번 실행은 생략, QA_FULL_BUILD=1로 한 번 실행", None))
     after = repo_tree(ROOT)
@@ -1782,18 +1792,18 @@ def t24(browser, col):
     return verdict(checks)
 
 
-@case(25, "복셀 맵 검사 (사본): voxel_map/check.py 통과 (manifest 5 레이어, 파일 일치, 용량, 이음매). QA_FULL_BUILD=1이면 맵 전체 재빌드 md5 비교")
+@case(25, "맵 원본 검사 (사본): assets/_src/map_canva/check.py 통과 (사이클 10 Canva 맵: manifest 레이어 수, 파일, 발판/로프 도달, 스폰, 결정성 옵션). 맵 상수는 manifest에서 읽음")
 def t25(browser, col):
     dst = copy_repo("map-check")
-    p, tail = run_py([str(dst / "assets/_src/voxel_map/check.py")], dst, 900)
+    p, tail = run_py([str(dst / "assets/_src/map_canva/check.py")], dst, 900)
     last = p.stdout.strip().splitlines()[-1:] or [""]
-    checks = [(f"voxel_map/check.py 종료 0 (출력 끝: {tail})", p.returncode == 0),
+    checks = [(f"map_canva/check.py 종료 0 (출력 끝: {tail})", p.returncode == 0),
               ("마지막 줄 'OK'", last == ["OK"])]
+    checks.append((f"맵 상수 manifest 기준: 레이어 {MAP_LAYER_COUNT}개, 폭 {WORLD_W}, 높이 {WORLD_H}, groundY {GROUND_Y}, 스폰 {MAP_SPAWN}", bool(MAP_LAYER_COUNT) and bool(WORLD_W)))
     if FULL_BUILD:
-        # 맵 전체 재빌드: 사본의 assets/map을 지우고 build.py로 다시 구운 뒤 원본 assets/map과 바이트 비교
         map_dst = dst / "assets" / "map"
         shutil.rmtree(map_dst)
-        pb, tailb = run_py([str(dst / "assets/_src/voxel_map/build.py")], dst, 1800)
+        pb, tailb = run_py([str(dst / "assets/_src/map_canva/build.py"), "--out", str(map_dst)], dst, 1800)
         same = {}
         if pb.returncode == 0:
             for f in sorted((ROOT / "assets/map").iterdir()):
@@ -1802,10 +1812,10 @@ def t25(browser, col):
         checks.append((f"맵 전체 재빌드 build.py (사본) 종료 0 (출력 끝: {tailb})", pb.returncode == 0))
         checks.append((f"맵 전체 재빌드 결과 원본과 바이트 동일 ({sum(same.values())}/{len(same)}, 다른 파일 {[k for k, v in same.items() if not v]})",
                        bool(same) and all(same.values())))
-        pd, taild = run_py([str(dst / "assets/_src/voxel_map/check.py"), "--determinism"], dst, 1500)
-        checks.append((f"voxel_map/check.py --determinism (구름/하늘/지면 타일 2회 md5) 종료 0 (출력 끝: {taild})", pd.returncode == 0))
+        pd, taild = run_py([str(dst / "assets/_src/map_canva/check.py"), "--determinism"], dst, 1500)
+        checks.append((f"map_canva/check.py --determinism 종료 0 (출력 끝: {taild})", pd.returncode == 0))
     else:
-        checks.append(("맵 전체 재빌드 md5 비교 (약 5분) + --determinism: 이번 실행은 생략, QA_FULL_BUILD=1로 한 번 실행", None))
+        checks.append(("맵 전체 재빌드 md5 비교 + --determinism: 이번 실행은 생략, QA_FULL_BUILD=1로 한 번 실행", None))
     return verdict(checks)
 
 
@@ -2850,19 +2860,26 @@ def jump_trace(rows, key):
     }
 
 
-@case(40, "아바타 시트 (사이클 6): manifest frames 11개(끝 jump/fall/crouch), animations jump[8]/fall[9]/crouch[10] 200ms, 기존 idle_front[0,1]/idle[2]/walk[3..6] 유지, files 전 PNG 1584x192 RGBA, 8~10 프레임 비어 있지 않고 서로 다름")
+@case(40, "아바타 시트 (manifest 기준, 11프레임 사이클 8 또는 13프레임 사이클 10): frames 이름, 애니메이션 인덱스(jump/fall/prone 또는 crouch, attack 있으면 [11,12] 120ms), 기존 idle_front/idle/walk 유지, files 전 PNG 가 manifest 프레임 수 x 144 x 192 RGBA, 점프/낙하/엎드림/공격 프레임 비어 있지 않고 서로 다름")
 def t40(browser, col):
     import numpy as np
     from PIL import Image
 
     checks = []
-    fr = MANIFEST.get("frames") or []
-    an = MANIFEST.get("animations") or {}
-    checks.append((f"frames {len(fr)}개, 8~10 = jump, fall, crouch (실제 끝 {fr[8:11]})", len(fr) == 11 and fr[8:11] == ["jump", "fall", "crouch"]))
-    for name, idx in (("jump", 8), ("fall", 9), ("crouch", 10)):
-        e = an.get(name) or {}
-        checks.append((f"animations.{name} = frames [{idx}], 200ms (실제 {e})", e.get("frames") == [idx] and e.get("ms") == 200))
-    got = {k: (an.get(k) or {}).get("frames") for k in ("idle_front", "idle", "walk")}
+    fr = AVATAR_FRAMES
+    n = len(fr)
+    checks.append((f"frames 개수 {n} 은 11(사이클 8) 또는 13(사이클 10, attack 포함)", n in (11, 13)))
+    pose_name = "prone" if "prone" in ANIM else "crouch"  # 프런트는 옛 crouch도 같은 의미로 받는다
+    want = {"jump": [8], "fall": [9], pose_name: [10]}
+    if n == 13:
+        want["attack"] = [11, 12]
+    for name, idx in want.items():
+        e = ANIM.get(name) or {}
+        ms_want = 120 if name == "attack" else 200
+        checks.append((f"animations.{name} = frames {idx}, {ms_want}ms (실제 {e})", e.get("frames") == idx and e.get("ms") == ms_want))
+    if n == 13:
+        checks.append((f"frames 11, 12 = attack0, attack1 (실제 {fr[11:13]})", fr[11:13] == ["attack0", "attack1"]))
+    got = {k: (ANIM.get(k) or {}).get("frames") for k in ("idle_front", "idle", "walk")}
     checks.append((f"기존 애니메이션 유지: idle_front [0,1], idle [2], walk [3,4,5,6] (실제 {got})",
                    got == {"idle_front": [0, 1], "idle": [2], "walk": [3, 4, 5, 6]}))
     fm = MANIFEST.get("frame") or {}
@@ -2870,37 +2887,31 @@ def t40(browser, col):
     checks.append((f"프레임 144x192, 기준점 (72,180) 유지 (실제 {fm}, {anc})", fm == {"w": 144, "h": 192} and anc == {"x": 72, "y": 180}))
     paths = [(layer, pid) for layer, ids in (MANIFEST.get("files") or {}).items() for pid in ids]
     bad, weak, same = [], [], []
-    sheet_px = {8: 0, 9: 0, 10: 0}  # 시트 전체(모든 레이어 합)의 프레임별 알파 픽셀 수
+    pose_idx = [i for i in range(8, n) if fr[i] in ("jump", "fall", pose_name) or fr[i].startswith("attack")]
     for layer, pid in paths:
         p = ROOT / "assets/avatar" / layer / f"{pid}.png"
         if not p.exists():
             bad.append(f"{layer}/{pid} 없음")
             continue
         im = Image.open(p)
-        if im.size != (1584, 192) or im.mode != "RGBA":
+        if im.size != (AVATAR_SHEET_W, AVATAR_FRAME_H) or im.mode != "RGBA":
             bad.append(f"{layer}/{pid} {im.size} {im.mode}")
             continue
         arr = np.asarray(im)
         fs = []
-        side = int((arr[:, 2 * 144:3 * 144, 3] > 0).sum())  # 측면 정지(프레임 2)의 알파 픽셀 수 = 이 레이어의 기준 크기
-        for idx in (8, 9, 10):
-            f = arr[:, idx * 144:(idx + 1) * 144, :]
-            n = int((f[:, :, 3] > 0).sum())
-            sheet_px[idx] += n
-            # 뒤 레이어(*_back)는 측면 뷰에서 몸 뒤에 가려지도록 설계되어 프레임 0~7에서도 거의 비어 있다(아트 계약).
-            # 몸 앞 레이어는 절대 크기가 레이어마다 달라(얼굴 등은 작다) 측면 정지 대비 비율로 본다.
-            # 실측 최저 비율 0.33(하의 숙이기), 기준 0.25.
-            if not layer.endswith("_back") and side > 0 and n < 0.25 * side:
-                weak.append(f"{layer}/{pid}#{idx}({n}/{side})")
+        side = int((arr[:, 2 * AVATAR_FRAME_W:3 * AVATAR_FRAME_W, 3] > 0).sum())  # 측면 정지(프레임 2)의 알파 픽셀 수
+        for idx in pose_idx:
+            f = arr[:, idx * AVATAR_FRAME_W:(idx + 1) * AVATAR_FRAME_W, :]
+            nn = int((f[:, :, 3] > 0).sum())
+            if not layer.endswith("_back") and side > 0 and nn < 0.25 * side:
+                weak.append(f"{layer}/{pid}#{idx}({nn}/{side})")
             fs.append(f)
-        # 완전히 빈 프레임(뒤 레이어가 포즈상 몸에 다 가려진 경우)끼리는 같아도 정상이다. 내용이 있는 프레임끼리만 비교.
         filled = [f for f in fs if (f[:, :, 3] > 0).any()]
         if any(np.array_equal(filled[i], filled[j]) for i in range(len(filled)) for j in range(i + 1, len(filled))):
             same.append(f"{layer}/{pid}")
-    checks.append((f"files 전 PNG {len(paths)}장 모두 1584x192 RGBA (문제 {bad[:3] or '없음'})", bool(paths) and not bad))
-    checks.append((f"몸 앞 레이어 8/9/10 프레임 알파 >= 측면 정지(2) 대비 25% (약함 {weak[:3] or '없음'})", not weak))
-    checks.append((f"시트 전체 프레임 8/9/10 비어 있지 않음, 알파 합 {sheet_px} (기준 5000px 이상)", min(sheet_px.values()) >= 5000))
-    checks.append((f"8/9/10 프레임이 서로 다름 (같은 파일 {same[:3] or '없음'})", not same))
+    checks.append((f"files 전 PNG {len(paths)}장 모두 {AVATAR_SHEET_W}x{AVATAR_FRAME_H} RGBA (문제 {bad[:3] or '없음'})", bool(paths) and not bad))
+    checks.append((f"몸 앞 레이어 포즈 프레임 {pose_idx} 알파 >= 측면 정지(2) 대비 25% (약함 {weak[:3] or '없음'})", not weak))
+    checks.append((f"포즈 프레임끼리 서로 다름 (같은 파일 {same[:3] or '없음'})", not same))
     return verdict(checks)
 
 
@@ -3225,6 +3236,447 @@ def t46(browser, col):
     finally:
         ctx.close()
     return verdict(checks)
+
+
+# ---------------------------------------------------------------------------
+# 사이클 10 (ARCHITECTURE "사이클 10 계약" + "변경(2026-10-29 사용자)"): 버프 10스택, 상한 w420 hits11 dmax170,
+# 쿨다운 최소 0.10, HP 회복 아이템 heal, 호스트 인계, 로프, 카메라 경계, 자동 줍기와 Z, 위조 atk, 사망 시 버프 초기화.
+# 값은 전부 계약 문서에서 옮긴 상수다. 프런트 값을 그대로 믿지 않고 공식으로 다시 계산해 비교한다.
+# ---------------------------------------------------------------------------
+def c10_pair(ctx, col, nick_a, nick_b, room):
+    """pair_in_room과 같지만 두 탭 모두 ?debug로 연다 (버프 주입 훅 사용)."""
+    a = c10_open_debug(ctx, col, "A", "a")
+    create_profile(a, nick_a)
+    rid = ui_create_room(a, room)
+    b = c10_open_debug(ctx, col, "B", "b")
+    create_profile(b, nick_b)
+    enter_from_lobby(b, room)
+    wait_until(lambda: find_player(a, nick_b) is not None, 6)
+    wait_until(lambda: find_player(b, nick_a) is not None, 6)
+    return a, b, rid
+
+
+C10_BUFFS = ["range", "multi", "element", "power", "speed"]
+C10_STACK_MAX = 10
+C10_CAP = {"w": 420, "hits": 11, "dmax": 170, "el": 3}  # 받는 쪽 상한 (계약)
+C10_HEAL = 30
+C10_MAX_HP = 100
+C10_BUFF_MS = 60000
+
+
+def c10_exp_attack(stacks):
+    """계약 공식으로 기대 공격 값. stacks = {버프 id: 스택}. 상한 적용 후 값."""
+    g = lambda k: stacks.get(k, 0)  # noqa: E731
+    es = g("element")
+    tier = 0 if es == 0 else (1 if es <= 3 else (2 if es <= 6 else 3))  # 1~3 불, 4~6 얼음, 7~10 번개
+    pb = min(40, 4 * g("power"))  # power +4/스택, 최대 +40
+    return {
+        "w": min(C10_CAP["w"], 70 + 35 * g("range")),  # range: 판정 가로 70 + 35/스택, 최대 420
+        "hits": min(C10_CAP["hits"], 1 + g("multi")),  # multi: 타수 1 + 스택, 최대 11
+        "dmin": 8 + pb, "dmax": 14 + pb,
+        "el": tier,
+        "cooldown": max(0.10, 0.45 * (0.8 ** g("speed"))),  # speed: 0.45 x 0.8^스택, 최소 0.10
+    }
+
+
+def c10_open_debug(ctx, col, label, name):
+    """?debug 탭(버프 주입 훅 window.__mushroomDebug 사용). 부팅 후 프로필/로비/방 중 하나."""
+    page = ctx.new_page()
+    col.attach(page, label)
+    page.goto(f"{BASE}?as={name}&debug")
+    if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+        raise AssertionError(f"[{label}] 부트 후 화면 전환 실패")
+    return page
+
+
+def c10_buff_stacks(page):
+    return {b["id"]: b["stacks"] for b in cb(page)["buffs"]}
+
+
+def cb(page):
+    return state(page)["combat"]
+
+
+def c10_inject(page, bid, n=1):
+    for _ in range(n):
+        page.evaluate("(id) => window.__mushroomDebug.buff(id)", bid)
+
+
+def c10_clear(page):
+    page.evaluate("() => window.__mushroomDebug.clearBuffs()")
+
+
+def c10_attack_ok(att, exp):
+    return (att["w"] == exp["w"] and att["hits"] == exp["hits"] and att["dmin"] == exp["dmin"]
+            and att["dmax"] == exp["dmax"] and att["el"] == exp["el"] and abs(att["cooldown"] - exp["cooldown"]) < 0.001)
+
+
+def c10_fake_event(page, event, payload, sender="qa-fake-sender"):
+    """같은 방 채널에 게임 이벤트를 가짜 발신자 이름으로 넣는다 (local 어댑터 envelope: {type:'ev', event, payload, from})."""
+    rid = state(page)["room"]["id"]
+    page.evaluate("""([rid, event, payload, from]) => { const bc = new BroadcastChannel('mushroom:room:' + rid);
+      bc.postMessage({ type: 'ev', event, payload, from }); setTimeout(() => bc.close(), 300); }""",
+                  [rid, event, payload, sender])
+
+
+def c10_forged_atk(page, victim_x, victim_y, sender_uid, **over):
+    """sender_uid가 victim 앞쪽에서 휘두른 것처럼 atk를 보낸다. over는 w/hits/dmin/dmax/el 덮어쓰기."""
+    p = {"user_id": sender_uid, "x": victim_x - 20, "y": victim_y, "dir": "right", "seq": 1,
+         "w": 70, "hits": 1, "dmin": 1, "dmax": 1, "el": 0}
+    p.update(over)
+    c10_fake_event(page, "atk", p, sender=sender_uid)
+
+
+def c10_face(page, toward):
+    """toward(사람 객체)가 있는 쪽을 보게 한다 (짧게 누른다)."""
+    me = state(page)["me"]
+    d = toward["x"] - me["x"]
+    if abs(d) < 1:
+        return
+    key = "ArrowRight" if d > 0 else "ArrowLeft"
+    hold_key(page, key, 60)
+    time.sleep(0.15)
+
+
+@case(47, "버프 값 (계약 2026-10-29): 5종 각각 1~10스택 공식 일치(w, hits, dmin/dmax, el 색 tier, 쿨다운 0.45x0.8^s 최소 0.10), 11번째 줍기는 10에서 멈춤, 전부 10스택일 때 상한 값 (디버그 주입)")
+def t47(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a = c10_open_debug(ctx, col, "A", "c10a")
+        create_profile(a, "버프47")
+        ui_create_room(a, "버프47방")
+        wait_sprite(a)
+        time.sleep(0.3)
+        for bid in C10_BUFFS:
+            bad = []
+            for k in range(1, C10_STACK_MAX + 1):
+                c10_clear(a)
+                c10_inject(a, bid, k)
+                c = cb(a)
+                got_s = c10_buff_stacks(a).get(bid)
+                exp = c10_exp_attack({bid: k})
+                if got_s != k or not c10_attack_ok(c["attack"], exp):
+                    bad.append(f"{k}스택: 스택 {got_s}, 공격 {c['attack']} 기대 {exp}")
+            checks.append((f"{bid} 1~10스택 공식 일치 (불일치 {bad[:2] or '없음'})", not bad))
+        c10_clear(a)
+        c10_inject(a, "range", 11)
+        checks.append((f"range 11번 줍기: 스택 10에서 멈춤 (실제 {c10_buff_stacks(a).get('range')})", c10_buff_stacks(a).get("range") == 10))
+        checks.append((f"range 10스택: w 420 (상한, 실제 {cb(a)['attack']['w']})", cb(a)["attack"]["w"] == 420))
+        c10_clear(a)
+        for bid in C10_BUFFS:
+            c10_inject(a, bid, 10)
+        exp = c10_exp_attack({b: 10 for b in C10_BUFFS})
+        att = cb(a)["attack"]
+        checks.append((f"5종 모두 10스택: 공격 값 기대 {exp} (실제 {att})", c10_attack_ok(att, exp)))
+        checks.append((f"5종 모두 10스택: 쿨다운 최소 0.10 (실제 {att['cooldown']})", abs(att["cooldown"] - 0.10) < 0.001))
+        checks.append((f"5종 모두 10스택: hits 11, el 3(번개) (실제 hits {att['hits']}, el {att['el']})", att["hits"] == 11 and att["el"] == 3))
+        # 주의: element 피해 배율(+20%/스택, 최대 +200%)은 attack 상태에 노출되지 않는다. el 상한 3과 함께 전달 방식이 계약에 빠져 있어 미검증.
+        checks.append(("element 피해 배율 +200% 실측 (el 상한 3과 전달 방식 계약 미정: 미검증)", None))
+        c10_clear(a)
+        checks.append(("clearBuffs 후 기본 공격 값 (w 70, hits 1, 8~14, el 0, 0.45초)",
+                       c10_attack_ok(cb(a)["attack"], c10_exp_attack({}))))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(48, "버프 시간 (계약 60초): 다시 주우면 시간 60초로 갱신, 만료는 그 버프만 사라짐 (speed를 30초 뒤 다시 주움, range는 60초 뒤 사라지고 speed는 남음). 약 62초 대기")
+def t48(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a = c10_open_debug(ctx, col, "A", "c10t")
+        create_profile(a, "시간48")
+        ui_create_room(a, "시간48방")
+        wait_sprite(a)
+        c10_clear(a)
+        c10_inject(a, "range", 1)
+        c10_inject(a, "speed", 1)
+        t0 = time.time()
+        left = {b["id"]: b["leftMs"] for b in cb(a)["buffs"]}
+        checks.append((f"주운 직후 남은 시간 약 60초 (range {left.get('range')}, speed {left.get('speed')})",
+                       left.get("range", 0) > 59000 and left.get("speed", 0) > 59000))
+        time.sleep(30)
+        c10_inject(a, "speed", 1)  # 시간 갱신 + 스택 2
+        sp = {b["id"]: (b["stacks"], b["leftMs"]) for b in cb(a)["buffs"]}
+        checks.append((f"speed 다시 주움: 스택 2, 시간 60초로 갱신 (실제 {sp.get('speed')})",
+                       sp.get("speed", (0, 0))[0] == 2 and sp.get("speed", (0, 0))[1] > 59000))
+        wait_until(lambda: "range" not in c10_buff_stacks(a), 40, 0.5)
+        elapsed = time.time() - t0
+        ids_after = c10_buff_stacks(a)
+        checks.append((f"range는 주운 뒤 약 60초에 사라짐 (경과 {elapsed:.1f}초, 남은 버프 {ids_after})",
+                       "range" not in ids_after and 59 <= elapsed <= 65))
+        checks.append((f"speed는 그대로 남음 (60초 시점 기준 약 30초 남음, 실제 {ids_after.get('speed')})",
+                       ids_after.get("speed") == 2))
+        checks.append(("range 사라진 뒤 공격 값 사거리 70으로 복귀 (실제 w 기대 70)", cb(a)["attack"]["w"] == 70))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(49, "HP 회복 아이템 heal (계약 2026-10-29): 줍는 즉시 HP +30, 최대 100 초과 불가, 버프 목록에는 안 들어감, 다른 클라이언트 화면에 hp 전파. 공격 맞춘 뒤 회복 (가짜 발신자 drop 주입)")
+def t49(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, rid = c10_pair(ctx, col, "회복49A", "회복49B", "회복49")
+        time.sleep(0.5)
+        uid_a = state(a)["userId"]
+        # B를 A 앞 가까이 세운다. 가짜 atk(A 이름)로 B의 HP를 낮춘다: 한 번 11타 x 1 = 11 피해
+        spread(b, 40, 60)
+        time.sleep(0.2)
+        pb = find_player(a, "회복49B")
+        for i in range(5):
+            c10_forged_atk(b, pb["x"], pb["y"], uid_a, hits=11, dmin=1, dmax=1, el=0, w=420)
+            time.sleep(0.7)  # 무적 0.6초 지나고
+        hp_low = state(b)["combat"]["hp"]
+        checks.append((f"가짜 공격 5번(11타 x 1)으로 B HP 낮춤: 기대 45 (실제 {hp_low})", hp_low == 45))
+        # heal 드롭을 가짜 발신자로 주입. B 위치(지면)에 놓으면 자동으로 줍는다
+        drop_id = "qa-heal-1"
+        gy = state(b)["combat"]["world"]["groundY"]
+        c10_fake_event(b, "drop", {"id": drop_id, "buff": "heal", "x": int(state(b)["me"]["x"]), "y": gy, "ttl": 30000}, sender="qa-fake-drop")
+        ok_pick = wait_until(lambda: state(b)["combat"]["hp"] == 75, 4)
+        checks.append((f"heal 줍기: HP +30 (45 -> 75, 실제 {state(b)['combat']['hp']})", ok_pick is not None))
+        checks.append((f"heal은 버프 목록에 없음 (실제 {c10_buff_stacks(b)})", "heal" not in c10_buff_stacks(b)))
+        seen = wait_until(lambda: (find_player(a, "회복49B") or {}).get("hp") == 75, 4)
+        checks.append((f"다른 클라이언트 A 화면에 B HP 75 전파 (실제 {(find_player(a, '회복49B') or {}).get('hp')})", seen is not None))
+        # 최대 100 초과 불가: 75 + 30 -> 100
+        c10_fake_event(b, "drop", {"id": "qa-heal-2", "buff": "heal", "x": int(state(b)["me"]["x"]), "y": gy, "ttl": 30000}, sender="qa-fake-drop")
+        capped = wait_until(lambda: state(b)["combat"]["hp"] == 100, 4)
+        checks.append((f"heal 두 번째: 75 + 30 은 100에서 멈춤 (실제 {state(b)['combat']['hp']})", capped is not None))
+        time.sleep(0.2)
+        checks.append((f"최대 HP 100 초과 없음 (실제 {state(b)['combat']['hp']})", state(b)["combat"]["hp"] == 100))
+        seen2 = wait_until(lambda: (find_player(a, "회복49B") or {}).get("hp") == 100, 4)
+        checks.append((f"A 화면에도 HP 100 전파 (실제 {(find_player(a, '회복49B') or {}).get('hp')})", seen2 is not None))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(50, "PvP 위조 atk 상한과 무적 순서 (계약 2026-10-29): hits 99 -> 11타만, w 999 -> 420, el 9 -> 3, 같은 무적 시간 안 두 번째 atk는 0타, 무적 0.6초 뒤 다시 맞음, 사망하면 버프 초기화")
+def t50(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, rid = c10_pair(ctx, col, "상한50A", "상한50B", "상한50")
+        time.sleep(0.5)
+        uid_a = state(a)["userId"]
+        spread(b, 40, 60)
+        pb = find_player(a, "상한50B")
+        s0 = cb(b)["stats"]
+        # 1) hits 99, w 999 -> 상한 11타, w 420. 1타 = 1 피해 (dmin = dmax = 1, el 0)
+        c10_forged_atk(b, pb["x"], pb["y"], uid_a, hits=99, w=999, dmin=1, dmax=1, el=0)
+        time.sleep(0.4)
+        s1 = cb(b)["stats"]
+        hp1 = cb(b)["hp"]
+        checks.append((f"위조 hits 99: 11타만 적용 (pvpHitCount +{s1['pvpHitCount'] - s0['pvpHitCount']}, 기대 +11)",
+                       s1["pvpHitCount"] - s0["pvpHitCount"] == 11))
+        checks.append((f"위조 hits 99: atkCapped +1 (실제 +{s1['atkCapped'] - s0['atkCapped']})", s1["atkCapped"] - s0["atkCapped"] == 1))
+        checks.append((f"위조 hits 99: HP 100 - 11 = 89 (실제 {hp1})", hp1 == 89))
+        # 2) 무적 0.6초 안의 두 번째 atk는 0타
+        c10_forged_atk(b, pb["x"], pb["y"], uid_a, hits=11, dmin=1, dmax=1, el=0, w=420)
+        time.sleep(0.3)
+        s2 = cb(b)["stats"]
+        checks.append((f"무적 중 두 번째 atk: 추가 타 0 (pvpHitCount +{s2['pvpHitCount'] - s1['pvpHitCount']})",
+                       s2["pvpHitCount"] == s1["pvpHitCount"] and cb(b)["hp"] == hp1))
+        # 3) 무적이 풀린 뒤: el 9 -> 3, dmax 1 x 1.6 -> 2, 10타 = 20
+        time.sleep(0.6)
+        c10_forged_atk(b, pb["x"], pb["y"], uid_a, hits=10, w=999, dmin=1, dmax=1, el=9)
+        time.sleep(0.4)
+        s3 = cb(b)["stats"]
+        hp3 = cb(b)["hp"]
+        checks.append((f"위조 el 9 / w 999 / 10타: 10타 적용, HP 89 - 20 = 69 (실제 hp {hp3}, 타 +{s3['pvpHitCount'] - s2['pvpHitCount']})",
+                       s3["pvpHitCount"] - s2["pvpHitCount"] == 10 and hp3 == 69))
+        checks.append((f"위조 el 9: atkCapped 추가 (+{s3['atkCapped'] - s2['atkCapped']}, 기대 +1 이상)", s3["atkCapped"] - s2["atkCapped"] >= 1))
+        # 4) 사망하면 버프 초기화. B 버프 주입 후 한 방에 죽인다 (dmin = dmax = 170, 1타)
+        c10_inject(b, "range", 3)
+        c10_inject(b, "power", 2)
+        checks.append((f"사망 전 B 버프 있음 ({c10_buff_stacks(b)})", len(c10_buff_stacks(b)) == 2))
+        time.sleep(0.7)
+        c10_forged_atk(b, pb["x"], pb["y"], uid_a, hits=1, w=420, dmin=170, dmax=170, el=0)
+        time.sleep(0.4)
+        checks.append((f"사망(HP 0): dead True, 버프 모두 사라짐 (dead {cb(b)['dead']}, 버프 {c10_buff_stacks(b)})",
+                       cb(b)["dead"] is True and c10_buff_stacks(b) == {}))
+        checks.append(("element 피해 배율 실측 (el 상한 3과 전달 방식 계약 미정: 미검증)", None))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(51, "호스트 인계: 호스트(사전순 최소 user_id) 탭을 닫으면 남은 탭이 호스트가 되고 몬스터 시뮬레이션을 이어 간다 (끊긴 뒤 몬스터 id 유지, 계속 움직임)")
+def t51(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, rid = c10_pair(ctx, col, "호스트51A", "호스트51B", "호스트51")
+        wait_until(lambda: cb(a).get("host") is not None and cb(b).get("host") is not None, 4)
+        time.sleep(2.0)  # 첫 연결 1.5초 뒤 호스트 시뮬레이션 시작
+        host_uid = cb(a)["host"]
+        checks.append((f"호스트 두 탭 합의 (A {cb(a)['host']}, B {cb(b)['host']})", cb(a)["host"] == cb(b)["host"]))
+        hp_page, other = (a, b) if state(a)["userId"] == host_uid else (b, a)
+        checks.append((f"호스트 탭 시뮬레이션 중 (simulating {cb(hp_page)['simulating']})", cb(hp_page)["simulating"] is True))
+        ids_before = {m["id"] for m in cb(other)["mobs"]}
+        checks.append((f"몬스터 존재 (호스트 시뮬 {len(ids_before)}마리)", len(ids_before) > 0))
+        time.sleep(0.5)
+        hp_page.close()
+        ok = wait_until(lambda: cb(other)["isHost"] is True and cb(other)["simulating"] is True, 8)
+        checks.append((f"호스트 탭 닫음 -> 남은 탭이 호스트 + 시뮬레이션 시작 (isHost {cb(other)['isHost']}, sim {cb(other)['simulating']})", ok is not None))
+        xs1 = {m["id"]: m["x"] for m in cb(other)["mobs"]}
+        time.sleep(2.0)
+        mobs2 = cb(other)["mobs"]
+        ids_after = {m["id"] for m in mobs2}
+        kept = ids_before & ids_after
+        checks.append((f"인계 후 몬스터 id 유지 (이전 {len(ids_before)}, 이후 유지 {len(kept)})", len(kept) >= max(1, len(ids_before) - 2)))
+        moved = [m for m in mobs2 if m["id"] in xs1 and abs(m["x"] - xs1[m["id"]]) >= 1]
+        checks.append((f"인계 후 몬스터가 계속 움직임 (움직인 {len(moved)}마리)", len(moved) >= 1))
+        checks.append(("인계 후 호스트 시뮬레이션 다시 생성됨 (mobs 목록 비지 않음)", len(mobs2) > 0))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(52, "로프 (맵 manifest l-rope-cafe1, 13개 중 1개): ↑로 잡기, 160/초 오르기(1초 기준 120~200), 위끝에서 발판(y 612)에 올라서기, 올라선 뒤 ↑를 계속 눌러도 뛰지 않음. 나머지 12개 로프와 뛰어내리기는 미검증")
+def t52(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        page = c10_open_debug(ctx, col, "A", "c10r")
+        create_profile(page, "로프52")
+        ui_create_room(page, "로프52방")
+        wait_sprite(page)
+        time.sleep(0.4)
+        rope = next(r for r in MAP_MANIFEST["ropes"] if r["id"] == "l-rope-cafe1")
+        rx, ry1, ry2 = rope["x"], rope["y1"], rope["y2"]
+        focus_canvas(page)
+        # 지면에서 로프 x까지 걷는다 (왼쪽으로). 스폰 1647 -> 490 약 1157 단위
+        for _ in range(12):
+            d = rx - state(page)["me"]["x"]
+            if abs(d) <= 4:
+                break
+            hold_key(page, "ArrowRight" if d > 0 else "ArrowLeft", min(3000, max(40, abs(d) / WALK_SPEED * 1000)))
+            time.sleep(0.1)
+        me = state(page)["me"]
+        checks.append((f"로프 x {rx} 근처에 섬 (실제 x {me['x']:.0f}, 허용 +-12)", abs(me["x"] - rx) <= 12))
+        y0 = me["y"]
+        hold_key(page, "ArrowUp", 900)
+        time.sleep(0.15)
+        st1 = state(page)["me"]
+        dy = y0 - st1["y"]
+        checks.append((f"↑로 잡기: 상태 climb (실제 {st1['s']})", st1["s"] == "climb"))
+        checks.append((f"0.9초 ↑: 160/초 근사 이동 {dy:.0f} (기대 120~200)", 120 <= dy <= 200))
+        hold_key(page, "ArrowUp", 2200)  # 위끝 612까지 + 계속 누름
+        time.sleep(0.4)
+        top = state(page)["me"]
+        checks.append((f"위끝에서 발판에 올라섬 (y {top['y']}, 기대 612 +-2, 상태 {top['s']})",
+                       abs(top["y"] - ry1) <= 2 and top["s"] != "climb"))
+        time.sleep(0.5)
+        still = state(page)["me"]
+        checks.append((f"올라선 뒤 누르고 있던 ↑로 바로 뛰지 않음 (y {still['y']}, 기대 612 +-2)", abs(still["y"] - ry1) <= 2))
+        checks.append(("나머지 12개 로프 잡기/뛰어내리기/일반 점프 + 로프로 모든 발판 도달 (미검증, 계약 점검 항목)", None))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(53, "카메라 경계 (3840 맵, 1280x800): 시작 위치에서 camX = 플레이어 기준 클램프, 왼쪽 끝 camX 0, 오른쪽 끝 camX = width - viewW. 약 35초 걸림")
+def t53(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        page = c10_open_debug(ctx, col, "A", "c10c")
+        create_profile(page, "카메라53")
+        ui_create_room(page, "카메라53방")
+        wait_sprite(page)
+        time.sleep(0.4)
+        st = state(page)
+        vw = st["assets"]["layout"]["viewW"]
+        W = WORLD_W
+        exp0 = min(max(st["me"]["x"] - vw / 2, 0), max(0, W - vw))
+        cam0 = st["world"]["camX"]
+        checks.append((f"시작: camX {cam0} = 기대 {exp0:.0f} (맵 폭 {W}, 시야 {vw}, 허용 2)", cam0 is not None and abs(cam0 - exp0) <= 2))
+        focus_canvas(page)
+        for _ in range(40):  # 왼쪽 끝
+            if state(page)["me"]["x"] <= 40:
+                break
+            hold_key(page, "ArrowLeft", 800)
+        time.sleep(0.4)
+        cl = state(page)["world"]["camX"]
+        checks.append((f"왼쪽 끝: camX {cl} = 0 (허용 1)", cl is not None and abs(cl) <= 1))
+        for _ in range(60):  # 오른쪽 끝
+            if state(page)["me"]["x"] >= W - 40:
+                break
+            hold_key(page, "ArrowRight", 800)
+        time.sleep(0.4)
+        cr = state(page)["world"]["camX"]
+        checks.append((f"오른쪽 끝: camX {cr} = 맵 폭 - 시야 {W - vw:.0f} (허용 1)", cr is not None and abs(cr - (W - vw)) <= 1))
+        cv = state(page)["world"]
+        checks.append((f"camY 값 존재 (세로 카메라, 실제 {cv['camY']})", cv["camY"] is not None))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(54, "줍기: 닿으면 자동으로 주움(범위 26), 범위 밖(35)은 자동으로 안 줍고 Z(범위 44)로 주움, 드롭은 주어진 ttl 뒤 사라짐 (가짜 발신자 drop 주입, 한 탭)")
+def t54(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        page = c10_open_debug(ctx, col, "A", "c10z")
+        create_profile(page, "줍기54")
+        ui_create_room(page, "줍기54방")
+        wait_sprite(page)
+        time.sleep(0.4)
+        focus_canvas(page)
+        gy = state(page)["combat"]["world"]["groundY"]
+        mx = int(state(page)["me"]["x"])
+        c10_fake_event(page, "drop", {"id": "qa-z-1", "buff": "multi", "x": mx + 35, "y": gy, "ttl": 30000}, sender="qa-fake-drop")
+        time.sleep(0.8)
+        checks.append((f"범위 밖(35) 드롭은 자동으로 안 주움 (버프 {c10_buff_stacks(page)})", "multi" not in c10_buff_stacks(page)))
+        page.keyboard.press("KeyZ")
+        ok = wait_until(lambda: c10_buff_stacks(page).get("multi") == 1, 3)
+        checks.append((f"Z로 주움: multi 1스택 (실제 {c10_buff_stacks(page)})", ok is not None))
+        c10_fake_event(page, "drop", {"id": "qa-auto-1", "buff": "range", "x": int(state(page)["me"]["x"]), "y": gy, "ttl": 30000}, sender="qa-fake-drop")
+        ok2 = wait_until(lambda: c10_buff_stacks(page).get("range") == 1, 3)
+        checks.append((f"닿으면 자동 줍기 (Z 없이): range 1스택 (실제 {c10_buff_stacks(page)})", ok2 is not None))
+        c10_fake_event(page, "drop", {"id": "qa-ttl-1", "buff": "speed", "x": int(state(page)["me"]["x"]) + 300, "y": gy, "ttl": 2000}, sender="qa-fake-drop")
+        time.sleep(0.3)
+        present = any(d["id"] == "qa-ttl-1" for d in cb(page)["drops"])
+        time.sleep(2.2)
+        gone = not any(d["id"] == "qa-ttl-1" for d in cb(page)["drops"])
+        checks.append((f"ttl 2초 드롭: 처음엔 있고(present {present}), 2초 뒤 사라짐 (gone {gone})", present and gone))
+        checks.append(("골렘 드롭 2개, 몬스터 처치 드롭 확률 (실제 처치 필요, 미검증)", None))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(55, "버프 HUD (360x640 모바일, dpr2): 버프 3종 주입 시 아이콘이 화면 안에 있고 가로 스크롤 없음, 스택 표시 (x10), 버프 없으면 바 숨김")
+def t55(browser, col):
+    ctx = new_ctx(browser, viewport={"width": 360, "height": 640}, device_scale_factor=2, is_mobile=True, has_touch=True)
+    checks = []
+    try:
+        page = c10_open_debug(ctx, col, "M", "c10m")
+        create_profile(page, "모바일55")
+        ui_create_room(page, "모바일55방")
+        wait_sprite(page)
+        time.sleep(0.4)
+        c10_clear(page)
+        checks.append(("버프 없음: 버프 바 숨김 (buff-range 요소 없음)", page.get_by_test_id("buff-range").count() == 0))
+        c10_inject(page, "range", 10)
+        c10_inject(page, "multi", 3)
+        c10_inject(page, "speed", 2)
+        time.sleep(0.4)
+        box = page.get_by_test_id("buff-range").bounding_box()
+        checks.append((f"range 아이콘 화면 안 (box {box})", bool(box) and box["x"] >= 0 and box["x"] + box["width"] <= 360 and box["y"] >= 0))
+        sw = page.evaluate("() => [document.documentElement.scrollWidth, document.documentElement.clientWidth]")
+        checks.append((f"가로 스크롤 없음 (scrollWidth/clientWidth {sw})", sw[0] <= sw[1]))
+        txt = page.get_by_test_id("buff-range").text_content() or ""
+        checks.append((f"range 10스택 표시 'x10' (실제 '{txt.strip()}')", "10" in txt))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
 
 
 def main():

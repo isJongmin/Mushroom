@@ -338,7 +338,7 @@ export function createMobSim(o) {
     const list = [];
     for (const m of mobs.values()) {
       const o = { id: m.id, kind: m.kind, x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, hp: Math.round(m.hp), s: m.s, z: m.z };
-      if (withDamage && m.dm && m.dm.length) { o.dm = m.dm.slice(-8); m.dm.length = 0; }
+      if (withDamage && m.dm && m.dm.length) { o.dm = m.dm.slice(-12); m.dm.length = 0; }
       list.push(o);
     }
     return list;

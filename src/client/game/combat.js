@@ -52,7 +52,7 @@ export const overlaps = (a, b) => a.x1 < b.x2 && a.x2 > b.x1 && a.y1 < b.y2 && a
 
 const NUM_LIFE_MS = 900;
 const NUM_RISE = 34; // CSS px
-const NUM_MAX = 60;
+const NUM_MAX = 120; // 11타 x 여러 명
 const NUM_FONT = '900 22px system-ui, -apple-system, "Apple SD Gothic Neo", "Malgun Gothic", "Noto Sans KR", sans-serif';
 // kind: 'hit'(내가/남이 남·몬스터에게 준 피해: 주황) | 'hurt'(내가 받은 피해: 보라) | 'heal'
 const NUM_STYLE = {
@@ -65,12 +65,14 @@ export function createDamageNumbers() {
   const list = [];
   return {
     /** x, y = 월드 (머리 위), at = performance.now() */
-    add(value, x, y, kind = 'hit', at = performance.now()) {
+    /** stackIndex가 숫자면 그 줄(multi 타 순서)에 놓는다: 한 줄 = 18 월드 위 (11타면 11줄 기둥, 메이플식) */
+    add(value, x, y, kind = 'hit', at = performance.now(), stackIndex = null) {
       const v = Math.max(0, Math.round(value));
       if (!Number.isFinite(v)) return;
       // 같은 자리에 겹쳐 쌓이면 조금씩 위로
       let stack = 0;
-      for (const n of list) if (Math.abs(n.x - x) < 24 && Math.abs(at - n.at) < 300) stack++;
+      if (typeof stackIndex === 'number') stack = stackIndex * 1.8;
+      else for (const n of list) if (Math.abs(n.x - x) < 24 && Math.abs(at - n.at) < 300) stack++;
       list.push({ text: (NUM_STYLE[kind] && NUM_STYLE[kind].plus ? '+' : '') + String(v), x, y: y - stack * 10, kind, at });
       if (list.length > NUM_MAX) list.splice(0, list.length - NUM_MAX);
     },

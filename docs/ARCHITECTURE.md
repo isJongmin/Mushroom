@@ -96,6 +96,8 @@ docs/            문서
   - `atk` payload 확장: `{ user_id, x, y, dir, seq, w, hits, dmin, dmax, el }`(공격자가 자기 버프로 계산). 받는 쪽(PvP 피격자, 몬스터 호스트)은 상한으로 자른다: w≤175, hits≤4, dmax≤60, el 0~3. 없으면 기본값.
 - **배경 변경(2026-10-28 사용자 원본 첨부)**: 복셀 재구축 대신 Canva 원본 그림을 그대로 쓴다(`assets/_src/map_canva/`, 패널 표 `panels.py`가 정본). 원본 1px = 에셋 1.25px. 레이어는 `sky.png`(stretchX) + `ground.webp`(1.0) 두 장이고 clouds/far/mid는 없다. width/height/groundY/platforms/spawns/spawn은 그림에 맞춰 아트가 정한다(중앙 패널 1장: 1480x888, groundY 800, 발판 11). 좌우 패널이 오면 약 4240 폭으로 늘어난다. 위의 "좌표 고정"과 사이클 8 발판 검사 기준(층 간격 85~95, 개수)은 이 맵에 적용하지 않는다.
 - **로프(메이플식)**: 맵 manifest `ropes: [{ "id", "x", "y1", "y2" }]`(월드, y1 위끝 < y2 아래끝). 아트가 ground 레이어에 같은 좌표로 그린다. 로프 가로 ±12 안에서 ↑(또는 아래끝 근처에서 ↓)를 누르면 매달린다. 매달린 동안 중력 없음, ↑/↓로 초속 160 오르내림, ←/→ 무시. 점프 키 + ←/→로 옆으로 뛰어내림(초속 650의 0.6배 위로). 위끝에 닿으면 그 높이의 발판에 올라선다. 공격 불가. move `s`에 `'climb'` 추가(프레임은 jump 포즈를 쓰고, 오르는 동안 좌우 반전을 0.25초마다 번갈아 흔들림 표현). 일반 점프 + 로프로 모든 발판에 닿아야 한다(슈퍼 점프는 지름길).
+- **최대 체력 증가 아이템 `vital`(2026-10-29 사용자)**: 주우면 최대 HP +20, 현재 HP도 +20(최대 10스택, 최대 HP 300). 시간 제한 없이 사망할 때까지 유지(사망 시 최대 HP 100으로 복귀, 부활 HP는 100). HUD 버프 줄에 아이콘 + 스택 수로 표시하되 원형 타이머는 없다. 주운 사람이 `hp { user_id, hp, max, dead:false, by:null }`를 broadcast해 모두의 HP 바가 max 기준 비율로 그려진다. 받는 쪽 상한: max ≤ 300, hp ≤ max.
+  - 드롭 종류 확률(드롭 하나당): 버프 5종 합 65%(균등), `heal` 20%, `vital` 15%. drop/picked의 `buff` 값으로 `"vital"`. 아이콘 `assets/fx/buff/vital.png`, 구슬 시트 7프레임(336x48, 순서 range,multi,element,power,speed,heal,vital).
 - **피해 숫자 payload 확장(프런트 구현)**: `hp`에 `dm: [타별 피해]`, `mobs.list[]`에 `dm: [타별 피해]`(이번 틱에 들어간 피해)를 선택적으로 싣는다. 몬스터 피해도 atk의 dmin/dmax/el/hits를 쓴다(사이클 9의 몬스터 피해 10~16 폐기).
 - **변경(2026-10-29 사용자): 최대 10스택 + HP 회복 아이템**. 위 버프 수치를 아래로 대체한다.
   - 스택 최대 10. 지속 60초, 다시 주우면 +1(최대 10)이고 시간 갱신. 사망 시 초기화.
@@ -107,8 +109,8 @@ docs/            문서
   - `speed`: 쿨다운 0.45 x 0.8^스택, **최소 0.10초**(네트워크: atk broadcast 최대 10회/초, move와 같은 상한)
   - atk 상한: w≤420, hits≤11, dmax≤170, el 0~3
   - HUD 아이콘의 스택 숫자는 1~10을 표시
-  - **HP 회복 아이템 `heal`**: 드롭 하나마다 25% 확률로 버프 대신 `heal`(나머지 75%는 버프 5종 균등). 줍는 즉시 HP +30(최대 100 초과 불가). 버프 아님(HUD 표시 없음). 주운 사람이 자기 HP를 올리고 `hp` broadcast(`by: null`, 녹색 +30 숫자를 띄움). drop/picked payload의 `buff` 값으로 `"heal"` 사용. 아이콘 `assets/fx/buff/heal.png`, 구슬 시트 `buff_orb.png`는 6프레임(288x48, 마지막이 heal)으로 확장.
-- **에셋**: `assets/fx/buff/<id>.png` 아이콘 64x64(6종, heal 포함), 드롭 구슬 `assets/fx/buff_orb.png`(종류별 색, 가로 6프레임 시트 288x48, 순서 range,multi,element,power,speed,heal), 베기 이펙트 속성색 3종 `assets/fx/slash_fire.png`, `slash_ice.png`, `slash_bolt.png`(slash.png와 같은 규격). 없으면 프런트는 절차적 대체 그림.
+  - **HP 회복 아이템 `heal`**: 드롭 하나마다 20% 확률로 `heal`(아래 vital 항목의 확률표가 정본). 줍는 즉시 HP +30(최대 100 초과 불가). 버프 아님(HUD 표시 없음). 주운 사람이 자기 HP를 올리고 `hp` broadcast(`by: null`, 녹색 +30 숫자를 띄움). drop/picked payload의 `buff` 값으로 `"heal"` 사용. 아이콘 `assets/fx/buff/heal.png`, 구슬 시트 `buff_orb.png`는 6프레임(288x48, 마지막이 heal)으로 확장.
+- **에셋**: `assets/fx/buff/<id>.png` 아이콘 64x64(7종, heal·vital 포함), 드롭 구슬 `assets/fx/buff_orb.png`(종류별 색, 가로 7프레임 시트 336x48, 순서 range,multi,element,power,speed,heal,vital), 베기 이펙트 속성색 3종 `assets/fx/slash_fire.png`, `slash_ice.png`, `slash_bolt.png`(slash.png와 같은 규격). 없으면 프런트는 절차적 대체 그림.
 - **폐기**: 인벤토리(가방 버튼, `mushroom:inventory`), 프로필 자물쇠, manifest `drop` 파츠, 몬스터 manifest `drops`. localStorage 기존 키는 무시만 한다.
 
 ### 사이클 9 계약 (2026-10-28) — 2D 메이플풍 전환, PvP, 몬스터, 드롭 의상

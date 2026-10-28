@@ -145,7 +145,7 @@ const UID_OK = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
 const SID_RE = /^[a-z0-9]{1,16}$/i;
 const KIND_RE = /^[a-z0-9-]{1,32}$/;
 const BUFF_SET = new Set(['range', 'multi', 'element', 'power', 'speed', 'heal']); // (사이클 10) game/buffs.js DROP_KINDS (버프 5종 + heal)
-const DM_OK = (v) => Array.isArray(v) && v.length > 0 && v.length <= 8 && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 1000);
+const DM_OK = (v) => Array.isArray(v) && v.length > 0 && v.length <= 12 && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 1000);
 const MOB_S = new Set(['move', 'hit', 'die']);
 const numIn = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
 const COORD = 1e5;
@@ -215,8 +215,9 @@ export function createEventGate(send, stats) {
       const now = performance.now();
       let r = recent.get(event);
       if (!r) { r = []; recent.set(event, r); }
-      while (r.length && now - r[0] > 1000) r.shift();
-      if (r.length >= 12) { if (stats) stats.evDropped = (stats.evDropped || 0) + 1; return false; }
+      while (r.length && now - r[0] >= 1000) r.shift();
+      // atk은 1초 10건(사이클 10: speed 최소 0.10초 = 10회/초, move와 같은 상한), 나머지 12건
+      if (r.length >= (event === 'atk' ? 10 : 12)) { if (stats) stats.evDropped = (stats.evDropped || 0) + 1; return false; }
       r.push(now);
       send(event, payload);
       return true;

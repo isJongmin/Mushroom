@@ -2852,7 +2852,7 @@ def jump_trace(rows, key):
         j = min(air[-1] + 1, len(rows) - 1)
         air_s = (rows[j]["t"] - rows[air[0]]["t"]) / 1000
     return {
-        "apex": round(440 - min(ys), 1) if ys else None,
+        "apex": round(GROUND_Y - min(ys), 1) if ys else None,
         "air_s": None if air_s is None else round(air_s, 3),
         "seq": seq,
         "frames": {k: sorted(v, key=lambda z: -1 if z is None else z) for k, v in frames.items()},
@@ -2967,7 +2967,7 @@ def t42(browser, col):
         focus_canvas(a)
         time.sleep(0.4)
         m = state(a)["me"]
-        checks.append((f"시작: 지면 y=440, idle (y {m['y']}, s {m['s']})", m["y"] == 440 and m["s"] == "idle"))
+        checks.append((f"시작: 지면 y=440, idle (y {m['y']}, s {m['s']})", m["y"] == GROUND_Y and m["s"] == "idle"))
         start_rec(a, 2400)
         start_rec(b, 2400, "점프42A")
         time.sleep(0.2)
@@ -2979,15 +2979,15 @@ def t42(browser, col):
         checks.append((f"로컬 최고 높이 {la['apex']} (기대 104~106)", la["apex"] is not None and 104 <= la["apex"] <= 106))
         checks.append((f"로컬 체공 {la['air_s']}초 (기대 0.60~0.70)", la["air_s"] is not None and 0.60 <= la["air_s"] <= 0.70))
         checks.append((f"로컬 상태 순서 {la['seq']} (기대 idle, jump, fall, idle)", la["seq"] == ["idle", "jump", "fall", "idle"]))
-        checks.append((f"로컬 착지 y {la['y_end']} (기대 440)", la["y_end"] == 440))
+        checks.append((f"로컬 착지 y {la['y_end']} (기대 440)", la["y_end"] == GROUND_Y))
         checks.append((f"로컬 프레임 jump {la['frames'].get('jump')} / fall {la['frames'].get('fall')} / idle {la['frames'].get('idle')} (기대 [8] / [9] / [2])",
                        la["frames"].get("jump") == [8] and la["frames"].get("fall") == [9] and set(la["frames"].get("idle", [2])) == {2}))
         rs = ra["seq"]
         checks.append((f"원격 최고 높이 {ra['apex']} (기대 103~107)", ra["apex"] is not None and 103 <= ra["apex"] <= 107))
         checks.append((f"원격 체공 {ra['air_s']}초 (기대 0.55~0.75)", ra["air_s"] is not None and 0.55 <= ra["air_s"] <= 0.75))
         checks.append((f"원격 상태 순서 {rs} (jump 다음 fall, walk·crouch 없음)",
-                       "jump" in rs and "fall" in rs and rs.index("jump") < rs.index("fall") and "walk" not in rs and "crouch" not in rs))
-        checks.append((f"원격 착지 y {ra['y_end']} (기대 440)", ra["y_end"] == 440))
+                       "jump" in rs and "fall" in rs and rs.index("jump") < rs.index("fall") and "walk" not in rs and "prone" not in rs))
+        checks.append((f"원격 착지 y {ra['y_end']} (기대 440)", ra["y_end"] == GROUND_Y))
         checks.append((f"원격 프레임 jump {ra['frames'].get('jump')} / fall {ra['frames'].get('fall')} (기대 [8] / [9])",
                        ra["frames"].get("jump") == [8] and ra["frames"].get("fall") == [9]))
     finally:
@@ -2995,7 +2995,7 @@ def t42(browser, col):
     return verdict(checks)
 
 
-@case(43, "숙이기 (1280x800): ↓/S 누르는 동안 s=crouch·frame 10, 숙인 채 ←/→ x 불변, 숙인 채 Space 점프 없음, 해제 후 idle(frame 2), 원격 B 화면에서 A의 crouch 프레임 10")
+@case(43, "숙이기 (1280x800): ↓/S 누르는 동안 s=crouch·frame 10, 숙인 채 ←/→ x 불변, 숙인 채 Space 점프 없음, 해제 후 idle(frame 2), 원격 B 화면에서 A의 prone 프레임 10")
 def t43(browser, col):
     ctx = new_ctx(browser)
     checks = []
@@ -3004,29 +3004,29 @@ def t43(browser, col):
         focus_canvas(a)
         time.sleep(0.4)
         m0 = state(a)["me"]
-        checks.append((f"시작: 지면 idle (y {m0['y']}, s {m0['s']})", m0["y"] == 440 and m0["s"] == "idle"))
+        checks.append((f"시작: 지면 idle (y {m0['y']}, s {m0['s']})", m0["y"] == GROUND_Y and m0["s"] == "idle"))
         start_rec(b, 3000, "숙이기43A")
         a.keyboard.down("ArrowDown")
         time.sleep(0.25)
         m1 = state(a)["me"]
-        checks.append((f"↓ 누르는 동안: s crouch, frame 10 (실제 {m1['s']}, {m1['frame']})", m1["s"] == "crouch" and m1["frame"] == 10))
+        checks.append((f"↓ 누르는 동안: s prone, frame 10 (실제 {m1['s']}, {m1['frame']})", m1["s"] == "prone" and m1["frame"] == 10))
         a.keyboard.down("ArrowRight")
         time.sleep(0.35)
         m2 = state(a)["me"]
         a.keyboard.up("ArrowRight")
         time.sleep(0.1)
-        checks.append((f"숙인 채 → 키: x 불변 (x {m1['x']} -> {m2['x']}), s crouch", abs(m2["x"] - m1["x"]) < 0.5 and m2["s"] == "crouch"))
+        checks.append((f"숙인 채 → 키: x 불변 (x {m1['x']} -> {m2['x']}), s prone", abs(m2["x"] - m1["x"]) < 0.5 and m2["s"] == "prone"))
         a.keyboard.press("Space")
         time.sleep(0.35)
         m3 = state(a)["me"]
-        checks.append((f"숙인 채 Space: 점프 없음 (y {m3['y']}, s {m3['s']})", m3["y"] == 440 and m3["s"] == "crouch"))
+        checks.append((f"숙인 채 Space: 점프 없음 (y {m3['y']}, s {m3['s']})", m3["y"] == GROUND_Y and m3["s"] == "prone"))
         a.keyboard.up("ArrowDown")
         time.sleep(0.3)
         m4 = state(a)["me"]
         checks.append((f"↓ 뗌: idle 복귀, frame 2 (s {m4['s']}, frame {m4['frame']})", m4["s"] == "idle" and m4["frame"] == 2))
         wait_rec_done(b, 6)
-        cf = sorted({r["frame"] for r in rec_rows(b) if r["anim"] == "crouch"}, key=lambda z: -1 if z is None else z)
-        checks.append((f"원격 B 화면: A의 crouch 프레임 {cf} (기대 [10])", cf == [10]))
+        cf = sorted({r["frame"] for r in rec_rows(b) if r["anim"] == "prone"}, key=lambda z: -1 if z is None else z)
+        checks.append((f"원격 B 화면: A의 prone 프레임 {cf} (기대 [10])", cf == [10]))
     finally:
         ctx.close()
     return verdict(checks)
@@ -3050,7 +3050,7 @@ def t44(browser, col):
             a.keyboard.down(k)
             time.sleep(0.12)
             m = state(a)["me"]
-            if abs(m["x"] - m0["x"]) >= 0.5 or m["y"] != 440 or m["s"] != "idle":
+            if abs(m["x"] - m0["x"]) >= 0.5 or m["y"] != GROUND_Y or m["s"] != "idle":
                 bad.append((k, m["x"], m["y"], m["s"]))
             a.keyboard.up(k)
             time.sleep(0.05)
@@ -3099,7 +3099,7 @@ def t44(browser, col):
             after = fold.get_attribute("aria-expanded")
             m = state(a)["me"]
             checks.append((f"버튼 포커스 중 Space = 버튼 동작 (aria-expanded {before} -> {after}), 점프 없음 (y {m['y']}, s {m['s']})",
-                           before != after and m["y"] == 440 and m["s"] == "idle"))
+                           before != after and m["y"] == GROUND_Y and m["s"] == "idle"))
         else:
             checks.append(("버튼 포커스 Space 검사: 접기 버튼이 보이지 않아 미검증", None))
     finally:
@@ -3155,7 +3155,7 @@ def t45(browser, col):
             time.sleep(0.03)
         mj = state(a)["me"]
         checks.append((f"탭 점프: jump 관측, 착지 후 y 440·idle (관측 순서 {collapse(seen)}, 최종 y {mj['y']} s {mj['s']})",
-                       "jump" in seen and mj["y"] == 440 and mj["s"] == "idle"))
+                       "jump" in seen and mj["y"] == GROUND_Y and mj["s"] == "idle"))
 
         crouch = a.get_by_test_id("crouch")
         right = a.get_by_test_id("move-right")
@@ -3169,8 +3169,8 @@ def t45(browser, col):
         crouch.dispatch_event("pointerup")
         time.sleep(0.3)
         s3 = state(a)["me"]
-        checks.append((f"누르고 있기 숙이기: s crouch, frame 10 (실제 {s1['s']}, {s1['frame']})", s1["s"] == "crouch" and s1["frame"] == 10))
-        checks.append((f"숙인 채 오른쪽 버튼: x 불변 (x {s1['x']} -> {s2['x']})", abs(s2["x"] - s1["x"]) < 0.5 and s2["s"] == "crouch"))
+        checks.append((f"누르고 있기 숙이기: s prone, frame 10 (실제 {s1['s']}, {s1['frame']})", s1["s"] == "prone" and s1["frame"] == 10))
+        checks.append((f"숙인 채 오른쪽 버튼: x 불변 (x {s1['x']} -> {s2['x']})", abs(s2["x"] - s1["x"]) < 0.5 and s2["s"] == "prone"))
         checks.append((f"손 뗌: idle 복귀 (s {s3['s']})", s3["s"] == "idle"))
     finally:
         ctx.close()
@@ -3673,6 +3673,117 @@ def t55(browser, col):
         checks.append((f"가로 스크롤 없음 (scrollWidth/clientWidth {sw})", sw[0] <= sw[1]))
         txt = page.get_by_test_id("buff-range").text_content() or ""
         checks.append((f"range 10스택 표시 'x10' (실제 '{txt.strip()}')", "10" in txt))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+
+C10_VITAL_STEP = 20
+C10_VITAL_MAX = 300
+
+
+def c10_pick_drop(page, buff, did, sender="qa-fake-drop"):
+    """page 바로 위치에 buff 드롭을 놓는다. 자동 줍기로 page가 줍는다."""
+    st = state(page)
+    gy = st["combat"]["world"]["groundY"]
+    c10_fake_event(page, "drop", {"id": did, "buff": buff, "x": int(st["me"]["x"]), "y": gy, "ttl": 30000}, sender=sender)
+
+
+@case(56, "vital (계약 2026-10-29 사용자): 주우면 최대 HP +20 과 현재 HP +20, 10스택, 최대 HP 300에서 멈춤(11번째는 변화 없음), 다른 클라이언트 A 화면에 max와 hp 전파")
+def t56(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, rid = c10_pair(ctx, col, "생명56A", "생명56B", "생명56")
+        time.sleep(0.4)
+        c10_pick_drop(b, "vital", "qa-vital-1")
+        ok1 = wait_until(lambda: state(b)["me"]["max"] == 120, 4)
+        checks.append((f"vital 1회: 최대 HP 120 (실제 max {state(b)['me']['max']})", ok1 is not None))
+        checks.append((f"vital 1회: 현재 HP 120 (실제 hp {state(b)['me']['hp']})", state(b)["me"]["hp"] == 120))
+        seen = wait_until(lambda: (find_player(a, "생명56B") or {}).get("max") == 120 and (find_player(a, "생명56B") or {}).get("hp") == 120, 4)
+        pa = find_player(a, "생명56B") or {}
+        checks.append((f"A 화면에 B max 120 / hp 120 전파 (실제 max {pa.get('max')}, hp {pa.get('hp')})", seen is not None))
+        checks.append((f"vital은 버프 줄 스택으로 보임 (실제 {c10_buff_stacks(b)})", c10_buff_stacks(b).get("vital") == 1))
+        for i in range(2, 11):
+            c10_pick_drop(b, "vital", f"qa-vital-{i}")
+            time.sleep(0.25)
+        ok10 = wait_until(lambda: state(b)["me"]["max"] == 300, 6)
+        checks.append((f"vital 10스택: 최대 HP 300 (실제 max {state(b)['me']['max']})", ok10 is not None))
+        checks.append((f"vital 10스택: 현재 HP 300 (실제 hp {state(b)['me']['hp']})", state(b)["me"]["hp"] == 300))
+        checks.append((f"vital 10스택: 스택 10 (실제 {c10_buff_stacks(b).get('vital')})", c10_buff_stacks(b).get("vital") == 10))
+        c10_pick_drop(b, "vital", "qa-vital-11")
+        time.sleep(0.8)
+        me = state(b)["me"]
+        checks.append((f"11번째 vital: 최대 HP 300 상한 (실제 max {me['max']}, hp {me['hp']}, 스택 {c10_buff_stacks(b).get('vital')})",
+                       me["max"] == 300 and me["hp"] <= 300 and c10_buff_stacks(b).get("vital") == 10))
+        seen300 = wait_until(lambda: (find_player(a, "생명56B") or {}).get("max") == 300, 4)
+        checks.append((f"A 화면에 max 300 전파 (실제 {(find_player(a, '생명56B') or {}).get('max')})", seen300 is not None))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(57, "vital 사망 복귀: 사망하면 최대 HP 100으로 돌아가고 버프 줄에서 사라짐, 부활 HP 100 (최대 100), 다른 클라이언트에도 max 100 전파. 한 대 맞혀 죽인다")
+def t57(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, rid = c10_pair(ctx, col, "복귀57A", "복귀57B", "복귀57")
+        time.sleep(0.4)
+        for i in range(1, 6):
+            c10_pick_drop(b, "vital", f"qa-v57-{i}")
+            time.sleep(0.25)
+        wait_until(lambda: state(b)["me"]["max"] == 200, 5)
+        checks.append((f"사망 전 최대 HP 200 (vital 5스택, 실제 {state(b)['me']['max']})", state(b)["me"]["max"] == 200))
+        uid_a = state(a)["userId"]
+        pb = find_player(a, "복귀57B")
+        # 200 HP를 한 번에 0으로: 170 + 170 (두 번째는 무적 0.6초 뒤)
+        c10_forged_atk(b, pb["x"], pb["y"], uid_a, hits=1, w=420, dmin=170, dmax=170, el=0)
+        time.sleep(0.8)
+        c10_forged_atk(b, pb["x"], pb["y"], uid_a, hits=1, w=420, dmin=170, dmax=170, el=0)
+        dead = wait_until(lambda: state(b)["me"]["dead"] is True, 4)
+        checks.append((f"사망 (dead True)", dead is not None))
+        me = state(b)["me"]
+        checks.append((f"사망 후 최대 HP 100 복귀 (실제 max {me['max']})", me["max"] == 100))
+        checks.append((f"사망 후 vital 버프 줄에서 사라짐 (실제 {c10_buff_stacks(b)})", "vital" not in c10_buff_stacks(b)))
+        seen = wait_until(lambda: (find_player(a, "복귀57B") or {}).get("max") == 100, 4)
+        checks.append((f"A 화면에 B max 100 전파 (실제 {(find_player(a, '복귀57B') or {}).get('max')})", seen is not None))
+        ok_rev = wait_until(lambda: state(b)["combat"]["reviveVisible"] is True, 8)
+        checks.append(("부활 버튼 표시 (5초 뒤)", ok_rev is not None))
+        if ok_rev is not None:
+            b.get_by_test_id("revive").click()
+        rv = wait_until(lambda: state(b)["me"]["dead"] is False, 4)
+        me2 = state(b)["me"]
+        checks.append((f"부활: HP 100, 최대 HP 100 (실제 hp {me2['hp']}, max {me2['max']})", rv is not None and me2["hp"] == 100 and me2["max"] == 100))
+    finally:
+        ctx.close()
+    return verdict(checks)
+
+
+@case(58, "HP 바 비율: max 기준 비율 (hp/max). 상태값으로 비율 확인(hp 245/300 = 0.817)과 A 화면 전파. 픽셀로 그린 바 길이는 프런트 캔버스 계측 훅이 없어 미검증")
+def t58(browser, col):
+    ctx = new_ctx(browser)
+    checks = []
+    try:
+        a, b, rid = c10_pair(ctx, col, "바58A", "바58B", "바58")
+        time.sleep(0.4)
+        for i in range(1, 11):
+            c10_pick_drop(b, "vital", f"qa-b58-{i}")
+            time.sleep(0.25)
+        wait_until(lambda: state(b)["me"]["max"] == 300, 6)
+        uid_a = state(a)["userId"]
+        pb = find_player(a, "바58B")
+        for i in range(5):  # 11 x 1 = 11 피해씩 5번 = 55 -> 245/300
+            c10_forged_atk(b, pb["x"], pb["y"], uid_a, hits=11, dmin=1, dmax=1, el=0, w=420)
+            time.sleep(0.7)
+        me = state(b)["me"]
+        ratio = me["hp"] / me["max"]
+        checks.append((f"B hp {me['hp']} / max {me['max']} = 비율 {ratio:.3f} (기대 245/300 = 0.817)", me["hp"] == 245 and me["max"] == 300))
+        seen = wait_until(lambda: (find_player(a, "바58B") or {}).get("hp") == 245, 4)
+        pa = find_player(a, "바58B") or {}
+        checks.append((f"A 화면 B 비율 {pa.get('hp')}/{pa.get('max')} 전파 (기대 245/300)", seen is not None and pa.get("max") == 300))
+        checks.append(("HP 바 픽셀 길이 (머리 위 가로 40 중 비율 채움) (캔버스 계측 없음: 미검증)", None))
     finally:
         ctx.close()
     return verdict(checks)

@@ -28,7 +28,7 @@ import {
 import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob } from '../game/mobs.js';
 import { createDrops, PICK_RANGE, TOUCH_RANGE } from '../game/drops.js';
 import {
-  BUFF, BUFF_IDS, BUFF_LABEL, isBuff, attackStats, clampAttack, rollHits, createBuffs, drawBuffOrb,
+  BUFF, BUFF_IDS, BUFF_LABEL, isBuff, HEAL, HEAL_AMOUNT, attackStats, clampAttack, rollHits, createBuffs, drawBuffOrb,
 } from '../game/buffs.js';
 import { createFx, prefersReducedMotion } from '../game/fx.js';
 import { openModal } from '../ui/modal.js';
@@ -146,7 +146,7 @@ export function mount(root, app, opts = {}) {
   const buffIconSprites = {}; // id -> sprite
   const cstats = {
     atkSent: 0, atkRecv: 0, pvpHits: 0, pvpHitCount: 0, hurt: 0, touchHits: 0, mobHits: 0, kills: 0, deaths: 0, revives: 0, hpSent: 0, hpRecv: 0,
-    mobsSent: 0, mobsRecv: 0, dropsSpawned: 0, dropsRecv: 0, picksSent: 0, autoPicks: 0, buffsGained: 0, hostChanges: 0, atkCapped: 0,
+    mobsSent: 0, mobsRecv: 0, dropsSpawned: 0, dropsRecv: 0, picksSent: 0, autoPicks: 0, buffsGained: 0, heals: 0, hostChanges: 0, atkCapped: 0,
   };
 
   // --- DOM (room.md 2~4장, ui-kit 22~23절) ------------------------------------------
@@ -739,6 +739,7 @@ export function mount(root, app, opts = {}) {
       stones.remove(pl.user_id);
       pl.invulnUntil = now + COMBAT.reviveInvuln * 1000;
     }
+    if (!quiet && !p.dead && !pl.dead && p.hp > pl.hp) dmgNums.add(p.hp - pl.hp, pl.x, pl.y - headOf(pl), 'heal', now); // 회복(heal)
     if (!quiet && p.hp < pl.hp && !pl.dead) {
       showHits(p.dm || [pl.hp - p.hp], pl.x, pl.y - headOf(pl), 'hit', now);
       if (!p.dead) pl.invulnUntil = now + COMBAT.invuln * 1000;
@@ -875,7 +876,17 @@ export function mount(root, app, opts = {}) {
 
   // --- (사이클 10) 버프 ---------------------------------------------------------
   function gainBuff(id, now = performance.now()) {
-    if (!isBuff(id) || !me || me.dead) return;
+    if (!me || me.dead) return;
+    if (id === HEAL) { // HP 회복 아이템: 즉시 +30(최대 초과 불가), 버프·HUD 아님 → hp 송신(by null) + 녹색 숫자
+      const gained = Math.min(HEAL_AMOUNT, me.max - me.hp);
+      me.hp += gained;
+      cstats.heals++;
+      if (gained > 0) dmgNums.add(gained, me.x, me.y - headOf(me), 'heal', now);
+      sendHp(null);
+      chatLog.addSystem(`HP를 ${gained} 회복했어요`);
+      return;
+    }
+    if (!isBuff(id)) return;
     buffs.add(id, now);
     refreshAttack();
     cstats.buffsGained++;
@@ -921,7 +932,7 @@ export function mount(root, app, opts = {}) {
       c.beginPath(); c.arc(S / 2, S / 2, S / 2 - 1.5, 0, Math.PI * 2); c.stroke();
       c.strokeStyle = b.frac < 0.17 ? '#FF8E7A' : '#FFF2A8';
       c.beginPath(); c.arc(S / 2, S / 2, S / 2 - 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * b.frac); c.stroke();
-      setText(e.num, b.stacks > 1 ? `x${b.stacks}` : '');
+      setText(e.num, String(b.stacks)); // 스택 1~10
       e.el.title = `${BUFF_LABEL[b.id]} ${b.stacks}단계, ${Math.ceil(b.leftMs / 1000)}초`;
       e.el.setAttribute('aria-label', e.el.title);
       e.el.classList.toggle('is-ending', b.leftMs < 10000);
@@ -933,7 +944,9 @@ export function mount(root, app, opts = {}) {
   if (debug) {
     try {
       window.__mushroomDebug = Object.freeze({
-        buff(id) { if (!isBuff(id)) return false; gainBuff(id); return buffs.stacks(); },
+        buff(id) { if (!isBuff(id) && id !== HEAL) return false; gainBuff(id); return buffs.stacks(); },
+        /** QA: 내 HP를 n으로 (회복 시험용, hp 송신) */
+        setHp(n) { if (!me || me.dead) return false; me.hp = Math.max(1, Math.min(me.max, n | 0)); sendHp(null); return me.hp; },
         clearBuffs() { buffs.clear(); refreshAttack(); return true; },
       });
     } catch { /* 무시 */ }

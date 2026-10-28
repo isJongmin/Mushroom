@@ -179,7 +179,7 @@ body[data-screen="room"] { background: var(--letterbox); }
 .buff-bar { display: inline-flex; align-items: center; gap: 6px; margin-left: var(--sp-2); pointer-events: auto; }
 .buff-bar .buff { position: relative; width: 36px; height: 36px; flex: none; }
 .buff-bar .buff canvas { width: 36px; height: 36px; display: block; image-rendering: auto; }
-.buff-bar .buff-n { position: absolute; right: -4px; bottom: -4px; font: 900 11px/1 system-ui, sans-serif; color: var(--pal-white);
+.buff-bar .buff-n { position: absolute; right: -3px; bottom: -3px; font: 900 11px/1 system-ui, sans-serif; color: var(--pal-white);
   text-shadow: 1px 0 var(--pal-ink), -1px 0 var(--pal-ink), 0 1px var(--pal-ink), 0 -1px var(--pal-ink); }
 .buff-bar .buff.is-ending { animation: buff-blink 500ms steps(2, end) infinite; }
 @keyframes buff-blink { 50% { opacity: 0.45; } }

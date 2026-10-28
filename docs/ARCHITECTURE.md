@@ -108,7 +108,7 @@ docs/            문서
   - atk 상한: w≤420, hits≤11, dmax≤170, el 0~3
   - HUD 아이콘의 스택 숫자는 1~10을 표시
   - **HP 회복 아이템 `heal`**: 드롭 하나마다 25% 확률로 버프 대신 `heal`(나머지 75%는 버프 5종 균등). 줍는 즉시 HP +30(최대 100 초과 불가). 버프 아님(HUD 표시 없음). 주운 사람이 자기 HP를 올리고 `hp` broadcast(`by: null`, 녹색 +30 숫자를 띄움). drop/picked payload의 `buff` 값으로 `"heal"` 사용. 아이콘 `assets/fx/buff/heal.png`, 구슬 시트 `buff_orb.png`는 6프레임(288x48, 마지막이 heal)으로 확장.
-- **에셋**: `assets/fx/buff/<id>.png` 아이콘 64x64(5종), 드롭 구슬 `assets/fx/buff_orb.png`(종류별 색, 가로 5프레임 시트 각 48x48, 순서 range,multi,element,power,speed), 베기 이펙트 속성색 3종 `assets/fx/slash_fire.png`, `slash_ice.png`, `slash_bolt.png`(slash.png와 같은 규격). 없으면 프런트는 절차적 대체 그림.
+- **에셋**: `assets/fx/buff/<id>.png` 아이콘 64x64(6종, heal 포함), 드롭 구슬 `assets/fx/buff_orb.png`(종류별 색, 가로 6프레임 시트 288x48, 순서 range,multi,element,power,speed,heal), 베기 이펙트 속성색 3종 `assets/fx/slash_fire.png`, `slash_ice.png`, `slash_bolt.png`(slash.png와 같은 규격). 없으면 프런트는 절차적 대체 그림.
 - **폐기**: 인벤토리(가방 버튼, `mushroom:inventory`), 프로필 자물쇠, manifest `drop` 파츠, 몬스터 manifest `drops`. localStorage 기존 키는 무시만 한다.
 
 ### 사이클 9 계약 (2026-10-28) — 2D 메이플풍 전환, PvP, 몬스터, 드롭 의상

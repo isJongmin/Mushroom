@@ -2238,7 +2238,7 @@ def t35(browser, col):
             st = state(a)
             lay = st["assets"]["layout"]
             u = lay["P"] / 2  # CSS px / 월드
-            fy = (GROUND_Y - (WORLD_BOTTOM - lay["viewH"])) * u  # 발바닥 선 (CSS px)
+            fy = (GROUND_Y - st["world"]["camY"]) * u  # 발바닥 선 (CSS px) = (지면 월드 y - camY) x P/2
             rec = fresh_text(a)
             me = st["me"]
             pb = next(p for p in st["players"] if p["nickname"] == "라벨나")

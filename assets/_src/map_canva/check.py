@@ -94,7 +94,7 @@ def check(mapdir):
     rn, rs = reach(JUMP), reach(SUPER)
     super_only = [p['id'] for p in pl if p['id'] not in rn and p['id'] in rs]
     never = [p['id'] for p in pl if p['id'] not in rs]
-    print('도달: 일반 점프만 %d/%d, 슈퍼 점프 포함 %d/%d' % (len(rn) - 1, len(pl), len(rs) - 1, len(pl)))
+    print('(참고, 로프 제외) 일반 점프만 %d/%d, 슈퍼 점프 포함 %d/%d' % (len(rn) - 1, len(pl), len(rs) - 1, len(pl)))
     # 0-1 BFS: 발판마다 필요한 최소 슈퍼 점프 횟수
     import collections
     byid = {n['id']: n for n in nodes}
@@ -111,7 +111,7 @@ def check(mapdir):
                 cost[b['id']] = cost[a['id']] + c
                 (dq.appendleft if c == 0 else dq.append)(b['id'])
     print('  최소 슈퍼 점프 수: %s' % ', '.join('%s=%d' % (p['id'], cost.get(p['id'], -1)) for p in pl))
-    if never: err('닿지 않는 발판: %s' % never)
+    if never: print('  (참고) 로프 없이 슈퍼 점프로도 닿지 않는 발판: %s' % never)
     # 로프 (사이클 10): 형식, 위끝 = 발판 서는 높이(x 범위 안), 아래끝 = 서 있는 곳에서 ↑로 잡히는 높이(5~30 위),
     # 그림에 밧줄이 있는지, 그리고 일반 점프 + 로프만으로 모든 발판 도달
     ropes = man.get('ropes')

@@ -33,6 +33,8 @@ def load_panels():
         if not os.path.exists(p['file']) or p.get('ground') is None:
             continue
         im = Image.open(p['file']).convert('RGB')
+        if p.get('xmax'):
+            im = im.crop((0, 0, p['xmax'], im.height))
         w, h = round(im.width * U), round(im.height * U)
         big = np.asarray(im.resize((w, h), Image.LANCZOS)).astype(np.float32)
         out.append(dict(p, img=big, g=p['ground'] * U, w0=im.width, h0=im.height))
@@ -54,11 +56,36 @@ def align_vertical(ps):
         if bot > 0:
             im = np.concatenate([im, im[-1:-bot - 1:-1]], 0)             # 아래: 흙 단면 거울
         p['img'] = im
+        # 이음매 보호 마스크: 발판(윗면 위 30 ~ 아래 45) + protect 사각형
+        pm = np.zeros(im.shape[:2], bool)
+        rects = [(x1 - 6, y - 30, x2 + 6, y + 45) for (_, x1, x2, y) in p['platforms']] + list(p.get('protect', []))
+        for (x1, y1, x2, y2) in rects:
+            pm[max(0, int(y1 * U) + top):max(0, int(y2 * U) + top), max(0, int(x1 * U)):max(0, int(x2 * U))] = True
+        p['prot'] = pm
+        hm = np.zeros(im.shape[:2], float)
+        for (x1, y1, x2, y2) in p.get('hide', []):
+            hm[max(0, int(y1 * U) + top):max(0, int(y2 * U) + top), max(0, int(x1 * U)):max(0, int(x2 * U))] = 1.0
+        p['hide'] = np.clip(ndimage.gaussian_filter(hm, 4.0) * 1.5, 0, 1)
     return int(round(G)), H
 
 
-def seam_blend(A, B, ov):
-    """A 오른쪽 ov 열과 B 왼쪽 ov 열이 겹친다. 반환: 이어 붙인 이미지."""
+GROUND_BAND = 300     # 지면 행 위로 이 높이(에셋 px)까지는 소품이 많아 경로 섞기, 그 위는 넓은 그라데이션
+
+
+def object_mask(img, prot):
+    """보호 사각형 안에서 물체(채도 높거나 어두운 픽셀, 구멍 메움) 모양 마스크 0~1."""
+    mx = img.max(2); mn = img.min(2)
+    sat = (mx - mn) / np.maximum(mx, 1)
+    raw = ((sat > 0.27) | (mx < 110)) & prot
+    raw = ndimage.binary_closing(raw, iterations=3)
+    raw = ndimage.binary_fill_holes(raw) & prot
+    raw = ndimage.binary_dilation(raw, iterations=2)
+    return np.clip(ndimage.gaussian_filter(raw.astype(float), 1.0) * 1.6, 0, 1)
+
+
+def seam_blend(A, B, ov, pa, pb, gy, ha=None, hb=None):
+    """A 오른쪽 ov 열과 B 왼쪽 ov 열이 겹친다. pa/pb: 겹친 구간의 보호 마스크 (H, ov).
+    반환: (이어 붙인 이미지, 겹친 구간에서 B 비율 t (H, ov))."""
     H = A.shape[0]
     a = A[:, -ov:]; b = B[:, :ov].copy()
     # 색 보정: 겹친 구간 위쪽 절반 평균 비율로 B 전체를 맞추되, 이음매에서 멀어질수록 원래 색으로
@@ -68,36 +95,75 @@ def seam_blend(A, B, ov):
     B = B * (1 + (gain[None, None, :] - 1) * ramp)
     b = B[:, :ov]
     diff = ndimage.gaussian_filter(np.abs(a - b).mean(2), 2.0)
-    # DP 세로 경로 (가운데 쪽 약한 선호)
-    cost = diff + 0.15 * np.abs(np.arange(ov) - ov / 2)[None, :] / ov * diff.mean()
+    # 경로가 열 s 를 지나면 A 의 s 이상, B 의 s 미만이 가려진다 → 보호 픽셀을 가리면 큰 비용
+    cutA = np.cumsum(pa[:, ::-1], 1)[:, ::-1]
+    cutB = np.concatenate([np.zeros((H, 1)), np.cumsum(pb, 1)[:, :-1]], 1)
+    cost = diff + 0.15 * np.abs(np.arange(ov) - ov / 2)[None, :] / ov * diff.mean() + 400.0 * (cutA + cutB)
     acc = cost.copy(); back = np.zeros((H, ov), np.int16)
+    K = 12                                               # 한 행에 옮길 수 있는 열 수 (보호 물체를 돌아가게)
+    idx = np.arange(ov)
     for y in range(1, H):
         prev = acc[y - 1]
-        l = np.concatenate([[np.inf], prev[:-1]]); r = np.concatenate([prev[1:], [np.inf]])
-        st = np.stack([l, prev, r]); k = st.argmin(0)
-        acc[y] = cost[y] + st[k, np.arange(ov)]
-        back[y] = np.arange(ov) + k - 1
+        cand = np.full((2 * K + 1, ov), np.inf)
+        for j, d in enumerate(range(-K, K + 1)):
+            src = idx + d
+            ok = (src >= 0) & (src < ov)
+            cand[j, ok] = prev[src[ok]] + 0.02 * abs(d) * diff.mean()
+        k = cand.argmin(0)
+        acc[y] = cost[y] + cand[k, idx]
+        back[y] = idx + k - K
     s = np.zeros(H, int); s[-1] = int(acc[-1].argmin())
     for y in range(H - 1, 0, -1):
         s[y - 1] = back[y, s[y]]
-    s = ndimage.gaussian_filter1d(s.astype(float), 3.0)
+    s = s.astype(float)
     rowd = ndimage.gaussian_filter1d(diff[np.arange(H), np.clip(s.astype(int), 0, ov - 1)], 6.0)
-    fw = np.interp(rowd, [4, 30], [ov * 0.45, 6])       # 차이 작으면 넓게
+    fw = np.interp(rowd, [4, 30], [ov * 0.45, 6])       # 차이 작으면(하늘, 원경) 넓게
     xs = np.arange(ov)[None, :]
-    t = np.clip((xs - s[:, None]) / (2 * fw[:, None]) + 0.5, 0, 1)
-    t = t * t * (3 - 2 * t)
+    # (1) 아래쪽(지면 소품 띠): 경로를 따라 섞되, 차이가 작은 행만 넓게
+    near = ndimage.maximum_filter1d((pa | pb).any(1), 41)
+    fwn = np.where(near, np.minimum(fw, 5.0), fw)
+    t_seam = np.clip((xs - s[:, None]) / (2 * fwn[:, None]) + 0.5, 0, 1)
+    t_seam = t_seam * t_seam * (3 - 2 * t_seam)
+    # (2) 위쪽(하늘, 원경): 겹친 구간 전체에 걸친 넓은 그라데이션. 보호 물체(섬, 나무)는 물체 모양 마스크로
+    #     자기 패널 그림을 그대로 둔다 (원경 위에 물체를 겹쳐 놓은 모양)
+    u = (xs + 0.5) / ov
+    t_wide = np.broadcast_to(u * u * (3 - 2 * u), (H, ov))
+    oa, ob = object_mask(a, pa), object_mask(b, pb)
+    t_w = np.where(oa > 0, np.minimum(t_wide, 1 - oa), t_wide)
+    t_w = np.where(ob > 0, np.maximum(t_w, ob), t_w)
+    t_w = np.where((oa > 0) & (ob > 0), t_seam, t_w)         # 두 물체가 겹치면 경로대로
+    # 위/아래 영역 섞기: 지면 위 GROUND_BAND px 아래는 (1), 그 위 60px 에 걸쳐 (2)로
+    rows = np.arange(H)[:, None]
+    wv = np.clip((gy - GROUND_BAND - rows) / 60.0, 0, 1)
+    t = t_w * wv + t_seam * (1 - wv)
+    if ha is not None:
+        t = np.maximum(t, ha)              # hide: 이 패널 그림은 감추고 옆 패널 그림으로
+    if hb is not None:
+        t = np.minimum(t, 1 - hb)
     mid = a * (1 - t[..., None]) + b * t[..., None]
-    return np.concatenate([A[:, :-ov], mid, B[:, ov:]], 1)
+    return np.concatenate([A[:, :-ov], mid, B[:, ov:]], 1), t, s
 
 
 def compose(ps):
     Gpx, H = align_vertical(ps)
-    ov = int(round(PN.OVERLAP * U))
-    img = ps[0]['img']; ps[0]['x0'] = 0
-    for p in ps[1:]:
+    img = ps[0]['img']; prot = ps[0]['prot']; hide = ps[0]['hide']
+    owner = np.zeros(img.shape[:2], np.int8)
+    ps[0]['x0'] = 0
+    seams = []
+    for i, p in enumerate(ps[1:], 1):
+        ov = int(round((p.get('overlap') or PN.OVERLAP) * U))
         p['x0'] = img.shape[1] - ov
-        img = seam_blend(img, p['img'], ov)
-    return img, Gpx
+        img, t, s = seam_blend(img, p['img'], ov, prot[:, -ov:], p['prot'][:, :ov], Gpx,
+                              hide[:, -ov:], p['hide'][:, :ov])
+        o_mid = np.where(t >= 0.5, i, owner[:, -ov:]).astype(np.int8)
+        owner = np.concatenate([owner[:, :-ov], o_mid, np.full((H, p['img'].shape[1] - ov), i, np.int8)], 1)
+        prot = np.concatenate([prot[:, :-ov], (prot[:, -ov:] & (t < 0.5)) | (p['prot'][:, :ov] & (t >= 0.5)),
+                               p['prot'][:, ov:]], 1)
+        hide = np.concatenate([hide[:, :-ov], np.zeros((H, ov)), p['hide'][:, ov:]], 1)
+        seams.append(dict(x0=p['x0'], ov=ov, path=s))
+    for i, p in enumerate(ps):
+        p['index'] = i
+    return img, Gpx, owner, seams
 
 
 def add_sky(img):
@@ -141,7 +207,7 @@ def edge_fade(img):
     return img
 
 
-def geometry(ps, Gpx):
+def geometry(ps, Gpx, owner=None):
     """월드 단위 platforms / spawns / spawn / 크기."""
     pf, sp = [], []
     spawn = None
@@ -149,7 +215,16 @@ def geometry(ps, Gpx):
         tx = lambda x, p=p: (p['x0'] + x * U) / D
         ty = lambda y, p=p: (SKY_PAD_PX + p['dy'] + y * U) / D
         for (pid, x1, x2, y) in p['platforms']:
-            pf.append(dict(id=pid, x1=int(round(tx(x1))), x2=int(round(tx(x2))), y=int(round(ty(y)))))
+            X1, X2 = tx(x1), tx(x2)
+            if owner is not None:
+                # 이음매 때문에 다른 패널 그림이 덮은 구간은 뺀다 (서는 선 바로 위 행 기준)
+                row = int(round((SKY_PAD_PX + p['dy'] + y * U) - SKY_PAD_PX - 2))
+                cols = np.arange(int(np.ceil(X1 * D)), int(np.floor(X2 * D)))
+                mine = cols[owner[row, cols] == p['index']]
+                if len(mine) == 0:
+                    print('WARN 발판 %s 이음매에 가려 뺌' % pid); continue
+                X1, X2 = max(X1, mine.min() / D), min(X2, (mine.max() + 1) / D)
+            pf.append(dict(id=pid, x1=int(round(X1)), x2=int(round(X2)), y=int(round(ty(y)))))
         for (sid, plat, x1, x2, mobs, mx) in p['spawns']:
             sp.append(dict(id=sid, platform=plat, x1=int(round(tx(x1))), x2=int(round(tx(x2))), mobs=list(mobs), max=mx))
         if p.get('spawn_x') is not None and spawn is None:
@@ -230,10 +305,10 @@ def draw_rope(img, X, Y1, Y2, ss=4):
 
 def build(out_dir, src_prefix='assets/map/'):
     ps = load_panels()
-    img, Gpx = compose(ps)
+    img, Gpx, owner, seams = compose(ps)
     img = edge_fade(img)
     full, top = add_sky(img)
-    pf, sp, spawn, groundY, rp = geometry(ps, Gpx)
+    pf, sp, spawn, groundY, rp = geometry(ps, Gpx, owner)
     for r in rp:
         draw_rope(full, r['x'] * D, r['y1'] * D, r['y2'] * D)
     H, W, _ = full.shape
@@ -255,7 +330,8 @@ def build(out_dir, src_prefix='assets/map/'):
                  h=round(H / D, 3), repeatX=False),
         ],
         platforms=pf, ropes=rp, spawns=sp,
-        source=dict(panels=[p['name'] for p in ps], upscale=U, skyPadPx=SKY_PAD_PX, overlapPx=PN.OVERLAP),
+        source=dict(panels=[p['name'] for p in ps], upscale=U, skyPadPx=SKY_PAD_PX,
+                    seams=[dict(x=round((sm['x0'] + sm['ov'] / 2) / D, 1), overlapPx=sm['ov']) for sm in seams]),
     )
     with open(os.path.join(out_dir, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(man, f, ensure_ascii=False, indent=2)

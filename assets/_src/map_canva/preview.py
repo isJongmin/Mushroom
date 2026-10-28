@@ -5,6 +5,7 @@ python3 assets/_src/map_canva/preview.py MAPDIR OUTDIR [--k 1.0]
   view_<n>.png        1280x720 게임 화면(시차 적용, 카메라는 world.js 와 같은 규칙)
   view_<n>_debug.png  같은 화면 + 발판 빨간 선, 지면선, 스폰 구역(주황), 로프 파란 선
   view_<n>_chars.png  같은 화면 + 프리셋 캐릭터와 몬스터
+  view_seam<n>*.png   패널 이음매 가운데 화면 (manifest source.seams)
   map_full.png        전체 축소 + 발판 선
 """
 import os, sys, json, argparse
@@ -133,7 +134,10 @@ def debug_overlay(img, man, k, camx, camy):
 def views(man, vw):
     W = man['width']
     mx = max(0, W - vw)
-    return [('west', 0), ('center', mx / 2), ('east', mx)]
+    out = [('west', 0), ('center', mx / 2), ('east', mx)]
+    for i, sm in enumerate(man.get('source', {}).get('seams', [])):
+        out.append(('seam%d' % (i + 1), min(mx, max(0, sm['x'] - vw / 2))))
+    return out
 
 
 def main():

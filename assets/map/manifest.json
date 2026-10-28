@@ -1,10 +1,10 @@
 {
   "density": 1.5,
-  "width": 1480.0,
+  "width": 3840.0,
   "height": 888.0,
   "groundY": 800,
   "spawn": {
-    "x": 667,
+    "x": 1647,
     "y": 800
   },
   "layers": [
@@ -23,117 +23,299 @@
       "src": "assets/map/ground.webp",
       "parallax": 1.0,
       "y": 0,
-      "w": 1480.0,
+      "w": 3840.0,
       "h": 888.0,
       "repeatX": false
     }
   ],
   "platforms": [
     {
+      "id": "l-isle-bench",
+      "x1": 23,
+      "x2": 263,
+      "y": 306
+    },
+    {
+      "id": "l-isle-cherry",
+      "x1": 26,
+      "x2": 200,
+      "y": 586
+    },
+    {
+      "id": "l-isle-bench2",
+      "x1": 550,
+      "x2": 712,
+      "y": 421
+    },
+    {
+      "id": "l-isle-lights",
+      "x1": 765,
+      "x2": 991,
+      "y": 338
+    },
+    {
+      "id": "l-cafe1-ledge",
+      "x1": 215,
+      "x2": 498,
+      "y": 612
+    },
+    {
+      "id": "l-bridge",
+      "x1": 796,
+      "x2": 904,
+      "y": 754
+    },
+    {
       "id": "c-isle-lt",
-      "x1": 2,
-      "x2": 123,
+      "x1": 983,
+      "x2": 1103,
       "y": 396
     },
     {
       "id": "c-isle-cherry",
-      "x1": 222,
-      "x2": 420,
+      "x1": 1203,
+      "x2": 1400,
       "y": 437
     },
     {
       "id": "c-isle-lamp",
-      "x1": 117,
-      "x2": 208,
+      "x1": 1097,
+      "x2": 1188,
       "y": 529
     },
     {
       "id": "c-isle-low",
-      "x1": 454,
-      "x2": 585,
+      "x1": 1435,
+      "x2": 1565,
       "y": 599
     },
     {
       "id": "c-isle-fence",
-      "x1": 563,
-      "x2": 784,
+      "x1": 1543,
+      "x2": 1764,
       "y": 459
     },
     {
       "id": "c-isle-flower",
-      "x1": 778,
-      "x2": 946,
+      "x1": 1759,
+      "x2": 1925,
       "y": 557
     },
     {
       "id": "c-isle-bench",
-      "x1": 1038,
-      "x2": 1220,
+      "x1": 2018,
+      "x2": 2200,
       "y": 437
     },
     {
       "id": "c-isle-cherry2",
-      "x1": 1297,
-      "x2": 1477,
+      "x1": 2277,
+      "x2": 2457,
       "y": 506
     },
     {
       "id": "c-cafe-ledge",
-      "x1": 160,
-      "x2": 430,
+      "x1": 1140,
+      "x2": 1410,
       "y": 625
     },
     {
       "id": "c-bakery-eave",
-      "x1": 990,
-      "x2": 1327,
+      "x1": 1970,
+      "x2": 2307,
       "y": 625
     },
     {
       "id": "c-bench",
-      "x1": 725,
-      "x2": 864,
+      "x1": 1705,
+      "x2": 1844,
       "y": 747
+    },
+    {
+      "id": "r-isle-a",
+      "x1": 2565,
+      "x2": 2715,
+      "y": 408
+    },
+    {
+      "id": "r-isle-lights",
+      "x1": 2859,
+      "x2": 3052,
+      "y": 444
+    },
+    {
+      "id": "r-isle-low",
+      "x1": 2716,
+      "x2": 2845,
+      "y": 565
+    },
+    {
+      "id": "r-isle-lamp",
+      "x1": 3205,
+      "x2": 3319,
+      "y": 530
+    },
+    {
+      "id": "r-isle-bench",
+      "x1": 3443,
+      "x2": 3630,
+      "y": 380
+    },
+    {
+      "id": "r-tower-deck",
+      "x1": 2537,
+      "x2": 2665,
+      "y": 687
+    },
+    {
+      "id": "r-tower-roof",
+      "x1": 2533,
+      "x2": 2667,
+      "y": 614
+    },
+    {
+      "id": "r-stairs",
+      "x1": 3417,
+      "x2": 3498,
+      "y": 737
     }
   ],
   "ropes": [
     {
+      "id": "l-rope-cafe1",
+      "x": 490,
+      "y1": 612,
+      "y2": 785
+    },
+    {
+      "id": "l-rope-bench",
+      "x": 250,
+      "y1": 306,
+      "y2": 597
+    },
+    {
+      "id": "l-rope-bench2",
+      "x": 700,
+      "y1": 421,
+      "y2": 785
+    },
+    {
       "id": "c-rope-cafe",
-      "x": 422,
+      "x": 1402,
       "y1": 625,
       "y2": 785
     },
     {
       "id": "c-rope-bakery",
-      "x": 1000,
+      "x": 1980,
       "y1": 625,
       "y2": 785
     },
     {
       "id": "c-rope-lt",
-      "x": 120,
+      "x": 1100,
       "y1": 396,
       "y2": 514
     },
     {
       "id": "c-rope-bench",
-      "x": 1205,
+      "x": 2185,
       "y1": 437,
       "y2": 610
     },
     {
       "id": "c-rope-cherry2",
-      "x": 1312,
+      "x": 2292,
       "y1": 506,
       "y2": 610
+    },
+    {
+      "id": "r-rope-tower",
+      "x": 2660,
+      "y1": 687,
+      "y2": 785
+    },
+    {
+      "id": "r-rope-isle-a",
+      "x": 2573,
+      "y1": 408,
+      "y2": 599
+    },
+    {
+      "id": "r-rope-lights",
+      "x": 2870,
+      "y1": 444,
+      "y2": 785
+    },
+    {
+      "id": "r-rope-lamp",
+      "x": 3310,
+      "y1": 530,
+      "y2": 785
+    },
+    {
+      "id": "r-rope-bench",
+      "x": 3468,
+      "y1": 380,
+      "y2": 722
     }
   ],
   "spawns": [
     {
+      "id": "l-ground-w",
+      "platform": "ground",
+      "x1": 17,
+      "x2": 200,
+      "mobs": [
+        "snail"
+      ],
+      "max": 2
+    },
+    {
+      "id": "l-ground-pond",
+      "platform": "ground",
+      "x1": 533,
+      "x2": 733,
+      "mobs": [
+        "snail"
+      ],
+      "max": 2
+    },
+    {
+      "id": "l-cherry-slime",
+      "platform": "l-isle-cherry",
+      "x1": 42,
+      "x2": 188,
+      "mobs": [
+        "slime"
+      ],
+      "max": 2
+    },
+    {
+      "id": "l-bench2-shroom",
+      "platform": "l-isle-bench2",
+      "x1": 562,
+      "x2": 700,
+      "mobs": [
+        "mushroom"
+      ],
+      "max": 2
+    },
+    {
+      "id": "l-lights-bat",
+      "platform": "l-isle-lights",
+      "x1": 779,
+      "x2": 979,
+      "mobs": [
+        "bat"
+      ],
+      "max": 2
+    },
+    {
       "id": "c-cherry-slime",
       "platform": "c-isle-cherry",
-      "x1": 238,
-      "x2": 405,
+      "x1": 1218,
+      "x2": 1385,
       "mobs": [
         "slime"
       ],
@@ -142,8 +324,8 @@
     {
       "id": "c-fence-shroom",
       "platform": "c-isle-fence",
-      "x1": 583,
-      "x2": 767,
+      "x1": 1563,
+      "x2": 1747,
       "mobs": [
         "mushroom"
       ],
@@ -152,8 +334,8 @@
     {
       "id": "c-flower-snail",
       "platform": "c-isle-flower",
-      "x1": 792,
-      "x2": 933,
+      "x1": 1772,
+      "x2": 1913,
       "mobs": [
         "snail",
         "mushroom"
@@ -163,8 +345,8 @@
     {
       "id": "c-bench-bat",
       "platform": "c-isle-bench",
-      "x1": 1054,
-      "x2": 1204,
+      "x1": 2034,
+      "x2": 2184,
       "mobs": [
         "bat"
       ],
@@ -173,8 +355,8 @@
     {
       "id": "c-cherry2-slime",
       "platform": "c-isle-cherry2",
-      "x1": 1312,
-      "x2": 1462,
+      "x1": 2292,
+      "x2": 2442,
       "mobs": [
         "slime",
         "mushroom"
@@ -182,32 +364,116 @@
       "max": 2
     },
     {
-      "id": "c-ground-w",
+      "id": "r-ground-w",
       "platform": "ground",
-      "x1": 8,
-      "x2": 125,
+      "x1": 2693,
+      "x2": 3193,
+      "mobs": [
+        "snail",
+        "golem"
+      ],
+      "max": 3
+    },
+    {
+      "id": "r-ground-e",
+      "platform": "ground",
+      "x1": 3510,
+      "x2": 3827,
+      "mobs": [
+        "golem",
+        "snail"
+      ],
+      "max": 3
+    },
+    {
+      "id": "r-ground-mid",
+      "platform": "ground",
+      "x1": 3193,
+      "x2": 3402,
       "mobs": [
         "snail"
       ],
-      "max": 1
+      "max": 2
     },
     {
-      "id": "c-ground-e",
-      "platform": "ground",
-      "x1": 1358,
-      "x2": 1472,
+      "id": "r-isle-a-slime",
+      "platform": "r-isle-a",
+      "x1": 2577,
+      "x2": 2702,
       "mobs": [
-        "snail"
+        "slime"
+      ],
+      "max": 2
+    },
+    {
+      "id": "r-lights-shroom",
+      "platform": "r-isle-lights",
+      "x1": 2872,
+      "x2": 3039,
+      "mobs": [
+        "mushroom",
+        "slime"
+      ],
+      "max": 3
+    },
+    {
+      "id": "r-low-shroom",
+      "platform": "r-isle-low",
+      "x1": 2727,
+      "x2": 2835,
+      "mobs": [
+        "mushroom"
+      ],
+      "max": 2
+    },
+    {
+      "id": "r-lamp-slime",
+      "platform": "r-isle-lamp",
+      "x1": 3214,
+      "x2": 3310,
+      "mobs": [
+        "slime"
+      ],
+      "max": 2
+    },
+    {
+      "id": "r-bench-bat",
+      "platform": "r-isle-bench",
+      "x1": 3456,
+      "x2": 3618,
+      "mobs": [
+        "bat"
+      ],
+      "max": 3
+    },
+    {
+      "id": "r-tower-bat",
+      "platform": "r-tower-roof",
+      "x1": 2539,
+      "x2": 2660,
+      "mobs": [
+        "bat"
       ],
       "max": 1
     }
   ],
   "source": {
     "panels": [
-      "center"
+      "left",
+      "center",
+      "right"
     ],
     "upscale": 1.25,
     "skyPadPx": 212,
-    "overlapPx": 120
+    "seams": [
+      {
+        "x": 1042.7,
+        "overlapPx": 188
+      },
+      {
+        "x": 2410.0,
+        "overlapPx": 150
+      }
+    ]
   }
 }

@@ -47,7 +47,7 @@ POSES = {
     'back': P('back', armN=(7, -6), armF=(7, -6), legN=(-2, 0, 0), legF=(2, 0, 0)),
     'jump': P('q', hip=(0, HIP_Y - 2), torso=-3, head=-5, armN=(58, -20), armF=(150, -20), legN=(62, -100, 15),
               legF=(-6, -38, 22), ground=False, sway=1.6, lift=1.0),
-    'fall': P('q', hip=(0, HIP_Y - 1), torso=3, head=4, armN=(-48, -24), armF=(56, 26), legN=(16, -10, 10),
+    'fall': P('q', hip=(0, HIP_Y - 3), torso=3, head=4, armN=(-48, -24), armF=(56, 26), legN=(16, -10, 10),
               legF=(-16, -16, 22), ground=False, sway=-1.8, lift=-1.0),
     'prone': P('q', hip=(-16.0, -9.6), torso=90, head=-92, armN=(66, 104), armF=(168, 24), head_off=(4.0, 9.5),
                head_sq=0.9,

@@ -27,12 +27,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
 sys.path.insert(0, HERE)
 from model import assemble, proxy_boxes, LABELS, PRESETS, CATS, PARTS  # noqa: E402
-from vox import render, downsample, SS  # noqa: E402
+from vox import render, downsample, SS, UNIT  # noqa: E402
 
 W, H = 144, 192
 ANCHOR = (72, 180)
 DENSITY = 1.5
-SCALE = 1.82            # 시트 px / 복셀 1칸 (사이클 7: 2.75 -> 1.82)
+SCALE = 1.82 / UNIT     # 시트 px / 복셀 1칸 (사이클 7: 2.75 -> 1.82, 사이클 10: 0.91)
 PITCH = 15
 FRAMES = ['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back', 'jump', 'fall', 'prone']
 YAW = {'front': -25, 'front_b': -25, 'back': 160}   # 사이클 7: 정면은 시안처럼 캐릭터 왼쪽에서 (25 -> -25)

@@ -7,6 +7,8 @@
 //   PvP 피격자 권위: 피해 8~14, 넉백(공격 방향 수평 300, 위로 250), 무적 0.6초. 최대 HP 100. 부활 무적 2초. 부활 버튼 5초 뒤.
 //   몬스터 접촉 피해도 같은 무적·넉백 규칙(방향 = 몬스터에서 멀어지는 쪽).
 
+import { ELEMENT_TINT } from './buffs.js';
+
 export const COMBAT = Object.freeze({
   maxHp: 100,
   cooldown: 0.45, // 초
@@ -16,8 +18,6 @@ export const COMBAT = Object.freeze({
   boxBottom: 5, // 발 위 5
   dmgMin: 8,
   dmgMax: 14,
-  mobDmgMin: 10, // 몬스터가 받는 피해 (계약에 값이 없어 프런트가 정함, handoff 기록)
-  mobDmgMax: 16,
   knockX: 300,
   knockY: 250,
   knockT: 0.3, // 넉백 수평 속도 유지 시간 (착지하면 끝)
@@ -31,12 +31,12 @@ export const COMBAT = Object.freeze({
 
 export const randInt = (lo, hi, rnd = Math.random) => lo + Math.floor(rnd() * (hi - lo + 1));
 
-/** 공격 판정 상자 { x1, x2, y1, y2 } (월드). dir = 'left'|'right'|-1|1 */
-export function attackBox(x, y, dir) {
+/** 공격 판정 상자 { x1, x2, y1, y2 } (월드). dir = 'left'|'right'|-1|1, w = 가로 (사이클 10 사거리 버프) */
+export function attackBox(x, y, dir, w = COMBAT.boxW) {
   const d = dir === 'left' || dir === -1 ? -1 : 1;
   return d > 0
-    ? { x1: x, x2: x + COMBAT.boxW, y1: y - COMBAT.boxTop, y2: y - COMBAT.boxBottom }
-    : { x1: x - COMBAT.boxW, x2: x, y1: y - COMBAT.boxTop, y2: y - COMBAT.boxBottom };
+    ? { x1: x, x2: x + w, y1: y - COMBAT.boxTop, y2: y - COMBAT.boxBottom }
+    : { x1: x - w, x2: x, y1: y - COMBAT.boxTop, y2: y - COMBAT.boxBottom };
 }
 
 /** 캐릭터 피격 상자 (발 중앙 기준) */
@@ -70,7 +70,7 @@ export function createDamageNumbers() {
       if (!Number.isFinite(v)) return;
       // 같은 자리에 겹쳐 쌓이면 조금씩 위로
       let stack = 0;
-      for (const n of list) if (Math.abs(n.x - x) < 24 && at - n.at < 300) stack++;
+      for (const n of list) if (Math.abs(n.x - x) < 24 && Math.abs(at - n.at) < 300) stack++;
       list.push({ text: String(v), x, y: y - stack * 10, kind, at });
       if (list.length > NUM_MAX) list.splice(0, list.length - NUM_MAX);
     },
@@ -86,6 +86,7 @@ export function createDamageNumbers() {
       ctx.textBaseline = 'alphabetic';
       ctx.lineJoin = 'round';
       for (const n of list) {
+        if (now < n.at) continue; // (사이클 10) multi: 다음 타 숫자는 80ms 뒤부터
         const t = Math.min(1, (now - n.at) / NUM_LIFE_MS);
         const s = NUM_STYLE[n.kind] || NUM_STYLE.hit;
         const pop = t < 0.12 ? 1 + (0.12 - t) * 3 : 1; // 처음에 살짝 크게
@@ -150,13 +151,16 @@ const SLASH_MS = 200;
 
 export function createSlashes() {
   const list = [];
-  let spr = null; // loadSprite 결과 { img, frameW, frameH, anchorX, anchorY, density, fps } | null
+  // loadSprite 결과 { img, frameW, frameH, anchorX, anchorY, density, fps } | null. [0] 기본, [1] 불, [2] 얼음, [3] 번개 (사이클 10)
+  const sprites = [null, null, null, null];
   return {
-    setSprite(v) { spr = v && v.img ? v : null; },
-    get hasImage() { return !!spr; },
+    setSprite(v, el = 0) { sprites[el] = v && v.img ? v : null; },
+    get hasImage() { return !!sprites[0]; },
+    get elementImages() { return sprites.slice(1).map((v) => !!v); },
     /** owner = 플레이어 객체(위치를 따라감) */
-    add(owner, dir, at = performance.now()) {
-      list.push({ owner, dir: dir < 0 ? -1 : 1, at });
+    /** opt = { w(판정 가로, 기본 70), el(속성 0~3) } (사이클 10: 사거리는 길이, 속성은 색) */
+    add(owner, dir, opt = {}, at = performance.now()) {
+      list.push({ owner, dir: dir < 0 ? -1 : 1, at, w: opt.w || 70, el: opt.el | 0 });
       if (list.length > 40) list.shift();
     },
     update(now) {
@@ -171,12 +175,15 @@ export function createSlashes() {
       for (const s of list) {
         const t = Math.min(1, (now - s.at) / SLASH_MS);
         const o = s.owner;
+        const el = Math.max(0, Math.min(3, s.el));
+        const spr = sprites[el]; // 속성 시트가 없으면 속성색 절차적 호 (기본 시트로 대체하면 색이 사라진다)
+        const stretch = Math.max(1, s.w / 70); // 사거리 버프: 가로로 늘린다
         if (spr) {
           const frames = Math.max(1, Math.floor(spr.img.naturalWidth / spr.frameW));
           const f = Math.min(frames - 1, Math.floor(((now - s.at) / 1000) * spr.fps));
           const sc = k / spr.density;
           ctx.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
-          ctx.setTransform(s.dir, 0, 0, 1, (o.x - camX) * k, (o.y - camY) * k);
+          ctx.setTransform(s.dir * stretch, 0, 0, 1, (o.x - camX) * k, (o.y - camY) * k);
           ctx.drawImage(spr.img, f * spr.frameW, 0, spr.frameW, spr.frameH, -spr.anchorX * sc, -spr.anchorY * sc, spr.frameW * sc, spr.frameH * sc);
           ctx.setTransform(1, 0, 0, 1, 0, 0);
           ctx.globalAlpha = 1;
@@ -184,7 +191,7 @@ export function createSlashes() {
         }
         const cx = (o.x - camX + s.dir * 22) * k;
         const cy = (o.y - camY - 42) * k;
-        drawSlashArc(ctx, cx, cy, k, s.dir, t);
+        drawSlashArc(ctx, cx, cy, k, s.dir, t, stretch, ELEMENT_TINT[el]);
       }
       ctx.restore();
     },
@@ -194,7 +201,7 @@ export function createSlashes() {
 }
 
 /** 절차적 초승달: 위에서 앞으로 휘두르는 호. t = 0~1 진행 */
-export function drawSlashArc(ctx, cx, cy, k, dir, t) {
+export function drawSlashArc(ctx, cx, cy, k, dir, t, stretch = 1, tint = null) {
   const R = 46 * k;
   const sweep = Math.min(1, t / 0.55); // 앞 55% 동안 휘두르고 나머지는 사라짐
   const fade = t < 0.55 ? 1 : 1 - (t - 0.55) / 0.45;
@@ -204,14 +211,17 @@ export function drawSlashArc(ctx, cx, cy, k, dir, t) {
   if (a1 - tail < 0.02) return;
   ctx.save();
   ctx.translate(cx, cy);
-  ctx.scale(dir, 1);
+  ctx.scale(dir * stretch, 1);
   // 바깥 호 → 안쪽 호(중심을 뒤로 밀어 초승달)
   const inner = R * 0.72;
   const off = R * 0.16;
   const grad = ctx.createRadialGradient(0, 0, inner * 0.6, 0, 0, R);
-  grad.addColorStop(0, `rgba(156, 200, 255, ${0.0})`);
-  grad.addColorStop(0.7, `rgba(190, 228, 255, ${0.75 * fade})`);
-  grad.addColorStop(1, `rgba(255, 255, 255, ${0.95 * fade})`);
+  const inC = tint ? tint.outer : '156, 200, 255';
+  const midC = tint ? tint.outer : '190, 228, 255';
+  const edgeC = tint ? tint.inner : '255, 255, 255';
+  grad.addColorStop(0, `rgba(${inC}, 0)`);
+  grad.addColorStop(0.7, `rgba(${midC}, ${0.8 * fade})`);
+  grad.addColorStop(1, `rgba(${edgeC}, ${0.95 * fade})`);
   ctx.beginPath();
   ctx.arc(0, 0, R, tail, a1, false);
   ctx.arc(-off, 0, inner, a1, tail, true);
@@ -219,7 +229,7 @@ export function drawSlashArc(ctx, cx, cy, k, dir, t) {
   ctx.fillStyle = grad;
   ctx.fill();
   ctx.lineWidth = Math.max(1, 1.5 * k);
-  ctx.strokeStyle = `rgba(77, 124, 254, ${0.55 * fade})`;
+  ctx.strokeStyle = `rgba(${tint ? tint.line : '77, 124, 254'}, ${0.6 * fade})`;
   ctx.beginPath();
   ctx.arc(0, 0, R, tail, a1, false);
   ctx.stroke();

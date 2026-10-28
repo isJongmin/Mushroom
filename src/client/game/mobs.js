@@ -1,7 +1,8 @@
 // (사이클 9) 몬스터: manifest 정리, 스폰 구역, 호스트 시뮬레이션, 화면 표시(보간), 그리기. ARCHITECTURE "사이클 9 계약".
 //
 // - manifest: assets/mob/manifest.json (아트 소유) { density, mobs: { <id>: { name, hp, speed, touchDamage, size{w,h}, anchor{x,y},
-//   frame{w,h}, sheet, animations{move,hit,die}, fps, behavior: walk|hop|fly, drops[{item,p}] } }, ghost, tombstone }.
+//   frame{w,h}, sheet, animations{move,hit,die}, fps, behavior: walk|hop|fly, buffDrop(0~1), buffDropCount? } }, ghost, tombstone, fx }.
+//   (사이클 10) 의상 drops는 폐기, 버프 드롭 확률 buffDrop(없으면 계약 기본값: snail 0.35, bat 0.4, mushroom 0.45, slime 0.5, golem 1.0 x2).
 //   ghost/tombstone은 문자열 경로 또는 { src|sheet, anchor{x,y}, frame{w,h}, fps } 를 받는다. 없으면 절차적 대체 그림.
 //   시트는 가로 한 줄 프레임, 기본 방향은 오른쪽(manifest facing: 'left'면 반대). 파일이 없으면 종류별 절차적 그림.
 // - 스폰 구역: 맵 manifest spawns [{ id, platform: <발판 id | "ground">, x1, x2, mobs: [kind..], max }].
@@ -9,7 +10,7 @@
 //   z = 스폰 구역 번호(정수, 같은 맵 manifest라 모두 같다): 호스트가 바뀌면 새 호스트가 순찰 범위와 리스폰을 이어 간다.
 // - 다른 클라이언트는 createMobView로 받은 기록을 220ms 늦게 재생(두 기록 사이 직선 보간)한다.
 import { loadImage, warnOnce } from '../assets.js';
-import { PART_KEYS, PART_ID_RE } from '../constants.js';
+import { BUFF_IDS } from './buffs.js';
 
 const REPO_ROOT = new URL('../../../', import.meta.url);
 const SRC_RE = /^assets\/[a-z0-9_\-/]+\.(png|webp)$/i;
@@ -25,15 +26,23 @@ const BUF_MAX = 6;
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const clampN = (v, lo, hi, d) => (fin(v) ? Math.min(hi, Math.max(lo, v)) : d);
 
-/** 아이템 id "<파츠 키>:<파츠 id>" 형식 검사 → { part, id } | null */
-export function parseItem(item) {
-  if (typeof item !== 'string' || item.length > 48) return null;
-  const i = item.indexOf(':');
-  if (i <= 0) return null;
-  const part = item.slice(0, i);
-  const id = item.slice(i + 1);
-  if (!PART_KEYS.includes(part) || !PART_ID_RE.test(id)) return null;
-  return { part, id };
+// (사이클 10) 계약 기본 버프 드롭 확률과 개수
+const BUFF_DROP_DEFAULT = Object.freeze({ snail: 0.35, bat: 0.4, mushroom: 0.45, slime: 0.5, golem: 1.0 });
+const BUFF_COUNT_DEFAULT = Object.freeze({ golem: 2 });
+
+function fxSpec(raw, keys, density) {
+  const fx = raw && raw.fx && typeof raw.fx === 'object' ? raw.fx : null;
+  if (!fx) return null;
+  for (const k of keys) if (fx[k]) return spriteSpec(fx[k], null, density);
+  return null;
+}
+function buffIconSpec(raw, id, density) {
+  const fx = raw && raw.fx && typeof raw.fx === 'object' ? raw.fx : null;
+  if (!fx) return null;
+  const b = fx.buff || fx.buffs || fx.buffIcons;
+  if (b && typeof b === 'object' && b[id]) return spriteSpec(b[id], null, density);
+  if (fx[`buff_${id}`]) return spriteSpec(fx[`buff_${id}`], null, density);
+  return null;
 }
 
 function resolveSrc(src) {
@@ -76,7 +85,8 @@ export function normalizeMobManifest(raw) {
       const list = m.animations && Array.isArray(m.animations[a]) ? m.animations[a].filter((f) => Number.isInteger(f) && f >= 0 && f < 64) : [];
       anims[a] = list.slice(0, 16);
     }
-    const drops = Array.isArray(m.drops) ? m.drops.slice(0, 16).map((d) => (d && parseItem(d.item) && fin(d.p) ? { item: d.item, p: Math.min(1, Math.max(0, d.p)) } : null)).filter(Boolean) : [];
+    const buffDrop = clampN(m.buffDrop, 0, 1, BUFF_DROP_DEFAULT[id] ?? 0.35);
+    const buffDropCount = Math.round(clampN(m.buffDropCount, 1, 4, BUFF_COUNT_DEFAULT[id] ?? 1));
     const frame = { w: clampN(m.frame && m.frame.w, 1, 1024, 0), h: clampN(m.frame && m.frame.h, 1, 1024, 0) };
     kinds.set(id, Object.freeze({
       id,
@@ -92,7 +102,8 @@ export function normalizeMobManifest(raw) {
       fps: clampN(m.fps, 1, 30, 8),
       behavior,
       facingLeft: m.facing === 'left',
-      drops,
+      buffDrop,
+      buffDropCount,
     }));
   }
   return {
@@ -102,6 +113,11 @@ export function normalizeMobManifest(raw) {
     tombstone: spriteSpec(raw.tombstone, 'assets/mob/tombstone.png', density),
     // 아트 확장 키: 슬래시(fx.slash), 드롭 받침(dropBag). 없으면 절차적 그림
     slash: raw.fx && raw.fx.slash ? spriteSpec(raw.fx.slash, null, density) : null,
+    // (사이클 10) 속성 베기 3종, 버프 구슬(가로 5프레임 range,multi,element,power,speed), 버프 아이콘 5종.
+    // manifest fx에 적힌 것만 받는다(없는 파일을 짐작해 요청하지 않음 → 404 없음). 없으면 절차적 그림.
+    slashEl: [null, fxSpec(raw, ['slash_fire', 'slashFire'], density), fxSpec(raw, ['slash_ice', 'slashIce'], density), fxSpec(raw, ['slash_bolt', 'slashBolt'], density)],
+    buffOrb: fxSpec(raw, ['buff_orb', 'buffOrb'], density),
+    buffIcons: Object.fromEntries(BUFF_IDS.map((id) => [id, buffIconSpec(raw, id, density)])),
     dropBag: raw.dropBag ? spriteSpec(raw.dropBag, null, density) : null,
   };
 }
@@ -272,10 +288,11 @@ export function createMobSim(o) {
   }
 
   /**
-   * 공격 판정 상자에 맞은 몬스터 하나(공격자에 가장 가까운 것)에 피해. 처치되면 드롭 아이템을 굴린다.
-   * @returns null | { mob, dmg, killed, item(드롭 아이템 id 또는 null) }
+   * 공격 판정 상자에 맞은 몬스터 하나(공격자에 가장 가까운 것)에 타별 피해를 차례로. 처치되면 남은 타는 버리고 버프 드롭을 굴린다.
+   * @param dmgs 타별 피해 [n..] (multi 버프면 여러 개)
+   * @returns null | { mob, dmgs(실제로 들어간 타), killed, buffs(드롭할 버프 id 목록) }
    */
-  function hit(box, ax, dir, dmg) {
+  function hit(box, ax, dir, dmgs) {
     let best = null;
     let bestD = Infinity;
     for (const m of mobs.values()) {
@@ -288,27 +305,37 @@ export function createMobSim(o) {
     }
     if (!best) return null;
     const spec = kinds.get(best.kind);
-    best.hp = Math.max(0, best.hp - dmg);
+    const applied = [];
+    for (const d of dmgs) {
+      if (best.hp <= 0) break;
+      best.hp = Math.max(0, best.hp - d);
+      applied.push(d);
+    }
+    (best.dm || (best.dm = [])).push(...applied); // 다음 mobs 송신에 타별 피해를 싣는다 (비호스트 피해 숫자)
     best.dir = dir < 0 ? 1 : -1; // 공격자 쪽을 본다
     const z = zones[best.z];
     best.x = Math.min(z.x2, Math.max(z.x1, best.x + (dir < 0 ? -14 : 14)));
-    let item = null;
+    const buffs = [];
     if (best.hp <= 0) {
       best.s = 'die';
       best.dieT = DIE_MS / 1000;
       stats.killed++;
-      for (const d of spec.drops) if (rnd() < d.p) { item = d.item; break; }
+      if (rnd() < spec.buffDrop) for (let i = 0; i < spec.buffDropCount; i++) buffs.push(BUFF_IDS[Math.floor(rnd() * BUFF_IDS.length)]);
     } else {
       best.s = 'hit';
       best.hitT = HIT_MS / 1000;
     }
-    return { mob: best, dmg, killed: best.hp <= 0, item };
+    return { mob: best, dmgs: applied, killed: best.hp <= 0, buffs };
   }
 
-  /** 송신용 목록 (숫자 반올림) */
-  function snapshot() {
+  /** 송신용 목록 (숫자 반올림). withDamage = 마지막 송신 뒤 들어간 타별 피해 dm을 싣고 비운다 */
+  function snapshot(withDamage = false) {
     const list = [];
-    for (const m of mobs.values()) list.push({ id: m.id, kind: m.kind, x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, hp: Math.round(m.hp), s: m.s, z: m.z });
+    for (const m of mobs.values()) {
+      const o = { id: m.id, kind: m.kind, x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, hp: Math.round(m.hp), s: m.s, z: m.z };
+      if (withDamage && m.dm && m.dm.length) { o.dm = m.dm.slice(-8); m.dm.length = 0; }
+      list.push(o);
+    }
     return list;
   }
 
@@ -339,7 +366,11 @@ export function createMobView({ kinds, onDamage, onDie }) {
         map.set(m.id, v);
       }
       v.goneAt = 0;
-      if (m.hp < v.hp) { onDamage?.(v, v.hp - m.hp); v.hpUntil = now + 3000; v.hitAt = now; }
+      if (m.hp < v.hp) {
+        // (사이클 10) 호스트(direct)는 hit 결과로 직접 숫자를 띄운다. 비호스트는 dm(타별 피해)이 있으면 그것, 없으면 차이
+        if (!direct) onDamage?.(v, Array.isArray(m.dm) && m.dm.length ? m.dm : [v.hp - m.hp]);
+        v.hpUntil = now + 3000; v.hitAt = now;
+      }
       v.hp = m.hp;
       v.z = m.z;
       if (m.s !== v.s) { v.s = m.s; v.animAt = now; if (m.s === 'die') { v.hpUntil = now + 600; onDie?.(v); } }

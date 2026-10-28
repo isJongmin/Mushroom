@@ -1,4 +1,5 @@
-"""버섯마을 voxel (사이클 5 정본, 사이클 7: 복셀 1칸 1.9px 모델에 맞춰 격자 범위/AO 반경/그림자 거리 확대): numpy 직교 레이캐스터.
+"""버섯마을 voxel (사이클 5 정본, 사이클 7: 복셀 1칸 1.9px 모델에 맞춰 격자 범위/AO 반경/그림자 거리 확대,
+사이클 10: 복셀 1칸 = 사이클 8의 1/2 (0.91px). 길이 상수는 사이클 8 길이 x UNIT 로 적는다): numpy 직교 레이캐스터.
 
 모델 = 방향 있는 상자(Box) 목록. 한 상자 = 한 '큐브 덩어리'(베벨/이음새 단위).
   - 1차 가시성: 해석적 ray-box(slab) 교차, 4x4 슈퍼샘플.
@@ -12,8 +13,9 @@ import numpy as np
 from scipy import ndimage
 
 SS = 4            # 슈퍼샘플 배율
-GRID = 0.5        # 점유 격자 셀 크기 (모델 단위)
-BEVEL = 0.38      # 베벨 폭 (모델 단위)
+UNIT = 2.0        # 사이클 10: 모델 단위 / 사이클 8 단위 (복셀 1칸이 1/2 로 작아짐)
+GRID = 0.5 * UNIT  # 점유 격자 셀 크기 (모델 단위, 화면 크기는 사이클 8과 같다)
+BEVEL = 0.38      # 베벨 폭 (모델 단위 = 사이클 8의 절반 크기)
 
 
 # ---------------------------------------------------------------- 색/행렬 유틸
@@ -69,9 +71,10 @@ RIM_COL = np.array([1.00, 0.82, 0.62]) * 0.95
 EXPOSURE = 1.05
 
 # 반구 AO 방향: 26 이웃 방향
+AO_BLUR = 0.55
 _D = np.array([(x, y, z) for x in (-1, 0, 1) for y in (-1, 0, 1) for z in (-1, 0, 1) if (x, y, z) != (0, 0, 0)], float)
 AO_DIRS = _D / np.linalg.norm(_D, axis=1)[:, None]
-AO_RADII = (1.0, 2.2, 3.9, 6.0)      # 사이클 7: 모델 단위가 작아져 1.3배
+AO_RADII = tuple(r * UNIT for r in (1.0, 2.2, 3.9, 6.0))      # 사이클 7: 1.3배, 사이클 10: x UNIT
 AO_W = (1.0, 0.8, 0.55, 0.35)
 
 # 슈퍼샘플 지터 (그림자 소프트니스): 4x4 서브픽셀마다 키라이트 방향을 원뿔 안에서 흔든다
@@ -95,7 +98,7 @@ def _hash3(a, b, c):
 
 # ---------------------------------------------------------------- 점유 격자
 class Grid:
-    def __init__(self, boxes, V, lo=(-48, -16, -48), hi=(48, 98, 48)):
+    def __init__(self, boxes, V, lo=(-48 * UNIT, -16 * UNIT, -48 * UNIT), hi=(48 * UNIT, 98 * UNIT, 48 * UNIT)):
         self.lo = np.array(lo, float)
         n = np.ceil((np.array(hi) - self.lo) / GRID).astype(int)
         occ = np.zeros(n, np.float32)
@@ -115,7 +118,7 @@ class Grid:
             sl = occ[i0[0]:i1[0], i0[1]:i1[1], i0[2]:i1[2]]
             sl[inside] = 1.0
         self.raw = occ
-        self.occ = ndimage.gaussian_filter(occ, 0.55)
+        self.occ = ndimage.gaussian_filter(occ, AO_BLUR)
         nz = np.argwhere(occ > 0)
         if len(nz):
             self.blo = self.lo + (nz.min(0) - 2) * GRID
@@ -141,7 +144,7 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
     V = view_matrix(yaw, pitch)
     Wb, Hb, S = W * SS, H * SS, scale * SS
     axp, ayp = anchor[0] * SS, anchor[1] * SS
-    Z0 = 200.0
+    Z0 = 200.0 * UNIT
     zbuf = np.full((Hb, Wb), np.inf)
     idb = np.full((Hb, Wb), -1, np.int32)
 
@@ -217,7 +220,7 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
 
     grid = Grid([boxes[i] for i in occ], V)
     # --- AO (기하 법선 기준 반구)
-    base = P + ng * 0.3
+    base = P + ng * 0.3 * UNIT
     acc = np.zeros(N); wsum = 0.0
     for r, wr in zip(AO_RADII, AO_W):
         for dvec in AO_DIRS:
@@ -241,9 +244,9 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
     up = norm(np.cross(KEY_DIR, [0, 0, 1])); vv = np.cross(KEY_DIR, up)
     Ld = KEY_DIR[None, :] + jt[:, :1] * up[None, :] + jt[:, 1:] * vv[None, :]
     Ld /= np.linalg.norm(Ld, axis=1, keepdims=True)
-    pos = P + ng * 0.55 + Ld * 0.3
+    pos = P + ng * 0.55 * UNIT + Ld * 0.3 * UNIT
     tau = np.zeros(N)
-    step = 0.6
+    step = 0.6 * UNIT
     act = np.arange(N)
     for _ in range(230):
         pos[act] += Ld[act] * step
@@ -270,7 +273,7 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
         dx, dy = int(round(k * 0.85)), -int(round(k * 0.55))
         xx = np.clip(xs + dx, 0, Wb - 1); yy = np.clip(ys + dy, 0, Hb - 1)
         z2 = zbuf[yy, xx]
-        open_ = (~cover[yy, xx]) | (z2 > zc + 2.5)
+        open_ = (~cover[yy, xx]) | (z2 > zc + 2.5 * UNIT)
         rim += open_ * (1.0 - (k - 1) / 7)
     rim = np.clip(rim / 2.4, 0, 1) * (0.4 + 0.6 * np.clip(nbv @ norm([0.6, 0.6, 0.3]) + 0.4, 0, 1))
 

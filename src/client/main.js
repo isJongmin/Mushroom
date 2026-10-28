@@ -6,7 +6,7 @@ import { loadAvatarAssets, loadMapAssets } from './assets.js';
 import { h, setText } from './dom.js';
 import { BOOT_TIMEOUT_MS } from './constants.js';
 import { AppError, GLOBAL_MESSAGE, toAppError } from './errors.js';
-import { profileKey, readProfile, readRoomSession, writeRoomSession, clearRoomSession, inventoryKey, readInventory } from './store.js';
+import { profileKey, readProfile, readRoomSession, writeRoomSession, clearRoomSession } from './store.js';
 import { closeAnyModal } from './ui/modal.js';
 import * as profileScreen from './screens/profile.js';
 import * as lobbyScreen from './screens/lobby.js';
@@ -221,9 +221,9 @@ function getState() {
     // (사이클 8) 발판 목록·세로 카메라, 이펙트 계측 { particles, ghosts, streaks, sprites, bursts, spritesMade, dropped, superJumps, fxSent }
     world: r ? r.world : null,
     fx: r ? r.fx : null,
-    // (사이클 9) 전투: { world, hp, max, dead, host, isHost, simulating, mobs, mobKinds, zones, drops, tombstones, inventory, bagOpen,
-    //   reviveVisible, numbers, slashes, sprites, stats }. 방 밖에서는 inventory만 (프로필 화면 자물쇠 확인용)
-    combat: r ? r.combat : { inventory: readInventory(inventoryKey(app.as)) },
+    // (사이클 9~10) 전투: { world, hp, max, dead, host, isHost, simulating, mobs, mobKinds, zones, drops, tombstones, buffs, attack,
+    //   reviveVisible, numbers, slashes, sprites, stats }
+    combat: r ? r.combat : null,
   };
   return deepFreeze(JSON.parse(JSON.stringify(snapshot)));
 }

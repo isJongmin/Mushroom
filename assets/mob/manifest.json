@@ -40,16 +40,7 @@
       },
       "fps": 6,
       "behavior": "walk",
-      "drops": [
-        {
-          "item": "hat:snail-shell",
-          "p": 0.18
-        },
-        {
-          "item": "shoes:snail-boots",
-          "p": 0.16
-        }
-      ]
+      "buffDrop": 0.35
     },
     "mushroom": {
       "name": "주황버섯",
@@ -91,16 +82,7 @@
       },
       "fps": 10,
       "behavior": "hop",
-      "drops": [
-        {
-          "item": "hat:mushroom-cap",
-          "p": 0.16
-        },
-        {
-          "item": "bottom:mushroom-shorts",
-          "p": 0.16
-        }
-      ]
+      "buffDrop": 0.45
     },
     "slime": {
       "name": "슬라임",
@@ -142,16 +124,7 @@
       },
       "fps": 10,
       "behavior": "hop",
-      "drops": [
-        {
-          "item": "top:slime-hood",
-          "p": 0.15
-        },
-        {
-          "item": "bottom:slime-pants",
-          "p": 0.15
-        }
-      ]
+      "buffDrop": 0.5
     },
     "bat": {
       "name": "박쥐",
@@ -191,16 +164,7 @@
       },
       "fps": 10,
       "behavior": "fly",
-      "drops": [
-        {
-          "item": "top:bat-cape",
-          "p": 0.15
-        },
-        {
-          "item": "shoes:bat-boots",
-          "p": 0.15
-        }
-      ]
+      "buffDrop": 0.4
     },
     "golem": {
       "name": "돌골렘",
@@ -240,20 +204,8 @@
       },
       "fps": 5,
       "behavior": "walk",
-      "drops": [
-        {
-          "item": "hat:golem-helm",
-          "p": 0.2
-        },
-        {
-          "item": "top:golem-armor",
-          "p": 0.2
-        },
-        {
-          "item": "shoes:snail-boots",
-          "p": 0.1
-        }
-      ]
+      "buffDrop": 1.0,
+      "buffDropCount": 2
     }
   },
   "ghost": {
@@ -324,6 +276,87 @@
       "frames": 2,
       "fps": 16,
       "note": "기준점 = 공격자 발 위치. 오른쪽 공격 기준, 왼쪽은 좌우 반전. 호가 판정 상자(앞 70 x 발 위 5~75)를 덮는다."
+    },
+    "buffOrb": {
+      "sheet": "assets/fx/buff_orb.png",
+      "frame": {
+        "w": 48,
+        "h": 48
+      },
+      "anchor": {
+        "x": 24,
+        "y": 24
+      },
+      "frames": 5,
+      "order": [
+        "range",
+        "multi",
+        "element",
+        "power",
+        "speed"
+      ],
+      "note": "정적 시트, 프레임 i = order[i]. 기준점 = 구슬 중심. 구슬 지름 약 28px(월드 약 19), 바깥은 글로우. 위아래 흔들림은 프런트가 처리. 좌우 반전하지 않는다."
+    },
+    "buffIcons": {
+      "dir": "assets/fx/buff",
+      "pattern": "assets/fx/buff/{id}.png",
+      "size": {
+        "w": 64,
+        "h": 64
+      },
+      "ids": [
+        "range",
+        "multi",
+        "element",
+        "power",
+        "speed"
+      ],
+      "note": "64x64 투명 배경 원형 배지(지름 약 62). HUD에서 32~40px로 축소 표시해도 읽히게 그렸다."
+    },
+    "slashFire": {
+      "sheet": "assets/fx/slash_fire.png",
+      "frame": {
+        "w": 150,
+        "h": 135
+      },
+      "anchor": {
+        "x": 24,
+        "y": 128
+      },
+      "frames": 2,
+      "fps": 16,
+      "element": 1,
+      "note": "기준점 = 공격자 발 위치. 오른쪽 공격 기준, 왼쪽은 좌우 반전. slash와 같은 규격·같은 호, 색만 다르다."
+    },
+    "slashIce": {
+      "sheet": "assets/fx/slash_ice.png",
+      "frame": {
+        "w": 150,
+        "h": 135
+      },
+      "anchor": {
+        "x": 24,
+        "y": 128
+      },
+      "frames": 2,
+      "fps": 16,
+      "element": 2,
+      "note": "기준점 = 공격자 발 위치. 오른쪽 공격 기준, 왼쪽은 좌우 반전. slash와 같은 규격·같은 호, 색만 다르다."
+    },
+    "slashBolt": {
+      "sheet": "assets/fx/slash_bolt.png",
+      "frame": {
+        "w": 150,
+        "h": 135
+      },
+      "anchor": {
+        "x": 24,
+        "y": 128
+      },
+      "frames": 2,
+      "fps": 16,
+      "element": 3,
+      "note": "기준점 = 공격자 발 위치. 오른쪽 공격 기준, 왼쪽은 좌우 반전. slash와 같은 규격·같은 호, 색만 다르다."
     }
   }
 }

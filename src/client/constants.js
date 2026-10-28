@@ -176,7 +176,6 @@ export const SYS_LEAVE_DELAY_MS = 3000; // 퇴장 시스템 메시지 지연 (ro
 
 // 저장소 키 (ARCHITECTURE 결정 3, 6)
 export const LS_PROFILE = 'mushroom:profile';
-export const LS_INVENTORY = 'mushroom:inventory'; // (사이클 9)
 export const SS_ROOM = 'mushroom:room';
 export const SS_LOG_OPEN = 'mushroom:logOpen';
 export const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/+esm';

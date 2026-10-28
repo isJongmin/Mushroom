@@ -25,15 +25,16 @@ import { PHYS, createBody, stepBody, surfaceBelow, normState, isFx, knockBody } 
 import {
   COMBAT, attackBox, hurtBox, overlaps, randInt, createDamageNumbers, createSlashes, createTombstones, drawGhost, drawHpBar, HPBAR, blinkAlpha,
 } from '../game/combat.js';
-import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob, parseItem } from '../game/mobs.js';
-import { createDrops, createItemIcons, ITEM_CROP, PICK_RANGE } from '../game/drops.js';
-import { createInventoryPanel } from '../ui/inventory.js';
-import { pickAvatar } from '../avatar-data.js';
+import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob } from '../game/mobs.js';
+import { createDrops, PICK_RANGE, TOUCH_RANGE } from '../game/drops.js';
+import {
+  BUFF, BUFF_IDS, BUFF_LABEL, isBuff, attackStats, clampAttack, rollHits, createBuffs, drawBuffOrb,
+} from '../game/buffs.js';
 import { createFx, prefersReducedMotion } from '../game/fx.js';
 import { openModal } from '../ui/modal.js';
 import { createRoomLink } from '../backend/room-link.js';
 import { createChatLog } from '../ui/chatlog.js';
-import { clearRoomSession, writeProfile, inventoryKey, readInventory, writeInventory } from '../store.js';
+import { clearRoomSession } from '../store.js';
 import { cleanChatText } from '../backend/common.js';
 
 const REMOTE_SNAP_DIST = 400; // 이보다 멀면 순간 이동
@@ -136,17 +137,15 @@ export function mount(root, app, opts = {}) {
   let atkSeq = 0;
   const atkBoxes = []; // ?debug: [{ box, at }]
   const earlyHp = new Map(); // Presence보다 먼저 온 hp
-  const invKey = inventoryKey(app.as);
-  let inventory = readInventory(invKey);
+  // (사이클 10) 공격 강화 버프 (60초, 최대 3스택, 사망하면 초기화)
+  const buffs = createBuffs();
+  let atk = attackStats({}); // 지금 버프로 계산한 공격 값 { w, hits, dmin, dmax, el, cooldown, animMs }
+  let buffOrbSprite = null;
+  const buffIconSprites = {}; // id -> sprite
   const cstats = {
-    atkSent: 0, atkRecv: 0, pvpHits: 0, hurt: 0, touchHits: 0, mobHits: 0, kills: 0, deaths: 0, revives: 0, hpSent: 0, hpRecv: 0,
-    mobsSent: 0, mobsRecv: 0, dropsSpawned: 0, dropsRecv: 0, picksSent: 0, picked: 0, equips: 0, hostChanges: 0,
+    atkSent: 0, atkRecv: 0, pvpHits: 0, pvpHitCount: 0, hurt: 0, touchHits: 0, mobHits: 0, kills: 0, deaths: 0, revives: 0, hpSent: 0, hpRecv: 0,
+    mobsSent: 0, mobsRecv: 0, dropsSpawned: 0, dropsRecv: 0, picksSent: 0, autoPicks: 0, buffsGained: 0, hostChanges: 0, atkCapped: 0,
   };
-  let iconsRepaint = false;
-  const icons = createItemIcons({
-    onLoad: () => { iconsRepaint = true; },
-    allow: (item) => { const it = parseItem(item); return !!(it && assets && assets.parts[it.part].some((o) => o.id === it.id)); },
-  });
 
   // --- DOM (room.md 2~4장, ui-kit 22~23절) ------------------------------------------
   const roomChip = h('span', { class: 'bk-chip hud-room', testid: 'room-title', title: roomName },
@@ -165,12 +164,12 @@ export function mount(root, app, opts = {}) {
   const leaveBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--sm', testid: 'room-leave' }, leaveIcon, leaveDots, leaveText);
   // (사이클 8) 방장에게만 보이는 방 삭제 버튼 (확인 모달을 거친다)
   const deleteBtn = isOwner ? h('button', { type: 'button', class: 'bk-btn bk-btn--sm bk-btn--danger', testid: 'room-delete' }, M.DELETE) : null;
-  // (사이클 9) 가방 버튼 (인벤토리 패널)
-  const bagCount = h('span', { class: 'bk-badge bag-count', testid: 'bag-count', hidden: true });
-  const bagBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--sm', testid: 'bag-button', 'aria-haspopup': 'true', 'aria-expanded': 'false' }, '가방', bagCount);
+  // (사이클 10) 버프 바: HUD 좌상단 (데스크톱 1줄째 끝, 모바일 2줄째). 아이콘 + 스택 수 + 남은 시간 원형 게이지
+  const buffBar = h('div', { class: 'buff-bar', testid: 'buff-bar', role: 'status', 'aria-label': '공격 강화 버프', hidden: true });
+  const buffEls = new Map(); // id -> { el, cv, num, lastKey }
   const hostChip = debug ? h('span', { class: 'bk-chip debug-host', testid: 'debug-host' }, '호스트 -') : null;
   const hudL = h('div', { class: 'hud-l' }, roomChip, countChip, modeSlot, hostChip);
-  const hud = h('div', { class: 'hud' }, hudL, h('div', { class: 'hud-r' }, hint, bagBtn, deleteBtn, leaveBtn));
+  const hud = h('div', { class: 'hud' }, hudL, h('div', { class: 'hud-r' }, hint, deleteBtn, leaveBtn));
   const modeSlot2 = h('span', { class: 'mode-slot' });
 
   const bannerText = h('span', {});
@@ -271,6 +270,7 @@ export function mount(root, app, opts = {}) {
       chatLog.setMobile(mobile);
       // LOCAL MODE 칩: 데스크톱은 HUD 첫 줄, 모바일은 2줄째 (room.md 3.1, 4.1)
       app.placeModeBadge(mobile ? modeSlot2 : modeSlot);
+      (mobile ? row2 : hudL).appendChild(buffBar); // (사이클 10) 버프 바 자리
     }
     if (connection === 'joining' || connection === 'fatal') paintLetterbox();
     else render(performance.now());
@@ -319,7 +319,7 @@ export function mount(root, app, opts = {}) {
     chatInput.disabled = next !== 'connected';
     for (const b of [leftBtn, rightBtn, crouchBtn, jumpBtn, attackBtn, pickBtn]) b.disabled = !interactive;
     touchFloat.classList.toggle('is-hidden', !full);
-    bagBtn.hidden = !full;
+    if (!full) buffBar.hidden = true;
     updateSendBtn();
     if (next !== 'connected') input.clear();
 
@@ -604,16 +604,24 @@ export function mount(root, app, opts = {}) {
     rl.start({ joined: true });
   }
 
-  // --- (사이클 9) 전투 ---------------------------------------------------------
+  // --- (사이클 9~10) 전투 ---------------------------------------------------------
   const headOf = (p) => (avatarR ? avatarR.headTop(p.avatar) : 100);
   const groundAt = (x, y) => surfaceBelow(platforms, x, y, world.groundY);
   const send = (event, payload) => (link && connection === 'connected' && typeof link.send === 'function' ? link.send(event, payload) : false);
 
-  function sendHp(by) {
-    if (send('hp', { hp: me.hp, max: me.max, dead: me.dead, by: by || null })) cstats.hpSent++;
+  /** hp 송신. dm = 이번에 받은 타별 피해 (다른 화면의 피해 숫자용, 사이클 10 확장) */
+  function sendHp(by, dm) {
+    const p = { hp: me.hp, max: me.max, dead: me.dead, by: by || null };
+    if (dm && dm.length) p.dm = dm.slice(0, 8);
+    if (send('hp', p)) cstats.hpSent++;
   }
 
-  /** 유령·비석·슬래시·드롭 받침 그림 (몬스터 manifest의 ghost, tombstone, fx.slash, dropBag).
+  /** 타별 피해 숫자를 80ms 간격으로 (multi 버프) */
+  function showHits(dms, x, y, kind, now) {
+    dms.forEach((d, i) => dmgNums.add(d, x, y, kind, now + i * BUFF.hitGapMs));
+  }
+
+  /** 유령·비석·슬래시(기본/속성 3종)·드롭 받침·버프 구슬·버프 아이콘 (몬스터 manifest의 ghost, tombstone, fx.*, dropBag).
    *  몬스터가 있는 맵이면 입장 때, 아니면 처음 필요할 때(첫 공격/사망) 받는다. 없으면 절차적 대체 그림 */
   function ensureSprites() {
     if (spritesTried) return;
@@ -622,37 +630,56 @@ export function mount(root, app, opts = {}) {
       let defs = mobDefs;
       if (!defs && !mobFetched) { mobFetched = true; defs = await loadMobManifest(); }
       if (!alive || !defs) return;
-      const [g, t, sl, bagS] = await Promise.all([loadSprite(defs.ghost), loadSprite(defs.tombstone), loadSprite(defs.slash), loadSprite(defs.dropBag)]);
+      const [g, t, sl, bagS, orb, ...rest] = await Promise.all([
+        loadSprite(defs.ghost), loadSprite(defs.tombstone), loadSprite(defs.slash), loadSprite(defs.dropBag), loadSprite(defs.buffOrb),
+        ...defs.slashEl.slice(1).map(loadSprite), ...BUFF_IDS.map((id) => loadSprite(defs.buffIcons[id])),
+      ]);
       if (!alive) return;
       ghostSprite = g;
       tombSprite = t;
-      slashes.setSprite(sl);
+      slashes.setSprite(sl, 0);
+      rest.slice(0, 3).forEach((v, i) => slashes.setSprite(v, i + 1));
+      BUFF_IDS.forEach((id, i) => { buffIconSprites[id] = rest[3 + i] || null; });
       dropBagSprite = bagS;
+      buffOrbSprite = orb;
+      for (const e of buffEls.values()) e.lastKey = '';
     })();
   }
 
+  function refreshAttack() { atk = attackStats(buffs.stacks()); }
+
   function doAttack(now) {
     me.lastAtkAt = now;
-    me.attackUntil = now + COMBAT.attackAnimMs;
+    me.attackUntil = now + atk.animMs;
+    me.atkAnimMs = atk.animMs;
     const dir = me.dir < 0 ? 'left' : 'right';
-    slashes.add(me, me.dir);
+    slashes.add(me, me.dir, { w: atk.w, el: atk.el });
     ensureSprites();
     const x = Math.round(me.x);
     const y = Math.round(me.y);
-    if (debug) atkBoxes.push({ box: attackBox(x, y, dir), at: now });
-    if (send('atk', { x, y, dir, seq: ++atkSeq })) cstats.atkSent++;
-    if (isHost()) hostAttack(x, y, dir);
+    const a = { x, y, dir, seq: ++atkSeq, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
+    if (debug) atkBoxes.push({ box: attackBox(x, y, dir, a.w), at: now });
+    if (send('atk', a)) cstats.atkSent++;
+    if (isHost()) hostAttack(a, now);
   }
 
-  /** 내가 맞음 (피격자 권위): 피해, 무적, 넉백 또는 사망, hp 송신 */
-  function takeDamage(dmg, dir, by, now) {
-    me.hp = Math.max(0, me.hp - dmg);
+  /**
+   * 내가 맞음 (피격자 권위): 타별 피해를 모두 적용한 뒤 무적 0.6초, 넉백 1회 또는 사망, hp 1회 송신.
+   * @param dms 타별 피해 목록 (접촉 피해는 1개)
+   */
+  function takeDamage(dms, dir, by, now) {
+    const applied = [];
+    for (const d of dms) {
+      if (me.hp <= 0) break;
+      me.hp = Math.max(0, me.hp - d);
+      applied.push(d);
+    }
     me.invulnUntil = now + COMBAT.invuln * 1000;
     cstats.hurt++;
-    dmgNums.add(dmg, me.x, me.y - headOf(me), 'hurt', now);
+    showHits(applied, me.x, me.y - headOf(me), 'hurt', now);
     if (me.hp <= 0) die(now);
     else knockBody(me.body, dir);
-    sendHp(by);
+    sendHp(by, applied);
   }
 
   function die(now) {
@@ -663,6 +690,8 @@ export function mount(root, app, opts = {}) {
     me.body.dashT = 0;
     me.body.prone = false;
     cstats.deaths++;
+    buffs.clear(); // (사이클 10) 사망하면 버프 초기화
+    refreshAttack();
     stones.drop(me.user_id, me.x, groundAt(me.x, me.y), now);
     ensureSprites();
     reviveBtn.hidden = true;
@@ -696,7 +725,7 @@ export function mount(root, app, opts = {}) {
     canvas.focus({ preventScroll: true });
   }
 
-  /** 원격 hp 적용: 사망/부활 전환(비석), 피해 숫자, 무적 깜빡임 */
+  /** 원격 hp 적용: 사망/부활 전환(비석), 피해 숫자(dm이 있으면 타별 80ms 간격), 무적 깜빡임 */
   function applyHp(pl, p, now, quiet = false) {
     if (!pl.dead && p.dead) {
       pl.deadAt = now;
@@ -705,9 +734,10 @@ export function mount(root, app, opts = {}) {
     } else if (pl.dead && !p.dead) {
       stones.remove(pl.user_id);
       pl.invulnUntil = now + COMBAT.reviveInvuln * 1000;
-    } else if (!p.dead && p.hp < pl.hp && !quiet) {
-      dmgNums.add(pl.hp - p.hp, pl.x, pl.y - headOf(pl), 'hit', now);
-      pl.invulnUntil = now + COMBAT.invuln * 1000;
+    }
+    if (!quiet && p.hp < pl.hp && !pl.dead) {
+      showHits(p.dm || [pl.hp - p.hp], pl.x, pl.y - headOf(pl), 'hit', now);
+      if (!p.dead) pl.invulnUntil = now + COMBAT.invuln * 1000;
     }
     pl.hp = p.hp;
     pl.max = p.max;
@@ -740,19 +770,23 @@ export function mount(root, app, opts = {}) {
     else sim.fill(now);
   }
 
-  function hostAttack(x, y, dir) {
+  /** 호스트: atk(상한으로 자른 값)를 몬스터에. 타별 피해, 처치되면 버프 드롭 (golem 2개) */
+  function hostAttack(a, now) {
     if (!sim) return;
-    const r = sim.hit(attackBox(x, y, dir), x, dir === 'left' ? -1 : 1, randInt(COMBAT.mobDmgMin, COMBAT.mobDmgMax));
+    const c = clampAttack(a);
+    const r = sim.hit(attackBox(a.x, a.y, a.dir, c.w), a.x, a.dir === 'left' ? -1 : 1, rollHits(c));
     if (!r) return;
     cstats.mobHits++;
+    showHits(r.dmgs, r.mob.x, r.mob.y - kindsH(r.mob.kind), 'hit', now);
     if (r.killed) {
       cstats.kills++;
-      if (r.item) spawnDrop(r.item, r.mob.x, r.mob.y);
+      r.buffs.forEach((b, i) => spawnDrop(b, r.mob.x + (i - (r.buffs.length - 1) / 2) * 30, r.mob.y));
     }
   }
+  const kindsH = (kind) => { const k = mobDefs && mobDefs.kinds.get(kind); return k ? k.size.h : 40; };
 
-  function spawnDrop(item, x, y) {
-    const d = { id: randId(), item, x: Math.round(x), y: Math.round(y) };
+  function spawnDrop(buff, x, y) {
+    const d = { id: randId(), buff, x: Math.round(clampX(x)), y: Math.round(y) };
     drops.add(d, groundAt(d.x, d.y - 1));
     cstats.dropsSpawned++;
     send('drop', d);
@@ -765,16 +799,19 @@ export function mount(root, app, opts = {}) {
     const pl = players.get(uid);
     if (!pl || pl.dead || Math.abs(pl.x - d.x) > PICK_RANGE.x + 80 || Math.abs(pl.y - d.y) > PICK_RANGE.y + 80) return;
     drops.remove(dropId);
-    send('picked', { drop_id: dropId, user_id: uid, item: d.item });
-    if (uid === me.user_id) gainItem(d.item);
+    send('picked', { drop_id: dropId, user_id: uid, buff: d.buff });
+    if (uid === me.user_id) gainBuff(d.buff);
   }
 
-  function tryPick() {
+  /** 줍기: Z(범위 44) 또는 닿으면 자동(범위 26). 같은 드롭은 1초에 1번만 요청 */
+  function tryPick(range, auto) {
     if (!me || me.dead) return;
-    const d = drops.nearest(me.x, me.y);
-    if (!d || d.asked && performance.now() - d.asked < 1000) return;
-    d.asked = performance.now();
+    const d = drops.nearest(me.x, me.y, range);
+    const now = performance.now();
+    if (!d || (d.asked && now - d.asked < 1000)) return;
+    d.asked = now;
     cstats.picksSent++;
+    if (auto) cstats.autoPicks++;
     if (isHost()) hostPick(me.user_id, d.id);
     else send('pick', { drop_id: d.id });
   }
@@ -786,16 +823,22 @@ export function mount(root, app, opts = {}) {
         cstats.atkRecv++;
         const pl = players.get(p.user_id);
         if (!pl || pl.isSelf || pl.dead) return;
-        pl.attackUntil = now + COMBAT.attackAnimMs;
+        const c = clampAttack(p); // 받는 쪽 상한: w≤175, hits≤4, dmax≤60, el 0~3
+        if (c.w !== p.w || c.hits !== p.hits || c.dmax !== p.dmax || c.el !== p.el) cstats.atkCapped++;
+        const animMs = Math.max(120, Math.min(COMBAT.attackAnimMs, now - (pl.lastAtkAt || 0)));
+        pl.lastAtkAt = now;
+        pl.attackUntil = now + animMs;
+        pl.atkAnimMs = animMs;
         pl.dir = p.dir === 'left' ? -1 : 1;
-        slashes.add(pl, pl.dir);
-        if (debug) atkBoxes.push({ box: attackBox(p.x, p.y, p.dir), at: now });
-        // PvP: 피격자 권위 (내 위치로 판정)
-        if (!me.dead && now >= me.invulnUntil && overlaps(attackBox(p.x, p.y, p.dir), hurtBox(me.x, me.y, me.body.prone))) {
+        slashes.add(pl, pl.dir, { w: c.w, el: c.el });
+        if (debug) atkBoxes.push({ box: attackBox(p.x, p.y, p.dir, c.w), at: now });
+        // PvP: 피격자 권위 (내 위치로 판정). 타를 모두 적용한 뒤 무적
+        if (!me.dead && now >= me.invulnUntil && overlaps(attackBox(p.x, p.y, p.dir, c.w), hurtBox(me.x, me.y, me.body.prone))) {
           cstats.pvpHits++;
-          takeDamage(randInt(COMBAT.dmgMin, COMBAT.dmgMax), pl.dir, p.user_id, now);
+          cstats.pvpHitCount += c.hits;
+          takeDamage(rollHits(c), pl.dir, p.user_id, now);
         }
-        if (isHost()) hostAttack(p.x, p.y, p.dir);
+        if (isHost()) hostAttack(p, now);
         break;
       }
       case 'hp': {
@@ -819,68 +862,78 @@ export function mount(root, app, opts = {}) {
         break;
       case 'picked':
         drops.remove(p.drop_id);
-        if (p.user_id === me.user_id) gainItem(p.item);
+        if (p.user_id === me.user_id) gainBuff(p.buff);
         break;
       default:
         break;
     }
   }
 
-  // --- (사이클 9) 인벤토리 ------------------------------------------------------
-  function gainItem(item) {
-    cstats.picked++;
-    const it = parseItem(item);
-    const label = it && assets ? assets.labelOf(it.part, it.id) : item;
-    if (!inventory.includes(item)) {
-      inventory = [...inventory, item];
-      writeInventory(invKey, inventory);
-      chatLog.addSystem(`${label}을(를) 주웠어요. 가방에서 입어 볼 수 있어요`);
-    } else {
-      chatLog.addSystem(`${label}을(를) 또 주웠어요`);
+  // --- (사이클 10) 버프 ---------------------------------------------------------
+  function gainBuff(id, now = performance.now()) {
+    if (!isBuff(id) || !me || me.dead) return;
+    buffs.add(id, now);
+    refreshAttack();
+    cstats.buffsGained++;
+    const st = buffs.stacks()[id];
+    chatLog.addSystem(`${BUFF_LABEL[id]} 강화 ${st}단계 (60초)`);
+  }
+
+  /** HUD 버프 바: 아이콘(스프라이트 또는 절차적 구슬) + 남은 시간 원형 게이지 + 스택 수. 10Hz로 다시 그린다 */
+  function paintBuffBar(now) {
+    const list = buffs.list(now);
+    const showBar = list.length > 0 && (connection === 'connected' || connection === 'disconnected');
+    if (buffBar.hidden === showBar) buffBar.hidden = !showBar;
+    const seen = new Set();
+    const dpr = layout.dpr || 1;
+    const S = 32;
+    for (const b of list) {
+      seen.add(b.id);
+      let e = buffEls.get(b.id);
+      if (!e) {
+        const cv = h('canvas', { 'aria-hidden': 'true' });
+        const num = h('span', { class: 'buff-n' });
+        const el = h('span', { class: 'buff', testid: `buff-${b.id}`, 'data-buff': b.id }, cv, num);
+        e = { el, cv, num, lastKey: '' };
+        buffEls.set(b.id, e);
+      }
+      if (e.el.parentNode !== buffBar || e.el !== buffBar.children[list.indexOf(b)]) buffBar.insertBefore(e.el, buffBar.children[list.indexOf(b)] || null);
+      const key = `${b.stacks}|${Math.round(b.frac * 120)}|${dpr}`;
+      if (key === e.lastKey) continue;
+      e.lastKey = key;
+      const px = Math.round(S * dpr);
+      if (e.cv.width !== px) { e.cv.width = px; e.cv.height = px; }
+      const c = e.cv.getContext('2d');
+      c.setTransform(dpr, 0, 0, dpr, 0, 0);
+      c.clearRect(0, 0, S, S);
+      c.fillStyle = 'rgba(26, 22, 38, 0.75)';
+      c.beginPath(); c.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); c.fill();
+      const icon = buffIconSprites[b.id];
+      if (icon) c.drawImage(icon.img, 0, 0, icon.frameW, icon.frameH, 5, 5, S - 10, S - 10);
+      else drawBuffOrb(c, b.id, S / 2, S / 2, S / 2 - 5);
+      // 남은 시간 원형 게이지 (12시부터 시계 방향으로 줄어듦)
+      c.lineWidth = 3;
+      c.strokeStyle = 'rgba(255,255,255,0.25)';
+      c.beginPath(); c.arc(S / 2, S / 2, S / 2 - 1.5, 0, Math.PI * 2); c.stroke();
+      c.strokeStyle = b.frac < 0.17 ? '#FF8E7A' : '#FFF2A8';
+      c.beginPath(); c.arc(S / 2, S / 2, S / 2 - 1.5, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * b.frac); c.stroke();
+      setText(e.num, b.stacks > 1 ? `x${b.stacks}` : '');
+      e.el.title = `${BUFF_LABEL[b.id]} ${b.stacks}단계, ${Math.ceil(b.leftMs / 1000)}초`;
+      e.el.setAttribute('aria-label', e.el.title);
+      e.el.classList.toggle('is-ending', b.leftMs < 10000);
     }
-    updateBag();
-    bag.refresh();
+    for (const [id, e] of buffEls) if (!seen.has(id)) { e.el.remove(); buffEls.delete(id); }
   }
 
-  function updateBag() {
-    bagCount.hidden = !inventory.length;
-    setText(bagCount, String(inventory.length));
+  // ?debug: 버프 주입 (QA). window.__mushroomDebug.buff('range') / clearBuffs(). 화면을 떠나면 지운다
+  if (debug) {
+    try {
+      window.__mushroomDebug = Object.freeze({
+        buff(id) { if (!isBuff(id)) return false; gainBuff(id); return buffs.stacks(); },
+        clearBuffs() { buffs.clear(); refreshAttack(); return true; },
+      });
+    } catch { /* 무시 */ }
   }
-
-  /** 가방에서 아이템 누름 → 즉시 착용 (프로필 저장 + updateSelf). manifest에 아직 없는 id면 false */
-  function equip(item) {
-    const it = parseItem(item);
-    if (!it || !assets || !me || !assets.parts[it.part].some((o) => o.id === it.id)) return false;
-    const avatar = assets.sanitizeAvatar({ ...me.avatar, [it.part]: it.id });
-    me.avatar = avatar;
-    avatarR?.ready(avatar);
-    const profileNext = { nickname: app.profile.nickname, avatar: pickAvatar(avatar) };
-    app.profile = profileNext;
-    if (!writeProfile(app.profileKey, profileNext)) app.storageFailed = true;
-    if (link) link.updateSelf({ avatar: pickAvatar(avatar) }).catch(() => {});
-    cstats.equips++;
-    return true;
-  }
-
-  function thumbFor(item) {
-    const it = parseItem(item);
-    if (!it || !assets || !avatarR || !assets.parts[it.part].some((o) => o.id === it.id)) return null;
-    const src = avatarR.thumb({ ...assets.defaultAvatar, [it.part]: it.id }, [it.part]);
-    return src ? { src, crop: ITEM_CROP[it.part] } : null;
-  }
-
-  const bag = createInventoryPanel({
-    items: () => inventory,
-    avatar: () => (me ? me.avatar : null),
-    labelOf: (part, id) => (assets ? assets.labelOf(part, id) : id),
-    icons,
-    thumbFn: thumbFor,
-    onEquip: equip,
-    onClose: () => { bagBtn.setAttribute('aria-expanded', 'false'); bagBtn.focus({ preventScroll: true }); },
-    on,
-  });
-  stage.append(bag.el);
-  updateBag();
 
   // --- 업데이트/렌더 ---------------------------------------------------------
   const BODY_OPT = { speed: WORLD.speed, minX: WORLD.minX, maxX: WORLD.maxX, platforms, groundY: WORLD.groundY };
@@ -914,8 +967,9 @@ export function mount(root, app, opts = {}) {
       me.y = b.y;
       // (사이클 9) 공격: 쿨다운 0.45초, 누르고 있으면 계속. 유령은 공격·줍기 불가
       if (connection === 'connected' && !me.dead) {
-        if (input.wantsAttack(now) && now - me.lastAtkAt >= COMBAT.cooldown * 1000) { input.consumeAttack(); doAttack(now); }
-        if (input.takePick(now)) tryPick();
+        if (input.wantsAttack(now) && now - me.lastAtkAt >= atk.cooldown * 1000) { input.consumeAttack(); doAttack(now); }
+        if (input.takePick(now)) tryPick(PICK_RANGE, false);
+        tryPick(TOUCH_RANGE, true); // (사이클 10) 닿으면 자동 줍기
       }
       me.s = me.dead ? 'ghost' : now < me.attackUntil ? 'attack' : b.s;
       me.moving = b.s === 'walk';
@@ -925,7 +979,7 @@ export function mount(root, app, opts = {}) {
         for (const v of mobView.list) {
           if (v.s === 'die' || !v.spec.touchDamage || !overlaps(hb, mobView.box(v))) continue;
           cstats.touchHits++;
-          takeDamage(v.spec.touchDamage, me.x < v.x ? -1 : 1, `mob:${v.kind}`, now);
+          takeDamage([v.spec.touchDamage], me.x < v.x ? -1 : 1, `mob:${v.kind}`, now);
           break;
         }
       }
@@ -985,11 +1039,10 @@ export function mount(root, app, opts = {}) {
       if (isHost() && connection === 'connected' && now - Math.max(connectedAt, hostSince) >= HOST_START_MS) startSim(now);
       if (sim && isHost()) {
         sim.step(dt, now);
-        const list = sim.snapshot();
-        mobView.apply(list, now, true);
+        mobView.apply(sim.snapshot(), now, true);
         if (now - lastMobsSent >= MOBS_SEND_MS && connection === 'connected') {
           lastMobsSent = now;
-          if (send('mobs', { t: Date.now(), list })) cstats.mobsSent++;
+          if (send('mobs', { t: Date.now(), list: sim.snapshot(true) })) cstats.mobsSent++; // 타별 피해 dm 포함
         }
       }
       mobView.update(now);
@@ -1003,9 +1056,13 @@ export function mount(root, app, opts = {}) {
     slashes.update(now);
     stones.update(dt, now);
     while (atkBoxes.length && now - atkBoxes[0].at > ATTACK_BOX_SHOW_MS) atkBoxes.shift();
-    if (bag.isOpen && (iconsRepaint || now - lastBagPaint > 500)) { iconsRepaint = false; lastBagPaint = now; bag.repaint(); }
+    buffs.update(now);
+    const nAtkKey = buffs.size;
+    if (nAtkKey !== lastBuffCount) { lastBuffCount = nAtkKey; refreshAttack(); } // 만료
+    if (now - lastBuffPaint >= 100) { lastBuffPaint = now; paintBuffBar(now); }
   }
-  let lastBagPaint = 0;
+  let lastBuffPaint = 0;
+  let lastBuffCount = 0;
 
   function sampleY(buf, t, fallback) {
     if (!buf.length) return fallback;
@@ -1047,6 +1104,8 @@ export function mount(root, app, opts = {}) {
   }
 
   function frameOf(p, now) {
+    // (사이클 10) speed 버프: attack 애니메이션 ms를 쿨다운과 같은 비율로 줄인다 (240ms 기준)
+    if (p.anim === 'attack' && p.atkAnimMs && p.atkAnimMs < COMBAT.attackAnimMs) return avatarR.frameAt('attack', (now - p.animSince) * (COMBAT.attackAnimMs / p.atkAnimMs));
     return avatarR.frameAt(p.anim, now - p.animSince);
   }
 
@@ -1078,7 +1137,7 @@ export function mount(root, app, opts = {}) {
     }
     // (사이클 9) 비석 → 드롭 → 몬스터 (캐릭터 뒤)
     stones.draw(ctx, tombSprite, camX, cy, k, now);
-    drops.draw(ctx, camX, cy, k, now, icons, thumbFor, dropBagSprite);
+    drops.draw(ctx, camX, cy, k, now, buffOrbSprite, dropBagSprite);
     const mobsVis = [];
     if (mobView) {
       for (const v of mobView.list) {
@@ -1293,7 +1352,6 @@ export function mount(root, app, opts = {}) {
     }
   });
   on(window, 'keyup', (e) => { input.release(`key:${e.code}`); });
-  on(bagBtn, 'click', () => { bag.toggle(); bagBtn.setAttribute('aria-expanded', String(bag.isOpen)); });
   on(reviveBtn, 'click', () => revive());
   on(window, 'blur', () => input.clear());
   // 탭 복귀(모바일 백그라운드 포함): 즉시 하트비트 + 채널 상태 점검, 백오프 대기 중이면 바로 시도
@@ -1508,10 +1566,11 @@ export function mount(root, app, opts = {}) {
       mobKinds: mobDefs ? [...mobDefs.kinds.keys()] : [], zones: zones.length,
       drops: drops.list().map((d) => ({ id: d.id, item: d.item, x: Math.round(d.x), y: Math.round(d.y) })),
       tombstones: stones.snapshot(),
-      inventory: [...inventory],
-      bagOpen: bag.isOpen,
+      // (사이클 10) 버프 [{ id, stacks, leftMs, frac }]와 지금 공격 값 { w, hits, dmin, dmax, el, cooldown, animMs }
+      buffs: buffs.list(performance.now()),
+      attack: { ...atk },
       reviveVisible: !reviveBtn.hidden && !reviveBox.hidden,
-      numbers: dmgNums.count, slashes: slashes.count, slashImage: slashes.hasImage,
+      numbers: dmgNums.count, slashes: slashes.count, slashImage: slashes.hasImage, slashElementImages: slashes.elementImages, buffOrbImage: !!buffOrbSprite,
       sprites: { ghost: !!ghostSprite, tombstone: !!tombSprite },
       stats: { ...cstats, ...(sim ? { sim: sim.stats } : {}) },
     },
@@ -1533,7 +1592,8 @@ export function mount(root, app, opts = {}) {
     if (app.providers.room) app.providers.room = null;
     avatarR?.clear();
     fx.clear();
-    dmgNums.clear(); slashes.clear(); stones.clear(); drops.clear(); icons.clear();
+    dmgNums.clear(); slashes.clear(); stones.clear(); drops.clear(); buffs.clear(); buffEls.clear();
+    if (debug) { try { delete window.__mushroomDebug; } catch { /* 무시 */ } }
     sim = null;
     mobView?.clear();
     mobSprites?.clear();
@@ -1580,7 +1640,7 @@ export function mount(root, app, opts = {}) {
         if (zones.length) {
           mobView = createMobView({
             kinds: mobDefs.kinds,
-            onDamage: (v, amount) => { dmgNums.add(amount, v.x, v.y - v.spec.size.h, 'hit'); },
+            onDamage: (v, dms) => { showHits(dms, v.x, v.y - v.spec.size.h, 'hit', performance.now()); }, // 비호스트: 타별 dm
           });
           mobSprites = createMobSprites(mobDefs.kinds);
         }

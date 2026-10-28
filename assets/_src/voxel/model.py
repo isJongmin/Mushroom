@@ -12,7 +12,7 @@ torso 뼈 상자의 y 는 발바닥 기준 절대 높이(서 있을 때). 머리
 dict 의 rot=(rx, ry, rz) 는 뼈 안에서 상자를 더 돌린다(도, 회전 순서 z @ y @ x).
 """
 import numpy as np
-from vox import Box, rot_x, rot_y, rot_z
+from vox import Box, rot_x, rot_y, rot_z, UNIT
 import legacy_v5 as V5
 
 # ------------------------------------------------------------------ 치수 (마네킹)
@@ -62,6 +62,7 @@ PRESETS = [
 CATS = ['skin', 'face', 'hair', 'top', 'bottom', 'shoes', 'hat']
 
 SKINS = {'light': '#FAD6C0', 'medium': '#E2A982', 'dark': '#A3684A'}
+BEVK = 1.0       # 사이클 10: 정의 베벨(사이클 8 단위) -> 렌더 베벨 배율
 SOFT = 0.8       # 몸/옷 베벨 폭
 HAIRB = 0.5      # 머리카락 베벨
 
@@ -71,13 +72,30 @@ def P(bone, c, h, col, **kw):
 
 
 def R(bone, c, h, col, r=0.6, **kw):
-    """모서리를 한 칸 깎은 상자 (3개 상자 십자 결합) - 각진 느낌 완화."""
+    """둥근 상자. 사이클 8: 3개 상자 십자 결합(모서리 한 칸 깎기).
+    사이클 10: 복셀이 1/2 로 작아져 모서리를 구면 팔분원 방향 7개 상자로 깎는다(반경 RK*r, 반 칸 계단)."""
     hx, hy, hz = h
-    r = min(r, 0.8 * min(h))          # 반폭보다 큰 깎기는 상자를 뒤집으므로 제한
+    r = min(r * RK, 0.8 * min(h))          # 반폭보다 큰 깎기는 상자를 뒤집으므로 제한
     kw.setdefault('bevel', SOFT)
-    return [P(bone, c, (hx, hy - r, hz - r), col, **kw),
-            P(bone, c, (hx - r, hy, hz - r), col, **kw),
-            P(bone, c, (hx - r, hy - r, hz), col, **kw)]
+    dirs = OCT if r >= 0.7 else OCT[:3]
+    return [P(bone, c, (hx - r + r * a, hy - r + r * b, hz - r + r * g), col, **kw) for a, b, g in dirs]
+
+
+RK = 1.35                                   # 사이클 10: R() 모서리 반경 배율 (더 둥글게)
+_q = 0.7071
+OCT = ((1.0, 0.0, 0.0), (0.0, 1.0, 0.0), (0.0, 0.0, 1.0),      # 십자 (사이클 8 과 같음)
+       (_q, _q, 0.0), (_q, 0.0, _q), (0.0, _q, _q), (0.577, 0.577, 0.577))
+
+
+def arc(r, n=None, step=0.5):
+    """(사이클 10) 사분원 모서리 계단: ((그 단 끝에서 상자 끝까지 거리, 안쪽 들임), ...) 바깥 단부터.
+    들임이 반 칸(step) 간격이 되게 각도를 나눈다."""
+    if r <= 0:
+        return ((0.0, 0.0),)
+    n = n or max(2, int(round(r / step)))
+    # 각 단: 높이 쪽 거리 off = r(1-sin a), 안쪽 들임 ins = r(1-cos a), a: 0(옆면) -> 90(윗면)
+    return tuple((round(float(r * (1 - np.sin(a))), 4), round(float(r * (1 - np.cos(a))), 4))
+                 for a in np.radians(np.linspace(0, 90, n + 1)))
 
 
 def tint(hexcol, k):
@@ -114,21 +132,26 @@ def scaled(defs, k=HK):
 
 
 # ================================================================== 둥근 상자 (사이클 8)
-def stepped(bone, c, h, col, top=(), bot=(), rs=2.5, **kw):
+def stepped(bone, c, h, col, top=(), bot=(), rs=2.5, m=3, **kw):
     """계단식으로 모서리를 깎은 둥근 상자.
     top/bot: ((깎는 높이, 안쪽 들임), ...) 위/아래 모서리 계단. 각 단은 가운데 높이에서 그 단 끝까지 이어지는
-    둥근 직사각 단면(상자 3개: 세로 모서리 rs 반경)으로, 큰 단이 작은 단을 품어 면에 이음새 줄이 생기지 않는다."""
+    둥근 직사각 단면(세로 모서리 rs 반경)으로, 큰 단이 작은 단을 품어 면에 이음새 줄이 생기지 않는다.
+    (사이클 10) m: 단면 세로 모서리를 나누는 상자 수 (3 = 사이클 8, 5~7 = 더 둥글게)."""
     cx, cy, cz = c
     hx, hy, hz = h
     out = []
     kw.setdefault('bevel', 0.6)
+    if m == 3:
+        offs = ((0, 1), (1, 0), (0.42, 0.42))
+    else:
+        offs = tuple((1 - np.cos(a), 1 - np.sin(a)) for a in np.radians(np.linspace(0, 90, m)))
 
     def ring(y0, y1, ins):
         yc, yh = (y0 + y1) / 2, (y1 - y0) / 2
         ax, az = hx - ins, hz - ins
         r = min(rs, 0.8 * min(ax, az))
-        for dx, dz in ((0, r), (r, 0), (r * 0.42, r * 0.42)):
-            out.append(P(bone, (cx, yc, cz), (ax - dx, yh, az - dz), col, **kw))
+        for dx, dz in offs:
+            out.append(P(bone, (cx, yc, cz), (ax - dx * r, yh, az - dz * r), col, **kw))
     t0 = (top[0][0] if top else 0.0)
     b0 = (bot[0][0] if bot else 0.0)
     ring(cy - hy + b0, cy + hy - t0, 0.0)
@@ -139,14 +162,31 @@ def stepped(bone, c, h, col, top=(), bot=(), rs=2.5, **kw):
     return out
 
 
-HEAD_TOP = ((4.0, 0.0), (2.4, 0.7), (1.1, 1.7), (0.0, 3.4))      # 정수리 모서리 (반경 약 4)
-HEAD_BOT = ((3.4, 0.0), (1.8, 0.6), (0.7, 1.5), (0.0, 3.0))      # 턱선 (볼 아래가 둥글게)
+HEAD_TOP = arc(7.0)          # 사이클 10: 정수리 반경 7 (사이클 8: 4, 계단 4단)
+HEAD_BOT = arc(5.0)          # 턱선 반경 5 (볼 아래가 둥글게)
+HEAD_RS = 6.0                # 세로 모서리 반경 (위에서 본 단면)
 
 
 def round_head(col, **kw):
-    """사이클 8: 머리 28 x 25.6 x 25.6 를 계단식으로 둥글게 (위 모서리, 턱선, 세로 모서리). 앞면 z 12.8 은
-    |x| <= 11.5, y 3.4..21.6 에서 평평 (얼굴 데칼 자리)."""
-    return stepped('head', (0, 12.8, 0), HEAD_H, col, top=HEAD_TOP, bot=HEAD_BOT, rs=2.5, **kw)
+    """사이클 10: 머리 28 x 25.6 x 25.6 를 반 칸 계단으로 둥글게 (정수리 반경 7, 턱선 5, 세로 모서리 6, 단면 상자 6개).
+    앞면 z 12.8 은 |x| <= 8, y 5..18.6 에서 평평하고, 그 밖은 둥글게 물러난다 (얼굴 데칼은 head_front_z 를 따른다)."""
+    return stepped('head', (0, 12.8, 0), HEAD_H, col, top=HEAD_TOP, bot=HEAD_BOT, rs=HEAD_RS, m=6, **kw)
+
+
+_HEADB = None
+
+
+def head_front_z(x, y):
+    """머리 앞면 z (머리 로컬 x, y). 덮는 상자가 없으면 None."""
+    global _HEADB
+    if _HEADB is None:
+        _HEADB = [(np.asarray(d['c'], float), np.asarray(d['h'], float)) for d in round_head('#000000')]
+    z = None
+    for c, h in _HEADB:
+        if abs(x - c[0]) <= h[0] and abs(y - c[1]) <= h[1]:
+            zz = c[2] + h[2]
+            z = zz if z is None else max(z, zz)
+    return z
 
 
 # ================================================================== skin (마네킹)
@@ -170,82 +210,140 @@ def skin(tone):
 
 
 # ================================================================== face (머리 앞면 데칼)
+# 사이클 10: 얼굴을 0.25칸 격자에 그려(타원/띠) 행마다 같은 색 구간을 데칼 상자로 만든다.
+# 데칼 z 는 둥근 머리 앞면(head_front_z)을 따른다 (곡면 구간은 z 가 바뀌는 곳에서 끊는다).
 FZ = 12.8
 D = dict(decal=True, bevel=0, noise=0.0)
-EYE_X = 6.5
-EYE_Y = 10.2
-LASH = '#1E1216'
+EYE_X = 6.4
+EYE_Y = 9.4
+LASH = '#1B1014'
+FG = 0.25                                   # 얼굴 격자 (사이클 8 단위)
+FX0, FX1, FY0, FY1 = -13.0, 13.0, 1.0, 17.0
 
 
-def _eye_open(ex, sg):
-    """큰 세로 눈 (5.8 x 7.6칸), 굵은 위 속눈썹 라인, 갈색 그라데이션 홍채, 큰 하이라이트 + 반사점 (발광)."""
-    y, z = EYE_Y, FZ
-    dk = '#2A1A1F'
-    return [
-        P('head', (ex, y - 0.2, z + 0.03), (3.1, 3.4, 0.03), dk, **D),
-        P('head', (ex, y - 0.2, z + 0.03), (2.5, 3.9, 0.03), dk, **D),
-        P('head', (ex, y + 3.45, z + 0.05), (3.45, 0.6, 0.03), LASH, **D),             # 위 속눈썹 라인
-        P('head', (ex + sg * 3.55, y + 3.85, z + 0.05), (0.8, 0.55, 0.03), LASH, **D),  # 바깥 꼬리
-        P('head', (ex, y - 1.0, z + 0.06), (2.35, 2.7, 0.03), '#3A2220', **D),          # 홍채
-        P('head', (ex, y - 2.5, z + 0.08), (1.7, 1.1, 0.03), '#6B402E', **D),           # 아래 호박색
-        P('head', (ex, y - 3.3, z + 0.10), (1.1, 0.45, 0.03), '#A8744E', **D),          # 아래 반사
-        P('head', (ex - 0.95, y + 1.5, z + 0.12), (1.25, 1.35, 0.03), '#FFFFFF', emit=0.9, **D),   # 큰 하이라이트
-        P('head', (ex + 1.2, y - 1.6, z + 0.12), (0.6, 0.6, 0.03), '#FFFFFF', emit=0.8, **D),      # 작은 반사점
-        P('head', (ex - 1.55, y - 0.7, z + 0.12), (0.3, 0.3, 0.03), '#FFF4F0', emit=0.6, **D),     # 반짝
-    ]
+class Face:
+    def __init__(self):
+        self.nx = int(round((FX1 - FX0) / FG)); self.ny = int(round((FY1 - FY0) / FG))
+        self.xs = FX0 + (np.arange(self.nx) + 0.5) * FG
+        self.ys = FY0 + (np.arange(self.ny) + 0.5) * FG
+        self.X, self.Y = np.meshgrid(self.xs, self.ys)
+        self.lab = np.full((self.ny, self.nx), -1, int)
+        self.cols = []                       # (hex, emit, depth)
+
+    def _c(self, col, emit, dz):
+        key = (col, emit, dz)
+        if key not in self.cols:
+            self.cols.append(key)
+        return self.cols.index(key)
+
+    def paint(self, m, col, emit=0.0, dz=0):
+        self.lab[m] = self._c(col, emit, dz)
+
+    def ell(self, cx, cy, rx, ry, col, emit=0.0, dz=0, rot=0.0, clip=None):
+        X, Y = self.X - cx, self.Y - cy
+        if rot:
+            a = np.radians(rot); X, Y = X * np.cos(a) + Y * np.sin(a), -X * np.sin(a) + Y * np.cos(a)
+        m = (X / rx) ** 2 + (Y / ry) ** 2 <= 1
+        if clip is not None:
+            m &= clip(self.X, self.Y)
+        self.paint(m, col, emit, dz)
+        return m
+
+    def band(self, cx, cy, rx, ry, w, col, a0=0, a1=180, dz=0):
+        """타원 둘레 띠 (각도 a0..a1, 0 = 오른쪽(+x), 반시계), 두께 w."""
+        X, Y = self.X - cx, self.Y - cy
+        r = np.sqrt((X / rx) ** 2 + (Y / ry) ** 2)
+        ang = np.degrees(np.arctan2(Y / ry, X / rx)) % 360
+        lo, hi = a0 % 360, a1 % 360
+        inang = (ang >= lo) & (ang <= hi) if lo <= hi else (ang >= lo) | (ang <= hi)
+        m = (r <= 1 + w / min(rx, ry) / 2) & (r >= 1 - w / min(rx, ry) / 2) & inang
+        self.paint(m, col, 0.0, dz)
+
+    def decals(self):
+        out = []
+        zc = {}
+        for j in range(self.ny):
+            y = self.ys[j]
+            row = self.lab[j]
+            i = 0
+            while i < self.nx:
+                if row[i] < 0:
+                    i += 1; continue
+                k = row[i]
+                z0 = zc.setdefault((i, j), head_front_z(self.xs[i], y))
+                i1 = i + 1
+                while i1 < self.nx and row[i1] == k:
+                    z1 = zc.setdefault((i1, j), head_front_z(self.xs[i1], y))
+                    if z0 is None or z1 is None or abs(z1 - z0) > 0.02:
+                        break
+                    i1 += 1
+                if z0 is not None:
+                    col, emit, dz = self.cols[k]
+                    x0, x1 = self.xs[i] - FG / 2, self.xs[i1 - 1] + FG / 2
+                    out.append(P('head', ((x0 + x1) / 2, y, z0 + 0.04 + 0.02 * dz), ((x1 - x0) / 2, FG / 2, 0.03), col,
+                                 emit=emit, **D))
+                i = i1
+        return out
 
 
-def _eye_arc(ex):
+def _eye_open(f, ex, sg):
+    """크고 진한 세로 타원 눈 (6.6 x 8.4칸): 굵은 위 눈꺼풀 라인 + 바깥 꼬리, 진한 홍채, 아래 호박색 그라데이션,
+    큰 하이라이트 + 작은 반사점 2개 (발광)."""
+    y = EYE_Y
+    f.ell(ex, y, 3.3, 4.2, '#24151A')                                       # 홍채 바탕 (아주 진한 갈색)
+    f.ell(ex, y - 1.5, 2.8, 2.6, '#3E2420', clip=lambda X, Y: Y < y - 0.6)  # 아래쪽 밝아짐
+    f.ell(ex, y - 2.4, 2.3, 1.6, '#6A3F2C', clip=lambda X, Y: Y < y - 1.6)
+    f.ell(ex, y - 3.1, 1.6, 0.8, '#A0684A', clip=lambda X, Y: Y < y - 2.6)  # 아래 반사 (호박색)
+    f.ell(ex, y + 0.3, 1.5, 2.1, '#130A0D')                                 # 동공
+    f.band(ex, y + 0.1, 3.4, 4.2, 0.9, LASH, 20, 165)                      # 위 눈꺼풀 라인 (굵게)
+    f.ell(ex + sg * 3.3, y + 2.9, 1.0, 0.45, LASH, rot=sg * -25)            # 바깥 꼬리 (속눈썹)
+    f.ell(ex - 1.2, y + 1.5, 1.25, 1.45, '#FFFFFF', emit=0.95, dz=1)        # 큰 하이라이트
+    f.ell(ex + 1.3, y - 1.7, 0.65, 0.65, '#FFFFFF', emit=0.85, dz=1)        # 작은 반사점
+    f.ell(ex - 1.9, y - 0.6, 0.32, 0.32, '#FFF4F0', emit=0.6, dz=1)
+
+
+def _eye_arc(f, ex):
     """^ 모양 감은 눈 (굵게)."""
-    y = EYE_Y - 0.2
-    c = '#2A1A20'
-    return [P('head', (ex - 2.4, y - 1.1, FZ + 0.03), (0.9, 0.6, 0.03), c, **D),
-            P('head', (ex - 1.2, y + 0.0, FZ + 0.03), (0.75, 0.6, 0.03), c, **D),
-            P('head', (ex, y + 0.55, FZ + 0.03), (0.9, 0.6, 0.03), c, **D),
-            P('head', (ex + 1.2, y + 0.0, FZ + 0.03), (0.75, 0.6, 0.03), c, **D),
-            P('head', (ex + 2.4, y - 1.1, FZ + 0.03), (0.9, 0.6, 0.03), c, **D)]
+    f.band(ex, EYE_Y - 1.8, 3.0, 2.6, 1.0, '#2A1A20', 15, 165)
 
 
-def _blush(big=False):
-    w = 2.4 if big else 2.1
-    out = []
+def _blush(f, big=False):
     for sg in (1, -1):
-        out += [P('head', (sg * 8.9, 5.3, FZ + 0.03), (w, 0.95, 0.03), '#F59AA6', emit=0.15, **D),
-                P('head', (sg * 8.9, 5.3, FZ + 0.05), (w - 0.9, 0.5, 0.03), '#F8B4BC', emit=0.2, **D)]
-    return out
+        w = 2.5 if big else 2.2
+        f.ell(sg * 9.6, 5.0, w, 1.15, '#F6A3AE', emit=0.12)
+        f.ell(sg * 9.6, 5.1, w - 0.9, 0.6, '#F9BCC3', emit=0.18)
 
 
 def face(kind):
-    out = []
+    f = Face()
     if kind == 'basic':
+        _blush(f)
         for sg in (1, -1):
-            out += _eye_open(sg * EYE_X, sg)
-        out += _blush()
-        out.append(P('head', (0, 4.0, FZ + 0.03), (0.85, 0.38, 0.03), '#A8475A', **D))
+            _eye_open(f, sg * EYE_X, sg)
+        f.band(0, 3.9, 0.9, 0.55, 0.38, '#A8475A', 200, 340)                # 작은 입 (웃는 선)
     elif kind == 'smile':
+        _blush(f, True)
         for sg in (1, -1):
-            out += _eye_arc(sg * EYE_X)
-        out += _blush(True)
-        out += [P('head', (0, 4.1, FZ + 0.03), (1.6, 0.95, 0.03), '#8E3346', **D),
-                P('head', (0, 3.6, FZ + 0.06), (1.0, 0.45, 0.03), '#F07A8A', **D)]
+            _eye_arc(f, sg * EYE_X)
+        f.ell(0, 3.5, 1.5, 1.0, '#8E3346', clip=lambda X, Y: Y < 3.9)
+        f.ell(0, 3.0, 0.9, 0.45, '#F07A8A', dz=1)
     elif kind == 'wink':
-        out += _eye_open(EYE_X, 1)
-        out += _eye_arc(-EYE_X)
-        out += _blush()
-        out += [P('head', (0, 4.0, FZ + 0.03), (1.1, 0.38, 0.03), '#A8475A', **D),
-                P('head', (1.3, 4.45, FZ + 0.03), (0.4, 0.4, 0.03), '#A8475A', **D),
-                P('head', (-1.3, 4.45, FZ + 0.03), (0.4, 0.4, 0.03), '#A8475A', **D)]
+        _blush(f)
+        _eye_open(f, EYE_X, 1)
+        _eye_arc(f, -EYE_X)
+        f.band(0, 3.9, 1.1, 0.6, 0.38, '#A8475A', 200, 340)
     elif kind == 'sleepy':
+        _blush(f)
         for sg in (1, -1):
             ex = sg * EYE_X
-            out += [P('head', (ex, 8.0, FZ + 0.03), (2.9, 2.0, 0.03), '#24161C', **D),
-                    P('head', (ex, 10.2, FZ + 0.03), (3.3, 0.5, 0.03), LASH, **D),            # 눈꺼풀 선
-                    P('head', (ex, 7.4, FZ + 0.06), (2.1, 1.3, 0.03), '#5A3428', **D),
-                    P('head', (ex, 6.5, FZ + 0.08), (1.4, 0.45, 0.03), '#A06C48', **D),
-                    P('head', (ex - 0.9, 8.6, FZ + 0.12), (0.7, 0.6, 0.03), '#FFFFFF', emit=0.8, **D)]
-        out += _blush()
-        out.append(P('head', (0, 4.0, FZ + 0.03), (0.65, 0.6, 0.03), '#A8475A', **D))
-    return out
+            clip = (lambda X, Y: Y < EYE_Y - 0.4)
+            f.ell(ex, EYE_Y - 0.6, 3.3, 3.6, '#24151A', clip=clip)
+            f.ell(ex, EYE_Y - 2.3, 2.4, 1.5, '#5A3428', clip=lambda X, Y: Y < EYE_Y - 1.4)
+            f.ell(ex, EYE_Y - 3.1, 1.5, 0.7, '#A06C48', clip=lambda X, Y: Y < EYE_Y - 2.6)
+            f.paint((abs(f.X - ex) <= 3.5) & (abs(f.Y - (EYE_Y - 0.4)) <= 0.4), LASH)        # 눈꺼풀 선
+            f.ell(ex - 1.1, EYE_Y - 1.5, 0.75, 0.6, '#FFFFFF', emit=0.85, dz=1)
+        f.ell(0, 3.8, 0.6, 0.55, '#A8475A')
+    return f.decals()
 
 
 # ================================================================== hair (사이클 7 새 머리)
@@ -1407,12 +1505,16 @@ def _local_rot(r):
 
 
 def make_boxes(defs, xf, layer, tag, back_view=False):
+    """(사이클 10) 형상 정의는 사이클 8 좌표(0.5 = 새 복셀 1칸)로 적고, 여기서 UNIT 배 해 렌더 단위로 바꾼다."""
     out = []
     for d in defs:
         R, t = xf[d['bone']]
-        kw = {k: d[k] for k in ('bevel', 'decal', 'noise', 'emit') if k in d}
+        kw = {k: d[k] for k in ('decal', 'noise', 'emit') if k in d}
+        if 'bevel' in d:
+            kw['bevel'] = d['bevel'] * UNIT * BEVK
         Rb = R @ _local_rot(d['rot']) if d.get('rot') else R
-        out.append(Box(_xf_point(R, t, d['c']), d['h'], Rb, d['col'], layer + '_under' if d.get('under') else layer, tag=tag, **kw))
+        out.append(Box(UNIT * _xf_point(R, t, d['c']), UNIT * np.asarray(d['h'], float), Rb, d['col'],
+                       layer + '_under' if d.get('under') else layer, tag=tag, **kw))
     return out
 
 

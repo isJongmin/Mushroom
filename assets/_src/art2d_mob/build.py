@@ -21,19 +21,16 @@ FX_DIR = os.path.join(ROOT, 'assets', 'fx')
 from vec import Canvas, puff, sparkle, twinkle  # noqa: E402
 from mobs import MOBS  # noqa: E402
 import extras  # noqa: E402
+sys.path.insert(0, os.path.join(HERE, '..', 'fx'))
+import spec as fxspec  # noqa: E402
 
-# 몬스터 정보(게임 수치). 속도 = 월드 단위/초. 드롭 id는 캐릭터 아트와 공유하는 목록.
+# 몬스터 정보(게임 수치). 속도 = 월드 단위/초. 사이클 10: 의상 drops 폐기, 버프 드롭 확률은 fx/spec.py(BUFF_DROP).
 INFO = {
-    'snail': dict(name='달팽이', hp=25, speed=22, touchDamage=6, behavior='walk',
-                  drops=[('hat:snail-shell', 0.18), ('shoes:snail-boots', 0.16)]),
-    'mushroom': dict(name='주황버섯', hp=45, speed=48, touchDamage=9, behavior='hop',
-                     drops=[('hat:mushroom-cap', 0.16), ('bottom:mushroom-shorts', 0.16)]),
-    'slime': dict(name='슬라임', hp=60, speed=42, touchDamage=11, behavior='hop',
-                  drops=[('top:slime-hood', 0.15), ('bottom:slime-pants', 0.15)]),
-    'bat': dict(name='박쥐', hp=35, speed=70, touchDamage=10, behavior='fly',
-                drops=[('top:bat-cape', 0.15), ('shoes:bat-boots', 0.15)]),
-    'golem': dict(name='돌골렘', hp=220, speed=26, touchDamage=20, behavior='walk',
-                  drops=[('hat:golem-helm', 0.2), ('top:golem-armor', 0.2), ('shoes:snail-boots', 0.1)]),
+    'snail': dict(name='달팽이', hp=25, speed=22, touchDamage=6, behavior='walk'),
+    'mushroom': dict(name='주황버섯', hp=45, speed=48, touchDamage=9, behavior='hop'),
+    'slime': dict(name='슬라임', hp=60, speed=42, touchDamage=11, behavior='hop'),
+    'bat': dict(name='박쥐', hp=35, speed=70, touchDamage=10, behavior='fly'),
+    'golem': dict(name='돌골렘', hp=220, speed=26, touchDamage=20, behavior='walk'),
 }
 ORDER = ['snail', 'mushroom', 'slime', 'bat', 'golem']
 
@@ -136,14 +133,17 @@ def manifest():
             'animations': {'move': list(range(n)), 'hit': [n], 'die': list(range(n + 1, n + 5))},
             'fps': spec['fps'],
             'behavior': info['behavior'],
-            'drops': [{'item': it, 'p': p} for it, p in info['drops']],
+            'buffDrop': fxspec.BUFF_DROP[mid],
         }
+        if mid in fxspec.BUFF_DROP_COUNT:
+            mobs[mid]['buffDropCount'] = fxspec.BUFF_DROP_COUNT[mid]
     m = {
         'density': 1.5,
         'note': 'frame/anchor = 에셋 px(시트 좌표), size = 월드 단위 판정 상자(기준점 = 상자 아래 중앙). 기본 방향은 오른쪽, 왼쪽은 좌우 반전. hop은 뜀 높이가 프레임에 들어 있다.',
         'mobs': mobs,
     }
     m.update(extras.MANIFEST)
+    m['fx'] = dict(m['fx'], **fxspec.FX_MANIFEST)   # 사이클 10 fx(assets/_src/fx/build.py가 그림)
     with open(os.path.join(MOB_DIR, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(m, f, ensure_ascii=False, indent=2)
         f.write('\n')

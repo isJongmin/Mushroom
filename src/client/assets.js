@@ -150,8 +150,7 @@ function normalizeAvatarManifest(raw) {
     for (const o of list.slice(0, 64)) {
       if (!o || typeof o.id !== 'string' || !PART_ID_RE.test(o.id) || seen.has(o.id)) continue;
       seen.add(o.id);
-      // (사이클 9) drop: true = 드롭 전용 파츠 (인벤토리에 있어야 고를 수 있다)
-      clean.push({ id: o.id, label: typeof o.label === 'string' && o.label.trim() ? o.label.trim().slice(0, 40) : o.id, drop: o.drop === true });
+      clean.push({ id: o.id, label: typeof o.label === 'string' && o.label.trim() ? o.label.trim().slice(0, 40) : o.id });
     }
     if (!clean.length) return null; // 파츠 하나라도 비면 계약 형식이 아니다
     parts[part] = clean;
@@ -176,7 +175,7 @@ function normalizeAvatarManifest(raw) {
 }
 
 function fallbackManifest() {
-  const parts = Object.fromEntries(PART_KEYS.map((p) => [p, [{ id: DEFAULT_AVATAR[p], label: DEFAULT_AVATAR[p], drop: false }]]));
+  const parts = Object.fromEntries(PART_KEYS.map((p) => [p, [{ id: DEFAULT_AVATAR[p], label: DEFAULT_AVATAR[p] }]]));
   return {
     parts,
     layerOrder: DEFAULT_LAYER_ORDER,
@@ -272,11 +271,6 @@ export async function loadAvatarAssets() {
     presets: Object.freeze(presets),
     /** 네트워크/DB에서 온 아바타를 manifest에 있는 id 7개로 맞춘다 (avatar-data.js 규칙). */
     sanitizeAvatar,
-    /** (사이클 9) 드롭 전용 파츠인지 */
-    isDropPart(part, id) {
-      const o = base.parts[part] && base.parts[part].find((x) => x.id === id);
-      return !!(o && o.drop);
-    },
     labelOf(part, id) {
       const o = base.parts[part] && base.parts[part].find((x) => x.id === id);
       return o ? o.label : id;

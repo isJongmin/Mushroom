@@ -144,7 +144,8 @@ export const isGameEvent = (e) => typeof e === 'string' && GAME_EVENT_SET.has(e)
 const UID_OK = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
 const SID_RE = /^[a-z0-9]{1,16}$/i;
 const KIND_RE = /^[a-z0-9-]{1,32}$/;
-const ITEM_RE = /^(skin|hair|face|top|bottom|shoes|hat):[a-z0-9-]{1,32}$/;
+const BUFF_SET = new Set(['range', 'multi', 'element', 'power', 'speed']); // (사이클 10) game/buffs.js BUFF_IDS
+const DM_OK = (v) => Array.isArray(v) && v.length > 0 && v.length <= 8 && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 1000);
 const MOB_S = new Set(['move', 'hit', 'die']);
 const numIn = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
 const COORD = 1e5;
@@ -164,30 +165,37 @@ export function cleanGameEvent(event, p) {
   switch (event) {
     case 'atk':
       if (!UID_OK(p.user_id) || !numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
-      return { user_id: p.user_id, x: p.x, y: p.y, dir: p.dir === 'left' ? 'left' : 'right', seq: Number.isInteger(p.seq) ? p.seq : 0 };
+      // (사이클 10) 강화 값 w, hits, dmin, dmax, el은 숫자만 넘기고 상한 자르기는 화면(buffs.clampAttack)이 한다
+      return {
+        user_id: p.user_id, x: p.x, y: p.y, dir: p.dir === 'left' ? 'left' : 'right', seq: Number.isInteger(p.seq) ? p.seq : 0,
+        w: isNum(p.w) ? p.w : null, hits: isNum(p.hits) ? p.hits : null, dmin: isNum(p.dmin) ? p.dmin : null, dmax: isNum(p.dmax) ? p.dmax : null, el: isNum(p.el) ? p.el : null,
+      };
     case 'hp':
       if (!UID_OK(p.user_id) || !numIn(p.hp, 0, 100000) || !numIn(p.max, 1, 100000)) return null;
-      return { user_id: p.user_id, hp: Math.min(p.hp, p.max), max: p.max, dead: p.dead === true, by: UID_OK(p.by) ? p.by : null };
+      // dm = (사이클 10 확장) 이번에 받은 타별 피해 (피해 숫자용)
+      return { user_id: p.user_id, hp: Math.min(p.hp, p.max), max: p.max, dead: p.dead === true, by: UID_OK(p.by) ? p.by : null, dm: DM_OK(p.dm) ? p.dm : null };
     case 'mobs': {
       if (!UID_OK(p.host) || !Array.isArray(p.list) || p.list.length > MOBS_MAX) return null;
       const list = [];
       for (const m of p.list) {
         if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !SID_RE.test(m.id) || typeof m.kind !== 'string' || !KIND_RE.test(m.kind)) continue;
         if (!numIn(m.x, -COORD, COORD) || !numIn(m.y, -COORD, COORD) || !numIn(m.hp, 0, 1e6)) continue;
-        list.push({ id: m.id, kind: m.kind, x: m.x, y: m.y, dir: m.dir < 0 ? -1 : 1, hp: m.hp, s: MOB_S.has(m.s) ? m.s : 'move', z: Number.isInteger(m.z) && m.z >= 0 && m.z < 64 ? m.z : -1 });
+        const o = { id: m.id, kind: m.kind, x: m.x, y: m.y, dir: m.dir < 0 ? -1 : 1, hp: m.hp, s: MOB_S.has(m.s) ? m.s : 'move', z: Number.isInteger(m.z) && m.z >= 0 && m.z < 64 ? m.z : -1 };
+        if (DM_OK(m.dm)) o.dm = m.dm;
+        list.push(o);
       }
       return { host: p.host, t: isNum(p.t) ? p.t : 0, list };
     }
     case 'drop':
-      if (!UID_OK(p.host) || typeof p.id !== 'string' || !SID_RE.test(p.id) || typeof p.item !== 'string' || !ITEM_RE.test(p.item)) return null;
+      if (!UID_OK(p.host) || typeof p.id !== 'string' || !SID_RE.test(p.id) || !BUFF_SET.has(p.buff)) return null;
       if (!numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
-      return { host: p.host, id: p.id, item: p.item, x: p.x, y: p.y, ttl: numIn(p.ttl, 1, 60000) ? p.ttl : null };
+      return { host: p.host, id: p.id, buff: p.buff, x: p.x, y: p.y, ttl: numIn(p.ttl, 1, 30000) ? p.ttl : null };
     case 'pick':
       if (!UID_OK(p.user_id) || typeof p.drop_id !== 'string' || !SID_RE.test(p.drop_id)) return null;
       return { user_id: p.user_id, drop_id: p.drop_id };
     case 'picked':
-      if (!UID_OK(p.host) || !UID_OK(p.user_id) || typeof p.drop_id !== 'string' || !SID_RE.test(p.drop_id) || typeof p.item !== 'string' || !ITEM_RE.test(p.item)) return null;
-      return { host: p.host, drop_id: p.drop_id, user_id: p.user_id, item: p.item };
+      if (!UID_OK(p.host) || !UID_OK(p.user_id) || typeof p.drop_id !== 'string' || !SID_RE.test(p.drop_id) || !BUFF_SET.has(p.buff)) return null;
+      return { host: p.host, drop_id: p.drop_id, user_id: p.user_id, buff: p.buff };
     default:
       return null;
   }

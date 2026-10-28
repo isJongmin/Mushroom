@@ -25,12 +25,13 @@ export const ITEM_CROP = Object.freeze({
 const PART_COLOR = { hat: '#F58AB4', top: '#4D7CFE', bottom: '#3E8A2E', shoes: '#B97A4A', hair: '#F7C948', face: '#FFE3CC', skin: '#F5C29A' };
 
 /** 아이콘 이미지 지연 로드 (없으면 null로 기억해 다시 요청하지 않는다) */
-export function createItemIcons({ onLoad } = {}) {
+/** allow(item) → false면 요청하지 않는다(아바타 manifest에 없는 파츠: 아이콘도 아직 없다, 404 방지) */
+export function createItemIcons({ onLoad, allow } = {}) {
   const map = new Map();
   return {
     get(item) {
       const it = parseItem(item);
-      if (!it) return null;
+      if (!it || (allow && !allow(item))) return null;
       let e = map.get(item);
       if (!e) {
         e = { img: null, state: 'loading' };
@@ -107,7 +108,7 @@ export function createDrops() {
       return best;
     },
     /** 장치 px 컨텍스트 */
-    draw(ctx, camX, camY, k, now, icons, thumbFn) {
+    draw(ctx, camX, camY, k, now, icons, thumbFn, bagSprite) {
       if (!map.size) return;
       ctx.save();
       ctx.setTransform(1, 0, 0, 1, 0, 0);
@@ -130,6 +131,13 @@ export function createDrops() {
         ctx.ellipse(cx, (d.y - camY) * k, 12 * k, 3 * k, 0, 0, Math.PI * 2);
         ctx.fill();
         ctx.globalAlpha = 1;
+        if (bagSprite) { // 아트 드롭 받침 (반짝이, 2프레임)
+          const fw = bagSprite.frameW;
+          const fr = Math.max(1, Math.floor(bagSprite.img.naturalWidth / fw));
+          const f = Math.floor((now / 1000) * bagSprite.fps) % fr;
+          const sc = k / bagSprite.density;
+          ctx.drawImage(bagSprite.img, f * fw, 0, fw, bagSprite.frameH, cx - bagSprite.anchorX * sc, (y - camY + bob) * k - bagSprite.anchorY * sc, fw * sc, bagSprite.frameH * sc);
+        }
         drawItemIcon(ctx, d.item, cx, cy, ICON_WORLD * k, icons, thumbFn);
         // 반짝임 (4갈래 별, 돌며 깜빡)
         const ph = (now / 700 + d.x * 0.01) % 1;

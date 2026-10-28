@@ -7,9 +7,10 @@ import math
 import numpy as np
 from raster import Xf, fig as _fig, paint as _paint, stroke as _stroke, Layer, AX, AY, rgb
 
-SCALE = 1.12
+SCALE = 1.15
+HEAD_K = 0.93               # 머리(머리카락, 모자 포함) 배율
 UA, FA = 10.0, 9.0         # 위팔, 아래팔
-TH, SH, ANK = 15.0, 14.0, 4.6   # 허벅지, 정강이, 발목 높이
+TH, SH, ANK = 16.0, 15.0, 4.6   # 허벅지, 정강이, 발목 높이
 HIP_Y = -(TH + SH + ANK)
 TORSO = 25.0               # 엉덩이 -> 어깨
 NECK_Y = -27.0             # 몸통 로컬: 머리 원점(턱 밑)
@@ -127,7 +128,7 @@ class Ctx:
             arms[k] = dict(sh=s, el=el, wr=wr, a=a, e=e, d2=d2)
         self.arms = arms
         neck = NECK[v]
-        self.Th = self.Tt @ Xf.T(neck[0], neck[1] + self.breathe * 0.8) @ Xf.R(p['head'])
+        self.Th = self.Tt @ Xf.T(neck[0], neck[1] + self.breathe * 0.8) @ Xf.R(p['head']) @ Xf.S(HEAD_K)
 
     # 보기 편의
     def side_sign(self, k):

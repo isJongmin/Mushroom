@@ -85,6 +85,7 @@ export function createInventoryPanel(o) {
     const it = parseItem(item);
     if (!it) return;
     if (o.onEquip(item)) setText(status, `${PART_LABELS[it.part] || it.part}: ${o.labelOf(it.part, it.id)} 착용`);
+    else setText(status, '아직 입을 수 없는 아이템이에요 (그림 준비 중).');
     paint();
   });
   o.on(el, 'keydown', (e) => {

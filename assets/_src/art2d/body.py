@@ -41,7 +41,7 @@ def leg_line(ctx, k, n=22):
 
 def arm_layer(ctx, k, base):
     """base: 'skin' | 'top'. q 보기 먼 팔은 *_far, 나머지는 *_near."""
-    if ctx.q and k == 'F':
+    if ctx.q and (k == 'F' or (ctx.arms[k]['a'] > 110 and not ctx.prone)):
         return base + '_far'
     return base + '_near'
 

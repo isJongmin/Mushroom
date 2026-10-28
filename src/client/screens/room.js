@@ -28,7 +28,6 @@ import {
 import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob, parseItem } from '../game/mobs.js';
 import { createDrops, createItemIcons, ITEM_CROP, PICK_RANGE } from '../game/drops.js';
 import { createInventoryPanel } from '../ui/inventory.js';
-import { loadImage } from '../assets.js';
 import { pickAvatar } from '../avatar-data.js';
 import { createFx, prefersReducedMotion } from '../game/fx.js';
 import { openModal } from '../ui/modal.js';
@@ -51,9 +50,9 @@ const CLEANUP_WAIT_MS = 2000; // 화면 정리 때 채널 정리를 기다리는
 const DESKTOP_MAX_VIEW_W = 1280; // 데스크톱 시야 가로 최대 (월드): P=2 → 1280px, P=3 → 1920px
 const MOBS_SEND_MS = 200; // (사이클 9) 호스트 mobs 송신 5회/초
 const HOST_START_MS = 1500; // (사이클 9) 첫 연결 뒤 이 시간이 지나야 호스트 시뮬레이션 시작 (Presence 목록이 다 차기 전 잘못된 호스트 방지)
-const SLASH_SRC = new URL('../../../assets/fx/slash.png', import.meta.url);
 const ATTACK_BOX_SHOW_MS = 200; // ?debug 공격 상자 표시 시간
 const randId = () => Math.random().toString(36).slice(2, 8);
+const CTRL_GAME_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Space']);
 const isNum = (v) => typeof v === 'number' && Number.isFinite(v);
 // 입력 단계: 제어 문자(줄바꿈 포함)는 공백으로 (서버는 제어문자를 거부한다)
 const cleanInput = (s) => s.replace(/[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g, ' ');
@@ -127,7 +126,7 @@ export function mount(root, app, opts = {}) {
   let ghostSprite = null;
   let tombSprite = null;
   let spritesTried = false;
-  let slashTried = false;
+  let dropBagSprite = null;
   let hostId = null;
   let hostSince = 0; // 내가 호스트가 된 시각
   let connectedAt = 0;
@@ -144,7 +143,10 @@ export function mount(root, app, opts = {}) {
     mobsSent: 0, mobsRecv: 0, dropsSpawned: 0, dropsRecv: 0, picksSent: 0, picked: 0, equips: 0, hostChanges: 0,
   };
   let iconsRepaint = false;
-  const icons = createItemIcons({ onLoad: () => { iconsRepaint = true; } });
+  const icons = createItemIcons({
+    onLoad: () => { iconsRepaint = true; },
+    allow: (item) => { const it = parseItem(item); return !!(it && assets && assets.parts[it.part].some((o) => o.id === it.id)); },
+  });
 
   // --- DOM (room.md 2~4장, ui-kit 22~23절) ------------------------------------------
   const roomChip = h('span', { class: 'bk-chip hud-room', testid: 'room-title', title: roomName },
@@ -245,7 +247,7 @@ export function mount(root, app, opts = {}) {
     } else {
       P = pixelScale(vw, vh);
       cssW = Math.min(Math.floor(vw / P) * P, (DESKTOP_MAX_VIEW_W * P) / 2); // 1280 (P=2), 1920 (P=3)
-      cssH = Math.min((WORLD.height * P) / 2, Math.floor((vh - DESKTOP_RESERVED_H) / P) * P);
+      cssH = Math.min((world.height * P) / 2, Math.floor((vh - DESKTOP_RESERVED_H) / P) * P);
     }
     cssW = Math.max(P, cssW);
     let viewH = (cssH * 2) / P;
@@ -534,6 +536,7 @@ export function mount(root, app, opts = {}) {
         break;
       case 'connected':
         if (info.first) {
+          connectedAt = performance.now();
           setConnection('connected');
           canvas.focus({ preventScroll: true });
         } else if (info.after === 'rejoining' && connection === 'connected') {
@@ -610,7 +613,8 @@ export function mount(root, app, opts = {}) {
     if (send('hp', { hp: me.hp, max: me.max, dead: me.dead, by: by || null })) cstats.hpSent++;
   }
 
-  /** 유령·비석 그림: 처음 필요할 때(첫 사망) 받는다. 몬스터 manifest가 없으면 대체 그림 */
+  /** 유령·비석·슬래시·드롭 받침 그림 (몬스터 manifest의 ghost, tombstone, fx.slash, dropBag).
+   *  몬스터가 있는 맵이면 입장 때, 아니면 처음 필요할 때(첫 공격/사망) 받는다. 없으면 절차적 대체 그림 */
   function ensureSprites() {
     if (spritesTried) return;
     spritesTried = true;
@@ -618,10 +622,12 @@ export function mount(root, app, opts = {}) {
       let defs = mobDefs;
       if (!defs && !mobFetched) { mobFetched = true; defs = await loadMobManifest(); }
       if (!alive || !defs) return;
-      const [g, t] = await Promise.all([loadSprite(defs.ghost), loadSprite(defs.tombstone)]);
+      const [g, t, sl, bagS] = await Promise.all([loadSprite(defs.ghost), loadSprite(defs.tombstone), loadSprite(defs.slash), loadSprite(defs.dropBag)]);
       if (!alive) return;
       ghostSprite = g;
       tombSprite = t;
+      slashes.setSprite(sl);
+      dropBagSprite = bagS;
     })();
   }
 
@@ -630,10 +636,7 @@ export function mount(root, app, opts = {}) {
     me.attackUntil = now + COMBAT.attackAnimMs;
     const dir = me.dir < 0 ? 'left' : 'right';
     slashes.add(me, me.dir);
-    if (!slashTried) {
-      slashTried = true;
-      loadImage(SLASH_SRC).then((img) => { if (alive && img) slashes.setImage(img); });
-    }
+    ensureSprites();
     const x = Math.round(me.x);
     const y = Math.round(me.y);
     if (debug) atkBoxes.push({ box: attackBox(x, y, dir), at: now });
@@ -1054,8 +1057,8 @@ export function mount(root, app, opts = {}) {
     if (!me || !avatarR) return;
     if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
     const { cssW, viewW, viewH, P, dpr, k } = layout;
-    if (camY === null) camY = camYTarget(camRef, viewH, 0);
-    const cam = cameraFor(me.x, viewW, viewH, k, camY);
+    if (camY === null) camY = camYTarget(camRef, viewH, 0, world.bottomY);
+    const cam = cameraFor(me.x, viewW, viewH, k, camY, world);
     const { camX } = cam;
     const cy = cam.camY;
     const ctx = canvas.getContext('2d');
@@ -1073,8 +1076,25 @@ export function mount(root, app, opts = {}) {
       if (sx < -margin || sx > viewW + margin) continue;
       visible.push([p, sx, Math.round((p.y - cy) * k)]); // [플레이어, 시야 x(월드), 발 y(장치 px)]
     }
+    // (사이클 9) 비석 → 드롭 → 몬스터 (캐릭터 뒤)
+    stones.draw(ctx, tombSprite, camX, cy, k, now);
+    drops.draw(ctx, camX, cy, k, now, icons, thumbFor, dropBagSprite);
+    const mobsVis = [];
+    if (mobView) {
+      for (const v of mobView.list) {
+        const sx = v.x - camX;
+        if (sx < -120 || sx > viewW + 120) continue;
+        mobsVis.push(v);
+        const sy = groundAt(v.x, v.y);
+        drawFootShadow(ctx, sx * k, Math.round((sy - cy) * k), k, sy - v.y);
+      }
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+      for (const v of mobsVis) drawMob(ctx, v, mobSprites.get(v.kind), Math.round((v.x - camX) * k), Math.round((v.y - cy) * k), k, now, mobDefs.density);
+      ctx.setTransform(1, 0, 0, 1, 0, 0);
+    }
     for (const [p, sx] of visible) {
-      const sy = surfaceBelow(platforms, p.x, p.y);
+      if (p.anim === 'ghost') continue;
+      const sy = groundAt(p.x, p.y);
       drawFootShadow(ctx, sx * k, Math.round((sy - cy) * k), k, sy - p.y);
     }
     fx.drawBack(ctx, camX, cy, k, (c, p, xD, yD, frame, left, alpha) => {
@@ -1083,12 +1103,32 @@ export function mount(root, app, opts = {}) {
       c.globalAlpha = 1;
     });
     smooth(ctx);
-    for (const [p, sx, pyD] of visible) avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), p.dir < 0);
+    for (const [p, sx, pyD] of visible) {
+      if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); continue; }
+      const a = blinkAlpha(now, p.invulnUntil);
+      if (a < 1) ctx.globalAlpha = a;
+      avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), p.dir < 0);
+      ctx.globalAlpha = 1;
+    }
+    slashes.draw(ctx, camX, cy, k, now);
     fx.drawFront(ctx, camX, cy, k);
+    if (debug) drawDebug(ctx, visible, mobsVis, camX, cy, k, now);
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const u = P / 2; // CSS px / 월드
     for (const [p, sx, pyD] of visible) drawLabel(ctx, p.nickname, sx * u, pyD / dpr, p.isSelf, cssW);
+    // (사이클 9) HP 바: 머리(모자) 맨 위 바로 위 1px (말풍선 꼬리 끝은 그 위라 위치 그대로). 유령은 없음
+    for (const [p, sx, pyD] of visible) {
+      if (p.anim === 'ghost') continue;
+      const top = p.anim === 'prone' ? avatarR.headTopFrame(p.avatar, frameOf(p, now)) : avatarR.headTop(p.avatar);
+      drawHpBar(ctx, sx * u, pyD / dpr - top * u - HPBAR.h - 1, p.hp, p.max);
+    }
+    for (const v of mobsVis) {
+      if (now >= v.hpUntil) continue;
+      drawHpBar(ctx, (v.x - camX) * u, (v.y - v.spec.size.h - cy) * u - HPBAR.h - 6, v.hp, v.max, v.s === 'die' ? 0.6 : 1);
+    }
+    dmgNums.draw(ctx, camX, cy, u, now);
+    if (debug) drawDebugHost(ctx, visible, u, dpr);
     // 말풍선: 먼저 받은 것부터 그려 최신이 위 (style-guide 6.3-6). 꼬리 끝 = 머리(모자) 맨 위 + HEAD.gap
     // (사이클 8) 엎드리면 그 프레임의 알파 bbox 맨 위(낮아진 키)를 쓴다
     const talking = visible.filter(([p]) => p.bubble).sort((a, b) => a[0].bubble.at - b[0].bubble.at);
@@ -1096,6 +1136,33 @@ export function mount(root, app, opts = {}) {
       const top = p.anim === 'prone' ? avatarR.headTopFrame(p.avatar, frameOf(p, now)) : avatarR.headTop(p.avatar);
       drawBubble(ctx, p.bubble.layout, sx * u, pyD / dpr, (top + HEAD.gap) * u, cssW, bubbleAlpha(now - p.bubble.at));
     }
+  }
+
+  /** ?debug: 피격 상자(초록), 몬스터 상자(노랑), 최근 공격 상자(빨강) — 장치 px */
+  function drawDebug(ctx, visible, mobsVis, camX, cy, k) {
+    ctx.save();
+    ctx.setTransform(1, 0, 0, 1, 0, 0);
+    ctx.lineWidth = Math.max(1, k);
+    const box = (b, col) => { ctx.strokeStyle = col; ctx.strokeRect((b.x1 - camX) * k, (b.y1 - cy) * k, (b.x2 - b.x1) * k, (b.y2 - b.y1) * k); };
+    for (const [p] of visible) if (p.anim !== 'ghost') box(hurtBox(p.x, p.y, p.anim === 'prone'), 'rgba(108,196,67,0.95)');
+    for (const v of mobsVis) box(mobView.box(v), 'rgba(247,201,72,0.95)');
+    for (const a of atkBoxes) box(a.box, 'rgba(232,72,62,0.95)');
+    ctx.restore();
+  }
+  function drawDebugHost(ctx, visible, u, dpr) {
+    const hp = visible.find(([p]) => p.user_id === hostId);
+    if (!hp) return;
+    const [p, sx, pyD] = hp;
+    ctx.save();
+    ctx.font = '900 12px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillStyle = '#F7C948';
+    ctx.strokeStyle = '#1A1626';
+    ctx.lineWidth = 3;
+    const y = pyD / dpr - (avatarR.headTop(p.avatar) + 24) * u;
+    ctx.strokeText('HOST', sx * u, y);
+    ctx.fillText('HOST', sx * u, y);
+    ctx.restore();
   }
 
   function frame(now) {
@@ -1197,8 +1264,16 @@ export function mount(root, app, opts = {}) {
     // 채팅 입력 중이면 이동 키를 모두 무시하고, 로그 목록에 포커스가 있으면 방향키는 목록 스크롤에 양보한다
     if (isTypingTarget(ae) || chatLog.el.contains(ae)) return;
     if (document.body.classList.contains('has-modal')) return; // 확인 모달이 열려 있으면 게임 입력 없음
-    if (e.ctrlKey || e.metaKey || e.altKey) return; // 브라우저 단축키 (Ctrl+S 등)
     const now = performance.now();
+    // (사이클 9) 공격 Ctrl / J / X, 줍기 Z. Ctrl은 단독으로만(Ctrl+J 등 브라우저 단축키는 양보)
+    const atkKey = KEY_ATTACK[e.code] && (e.code.startsWith('Control') || !e.ctrlKey);
+    if ((atkKey || (KEY_PICK[e.code] && !e.ctrlKey)) && !e.metaKey && !e.altKey) {
+      e.preventDefault();
+      if (!e.repeat && connection === 'connected') input.pressAction(`key:${e.code}`, atkKey ? 'attack' : 'pick', now);
+      return;
+    }
+    // 브라우저 단축키 (Ctrl+S 등). (사이클 9) 공격용 Ctrl을 누른 채 방향키·Space는 게임 입력으로 받는다
+    if (e.metaKey || e.altKey || (e.ctrlKey && !CTRL_GAME_KEYS.has(e.code))) return;
     const tapGroup = KEY_TAP[e.code];
     const dir = KEY_DIR[e.code];
     if (dir) {
@@ -1218,6 +1293,8 @@ export function mount(root, app, opts = {}) {
     }
   });
   on(window, 'keyup', (e) => { input.release(`key:${e.code}`); });
+  on(bagBtn, 'click', () => { bag.toggle(); bagBtn.setAttribute('aria-expanded', String(bag.isOpen)); });
+  on(reviveBtn, 'click', () => revive());
   on(window, 'blur', () => input.clear());
   // 탭 복귀(모바일 백그라운드 포함): 즉시 하트비트 + 채널 상태 점검, 백오프 대기 중이면 바로 시도
   on(document, 'visibilitychange', () => {
@@ -1240,6 +1317,7 @@ export function mount(root, app, opts = {}) {
   const touchButtons = [
     [leftBtn, -1, 'touch:left', 'left'], [rightBtn, 1, 'touch:right', 'right'],
     [crouchBtn, 'prone', 'touch:prone', null], [jumpBtn, 'jump', 'touch:jump', 'up'],
+    [attackBtn, 'attack', 'touch:attack', null], [pickBtn, 'pick', 'touch:pick', null], // (사이클 9)
   ];
   for (const [btn, what, id, group] of touchButtons) {
     const release = () => { input.release(id); btn.classList.remove('is-pressed'); };
@@ -1392,6 +1470,7 @@ export function mount(root, app, opts = {}) {
     dir: p.dir < 0 ? 'left' : 'right', lastChat: p.lastChat, bubble: p.bubble ? p.bubble.text : null, anim: p.anim,
     frame: avatarR ? frameOf(p, performance.now()) : null,
     s: p.s, // 나: 물리 상태, 원격: 마지막으로 받은 s (없으면 null, 옛 crouch는 prone)
+    hp: p.hp, max: p.max, dead: p.dead, invuln: performance.now() < p.invulnUntil, // (사이클 9)
     ...(p.isSelf && p.body ? {
       grounded: p.body.grounded, on: p.body.on ? p.body.on.id : null, airCharge: p.body.airCharge,
       cool: Math.round(p.body.cool * 1000) / 1000, dashing: p.body.dashT > 0,
@@ -1420,6 +1499,22 @@ export function mount(root, app, opts = {}) {
     me: me ? snap(me) : null,
     players: [...players.values()].map(snap),
     net: netSnap(),
+    // (사이클 9) 전투·몬스터·드롭·인벤토리
+    combat: {
+      world: { width: world.width, height: world.height, groundY: world.groundY, spawn: world.spawn },
+      hp: me ? me.hp : null, max: me ? me.max : null, dead: me ? me.dead : null,
+      host: hostId, isHost: isHost(), simulating: !!sim,
+      mobs: mobView ? [...mobView.list].map((v) => ({ id: v.id, kind: v.kind, x: Math.round(v.x), y: Math.round(v.y), hp: v.hp, max: v.max, s: v.s, z: v.z })) : [],
+      mobKinds: mobDefs ? [...mobDefs.kinds.keys()] : [], zones: zones.length,
+      drops: drops.list().map((d) => ({ id: d.id, item: d.item, x: Math.round(d.x), y: Math.round(d.y) })),
+      tombstones: stones.snapshot(),
+      inventory: [...inventory],
+      bagOpen: bag.isOpen,
+      reviveVisible: !reviveBtn.hidden && !reviveBox.hidden,
+      numbers: dmgNums.count, slashes: slashes.count, slashImage: slashes.hasImage,
+      sprites: { ghost: !!ghostSprite, tombstone: !!tombSprite },
+      stats: { ...cstats, ...(sim ? { sim: sim.stats } : {}) },
+    },
   });
 
   // --- 정리 -----------------------------------------------------------------
@@ -1438,6 +1533,11 @@ export function mount(root, app, opts = {}) {
     if (app.providers.room) app.providers.room = null;
     avatarR?.clear();
     fx.clear();
+    dmgNums.clear(); slashes.clear(); stones.clear(); drops.clear(); icons.clear();
+    sim = null;
+    mobView?.clear();
+    mobSprites?.clear();
+    earlyHp.clear();
     if (delModal) { const m = delModal; delModal = null; m.close({ restoreFocus: false }); }
     chatLog.destroy();
     link = null;
@@ -1463,10 +1563,35 @@ export function mount(root, app, opts = {}) {
     map = await app.mapAssets.catch(() => null);
     if (!alive) return;
     platforms = map && Array.isArray(map.platforms) ? map.platforms : Object.freeze([]);
+    world = worldFromMap(map); // (사이클 9) 크기·지면·스폰은 맵 manifest에서
+    camRef = world.groundY;
     BODY_OPT.platforms = platforms;
+    BODY_OPT.groundY = world.groundY;
+    BODY_OPT.minX = world.minX;
+    BODY_OPT.maxX = world.maxX;
+    computeLayout();
+    // (사이클 9) 몬스터: 맵에 스폰 구역이 있을 때만 manifest를 받는다(없으면 몬스터 없이)
+    if (map && Array.isArray(map.spawns) && map.spawns.length) {
+      mobFetched = true;
+      mobDefs = await loadMobManifest();
+      if (!alive) return;
+      if (mobDefs) {
+        zones = normalizeZones(map.spawns, platforms, world, mobDefs.kinds);
+        if (zones.length) {
+          mobView = createMobView({
+            kinds: mobDefs.kinds,
+            onDamage: (v, amount) => { dmgNums.add(amount, v.x, v.y - v.spec.size.h, 'hit'); },
+          });
+          mobSprites = createMobSprites(mobDefs.kinds);
+        }
+        ensureSprites();
+      }
+    }
     avatarR = createAvatarRenderer(assets);
-    const startX = clampX(300 + Math.floor(Math.random() * 600));
-    me = makePlayer(app.userId || 'me', myNick, assets.sanitizeAvatar(profile.avatar), startX, true);
+    const sp = spawnPoint();
+    me = makePlayer(app.userId || 'me', myNick, assets.sanitizeAvatar(profile.avatar), sp.x, true);
+    me.body = createBody(sp.x, sp.y, world.groundY);
+    me.y = sp.y;
     await avatarR.ready(me.avatar); // 내 조합의 레이어만 받고 합성 (다른 사람 조합은 그릴 때 지연 로드)
     if (!alive) return;
     players.set(me.user_id, me);

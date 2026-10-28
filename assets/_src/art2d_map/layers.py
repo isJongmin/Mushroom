@@ -20,7 +20,7 @@ GY = GROUND_Y * D                                # 1350
 LAYERS = {
     'clouds': dict(parallax=0.10, y=0, w=3600, h=780, repeat=True, haze=0.0),
     'far': dict(parallax=0.25, y=340, w=3600, h=900, repeat=True, haze=0.0),
-    'mid': dict(parallax=0.55, y=480, w=4500, h=660, repeat=True, haze=0.22),
+    'mid': dict(parallax=0.55, y=480, w=4500, h=660, repeat=True, haze=0.28),
     'ground': dict(parallax=1.0, y=0, w=GW, h=GH, repeat=False, haze=0.0),
 }
 
@@ -94,45 +94,42 @@ def _flat_cloud(s, x, y, w, rng):
 # 원경
 
 def _range(s, W, Hh, base_y, peaks, m, snow, rng, lw=2.2):
-    """주기적인 산맥. peaks = [(x, top_y, half_width)]."""
-    xs = np.arange(-300, W + 301, 6.0)
-    ys = np.full_like(xs, float(Hh + 20))
+    """주기적인 산맥. 봉우리마다 따로 그린다(높은 봉우리가 뒤). peaks = [(x, top_y, half_width)]."""
     pk = []
     for (px_, py_, hw) in peaks:
         for off in (-W, 0, W):
-            pk.append((px_ + off, py_, hw))
-    for (px_, py_, hw) in pk:
+            if px_ + off + hw * 1.1 < -40 or px_ + off - hw * 1.1 > W + 40:
+                continue
+            pk.append((px_ + off, py_, hw, int(rng.integers(1 << 30))))
+    for (px_, py_, hw, seed) in sorted(pk, key=lambda q: q[1]):
+        r = np.random.default_rng(seed)
+        hh = base_y - py_
+        xs = np.linspace(px_ - hw * 1.05, px_ + hw * 1.05, 70)
         d = np.abs(xs - px_) / hw
-        prof = np.where(d < 1, py_ + (base_y - py_) * (d ** 1.25) * (1 - 0.18 * np.cos(d * 9.0) * d), base_y + 30)
-        ys = np.minimum(ys, prof)
-    ys += periodic(W, xs, [(23, 3.0), (41, 1.6)], rng)
-    top = np.stack([xs, ys], -1)
-    body = np.concatenate([top, [[W + 301, Hh + 20], [-300, Hh + 20]]])
-    s.shape(body, m['base'], m['line'], lw)
-    s.clip(body)
-    # 봉우리 오른쪽 면 그늘 + 능선
-    for (px_, py_, hw) in pk:
-        if px_ + hw < -50 or px_ - hw > W + 50:
-            continue
-        sh = poly([(px_, py_ - 2), (px_ + hw * 0.18, py_ + (base_y - py_) * 0.3), (px_ + hw * 0.1, py_ + (base_y - py_) * 0.62),
-                   (px_ + hw * 0.32, base_y + 40), (px_ + hw * 1.3, base_y + 40), (px_ + hw * 1.3, py_ - 5)])
+        ys = py_ + hh * np.clip(d, 0, 1.05) ** 1.15 * (1 - 0.12 * np.sin(d * 7.0 + r.uniform(0, 3)) * d)
+        ys += r.uniform(-2, 2, len(xs)) * d
+        body = np.concatenate([np.stack([xs, ys], -1), [[px_ + hw * 1.05, Hh + 20], [px_ - hw * 1.05, Hh + 20]]])
+        s.shape(body, m['base'], m['line'], lw)
+        s.clip(body)
+        ridge = catmull([(px_, py_), (px_ + hw * 0.12, py_ + hh * 0.3), (px_ + hw * 0.04, py_ + hh * 0.6), (px_ + hw * 0.18, base_y + 10)], False, 8)
+        sh = np.concatenate([ridge, [[px_ + hw * 1.3, base_y + 10], [px_ + hw * 1.3, py_ - 10], [px_, py_ - 10]]])
         s.fill(sh, m['shade'])
-        s.stroke(catmull([(px_, py_), (px_ + hw * 0.16, py_ + (base_y - py_) * 0.32), (px_ + hw * 0.08, py_ + (base_y - py_) * 0.6)], False, 8),
-                 m['deep'], 1.4, alpha=0.6)
-        if snow and (base_y - py_) > 180:
-            cap_h = (base_y - py_) * 0.26
-            n = 7
-            zx = np.linspace(px_ - hw * 0.45, px_ + hw * 0.45, n)
-            zy = py_ + cap_h * (0.65 + 0.35 * np.abs(np.linspace(-1, 1, n))) + np.array([0, 10, -4, 14, -2, 9, 0])[:n]
-            cap = np.concatenate([[[px_ - hw * 0.6, py_ - 30], [px_ + hw * 0.6, py_ - 30]], np.stack([zx, zy], -1)[::-1]])
+        # 왼쪽 면 계곡 결
+        s.stroke(catmull([(px_ - hw * 0.35, py_ + hh * 0.35), (px_ - hw * 0.3, py_ + hh * 0.6), (px_ - hw * 0.42, py_ + hh * 0.85)], False, 8),
+                 m['shade'], 2.0, alpha=0.8)
+        s.stroke(ridge, m['deep'], 1.4, alpha=0.5)
+        if snow and hh > 200:
+            cap_h = hh * 0.28
+            n = 9
+            zx = np.linspace(px_ - hw * 0.5, px_ + hw * 0.5, n)
+            zy = py_ + cap_h * (0.55 + 0.45 * np.abs(np.linspace(-1, 1, n))) + r.uniform(-8, 10, n)
+            cap = np.concatenate([[[px_ - hw * 0.7, py_ - 30], [px_ + hw * 0.7, py_ - 30]], np.stack([zx, zy], -1)[::-1]])
             s.clip(cap)
             s.fill(cap, '#FFFFFF')
-            s.fill(poly([(px_ + 3, py_ - 30), (px_ + hw * 0.6, py_ - 30), (px_ + hw * 0.6, py_ + cap_h * 1.4),
-                         (px_ + hw * 0.12, py_ + cap_h * 1.4), (px_ + hw * 0.16, py_ + (base_y - py_) * 0.3)]), '#DCE4FA')
+            s.fill(np.concatenate([ridge, [[px_ + hw, base_y], [px_ + hw, py_ - 30], [px_, py_ - 30]]]), '#D6DEF8')
             s.unclip()
-            s.stroke(np.stack([zx, zy], -1), m['line'], 1.4, alpha=0.5)
-    s.unclip()
-    return top
+            s.stroke(np.stack([zx, zy], -1), m['line'], 1.4, alpha=0.45)
+        s.unclip()
 
 
 def build_far():
@@ -236,6 +233,10 @@ def _falls(s, x, y0, y1, rng):
 # ---------------------------------------------------------------------------
 # 중경
 
+def rng_h(r):
+    return r.uniform(70, 95)
+
+
 def build_mid():
     L = LAYERS['mid']
     W, Hh = L['w'], L['h']
@@ -300,15 +301,20 @@ def build_mid():
         wrapped(W, x, w, lambda xx, r, w=w: P.bush(s, xx, hf_at(xx) + 16, w, w * 0.42, r, M['leaf2'], lw=2.2,
                                                   flowers=['cap_pink', 'cap_yellow'] if r.random() < 0.4 else None), rng)
         x += rng.uniform(90, 200)
-    # 바닥 띠 (지면 레이어가 덮는 곳)
-    s.fill(rect(-80, 560, W + 80, Hh + 20), mg['deep'])
+    # 바닥 띠 (지면 레이어가 덮는 곳) + 산울타리
+    s.fill(rect(-80, 590, W + 80, Hh + 20), M['leaf2']['deep'])
+    x = 0.0
+    while x < W:
+        ww = rng.uniform(90, 160)
+        wrapped(W, x, ww, lambda xx, r, ww=ww: P.bush(s, xx, 640, ww, rng_h(r), r, M['leaf2'], lw=2.2), rng)
+        x += ww * 0.62
     return s
 
 
 # ---------------------------------------------------------------------------
 # 발판
 
-def plank_boards(s, x0, x1, Y, rng, th=13, m=None):
+def plank_boards(s, x0, x1, Y, rng, th=15, m=None):
     m = m or M['wood']
     xs = [x0]
     while xs[-1] < x1 - 1e-6:
@@ -355,18 +361,18 @@ def plat_plank(s, x0, x1, Y, rng):
     w = x1 - x0
     wd = M['darkwood']
     # 받침 통나무
-    log = rrect(x0 + 10, Y + 10, x1 - 10, Y + 22, 6)
+    log = rrect(x0 + 10, Y + 12, x1 - 10, Y + 26, 7)
     P.toon(s, [log], wd, P.LW, shift=(0, -0.25), shrink=1.0)
     for ex in (x0 + 14, x1 - 14):
-        s.shape(ellipse(ex, Y + 16, 5, 6.5), M['wood']['hi'], wd['line'], 1.6)
-        s.outline(ellipse(ex, Y + 16, 2.2, 3), M['wood']['shade'], 0.6)
+        s.shape(ellipse(ex, Y + 19, 5.5, 7.5), M['wood']['hi'], wd['line'], 1.6)
+        s.outline(ellipse(ex, Y + 19, 2.4, 3.4), M['wood']['shade'], 0.6)
     plank_boards(s, x0, x1, Y, rng)
     n = max(2, int(w / 120) + 1)
     lx = np.linspace(x0 + 16, x1 - 16, n)
     for i, x in enumerate(lx):
-        lashing(s, x, Y + 1, Y + 24)
+        lashing(s, x, Y + 1, Y + 28)
         if rng.random() < 0.6:
-            P.rope_coil_hang(s, x + 2, Y + 24, rng.uniform(14, 30), rng)
+            P.rope_coil_hang(s, x + 2, Y + 28, rng.uniform(14, 30), rng)
     # 덩굴
     for _ in range(int(rng.integers(1, 3))):
         vx = rng.uniform(x0 + 30, x1 - 30)
@@ -375,34 +381,28 @@ def plat_plank(s, x0, x1, Y, rng):
 
 def plat_grass(s, x0, x1, Y, rng, deep=None, sky=False):
     w = x1 - x0
-    Dd = deep or float(np.clip(32 + w * 0.05, 36, 60))
-    pts = [(x0 - 3, Y + 6), (x0 + 3, Y + Dd * 0.5), (x0 + w * 0.16, Y + Dd * 0.82), (x0 + w * 0.38, Y + Dd * rng.uniform(0.92, 1.05)),
-           (x0 + w * 0.6, Y + Dd), (x0 + w * 0.84, Y + Dd * 0.78), (x1 - 3, Y + Dd * 0.48), (x1 + 3, Y + 6)]
+    Dd = deep or float(np.clip(40 + w * 0.03, 44, 54))
     if sky:
         pts = [(x0 - 3, Y + 6), (x0 + 6, Y + Dd * 0.45), (x0 + w * 0.3, Y + Dd * 0.85), (x0 + w * 0.5, Y + Dd * 1.25),
                (x0 + w * 0.68, Y + Dd * 0.8), (x1 - 6, Y + Dd * 0.4), (x1 + 3, Y + 6)]
-    body = catmull(pts, False, 10)
-    # 매달린 뿌리
-    for _ in range(int(w / 70) + 1):
-        rx = rng.uniform(x0 + w * 0.2, x1 - w * 0.2)
-        ry = float(np.interp(rx, body[:, 0], body[:, 1])) - 4
-        ln = catmull([(rx, ry), (rx + rng.uniform(-6, 6), ry + 10), (rx + rng.uniform(-8, 8), ry + rng.uniform(16, 26))], False, 6)
-        s.stroke(ln, M['dirt']['line'], 4.5)
-        s.stroke(ln, M['trunk']['shade'], 2.0)
-    P.dirt_body(s, body, M['dirt'], rng, Y + 8, strata=True, stones=max(1, int(w / 70)))
+        body = catmull(pts, False, 10)
+    else:
+        bx = np.linspace(x1 - 14, x0 + 14, max(4, int(w / 22)))
+        by = Y + Dd + rng.uniform(-4, 3, len(bx))
+        pts = [(x0 - 3, Y + 6), (x0 + 1, Y + Dd * 0.7)] + list(zip(bx[::-1], by[::-1])) + [(x1 - 1, Y + Dd * 0.7), (x1 + 3, Y + 6)]
+        body = catmull(pts, False, 8)
+    P.dirt_body(s, body, M['dirt'], rng, Y + 8, strata=True, stones=max(1, int(w / 60)))
+    # 아래 가장자리 그늘
     if sky:
-        # 빛나는 수정
         for (cx, h_) in ((x0 + w * 0.42, 22), (x0 + w * 0.56, 16)):
             cy = Y + Dd * 0.75
-            cr = poly([(cx - 6, cy), (cx - 3, cy - h_ * 0.2 + h_), (cx + 4, cy + h_), (cx + 7, cy)])
             s.shape(poly([(cx - 6, cy), (cx, cy + h_), (cx + 6, cy)]), '#C8B4FF', '#6A4AB0', 1.6)
             s.fill(poly([(cx - 3, cy + 1), (cx, cy + h_ * 0.8), (cx, cy + 1)]), '#EEE6FF')
-    P.grass_cap(s, x0, x1, Y, 15, rng, drip=7)
+    P.grass_cap(s, x0, x1, Y, 17, rng, drip=8)
     # 덩굴
     for _ in range(int(rng.integers(1, 3)) if w > 160 else 1):
         vx = rng.uniform(x0 + 20, x1 - 20)
-        vy = float(np.interp(vx, body[:, 0], body[:, 1]))
-        P.vine(s, vx, min(vy - 6, Y + 18), rng.uniform(25, 55), rng)
+        P.vine(s, vx, Y + 20, rng.uniform(30, 60) + Dd * 0.5, rng)
     P.grass_top_blades(s, x0 + 4, x1 - 4, Y, rng, every=34, hmax=8)
 
 
@@ -504,7 +504,8 @@ def draw_platforms(s, rng, only=None):
         if only and p['id'] not in only:
             continue
         r = np.random.default_rng(abs(hash_id(p['id'])))
-        PLAT_FN[p['kind']](s, p['x1'] * D, p['x2'] * D, p['y'] * D, r)
+        # 외곽선(LW) 윗끝이 서는 선과 같도록 채움 윗면을 LW 만큼 내린다
+        PLAT_FN[p['kind']](s, p['x1'] * D, p['x2'] * D, p['y'] * D + P.LW, r)
 
 
 def hash_id(s_):
@@ -555,7 +556,26 @@ def ground_terrain(s, rng):
         s.stroke(ln, dm['deep'], 4.0)
         s.stroke(ln, dm['hi'], 1.4, alpha=0.6)
     s.unclip()
-    P.grass_cap(s, -10, W + 10, GY, 26, rng, round_ends=False, drip=11)
+    P.grass_cap(s, -10, W + 10, GY + P.LW, 26, rng, round_ends=False, drip=11)
+
+
+def giant_tree(s, x, cy, rx, rng):
+    """엘리니아풍 거대 나무: 굵은 줄기가 지면에서 수관까지, 수관에서 덩굴이 늘어진다."""
+    mt = M['trunk']
+    tw = rx * 0.28
+    P.trunk(s, x, GY + 4, cy + rx * 0.2, tw, rng, mt, lean=rng.uniform(-10, 10), branches=True)
+    # 뿌리 둔덕
+    for sgn in (-1, 1):
+        root = catmull([(x + sgn * tw * 0.3, GY - 60), (x + sgn * tw * 1.1, GY - 14), (x + sgn * tw * 1.8, GY + 4), (x + sgn * tw * 0.4, GY + 6)], True, 8)
+        P.toon(s, [root], mt, P.LW, shift=(-0.1, -0.1), shrink=0.9)
+    # 수관: 넓게 퍼진 두 겹(뒤는 짙게)
+    back = {k: mix(v, '#1B4E2E', 0.18) for k, v in M['leaf2'].items()}
+    P.canopy(s, x + rx * 0.15, cy - rx * 0.12, rx * 1.05, rx * 0.5, rng, back, k=10, tufts=False)
+    cl = P.canopy(s, x - rx * 0.05, cy + rx * 0.05, rx * 1.2, rx * 0.6, rng, M['leaf2'], k=16)
+    for _ in range(6):
+        vx = x + rng.uniform(-rx * 0.8, rx * 0.8)
+        vy = cy + rx * 0.62 * 0.55 * np.sqrt(max(0.0, 1 - ((vx - x) / (rx * 0.95)) ** 2)) + 10
+        P.vine(s, vx, vy, rng.uniform(50, 120), rng, M['leaf2'])
 
 
 def build_ground():
@@ -565,14 +585,18 @@ def build_ground():
 
     # --- 뒤쪽 큰 소품 (지면선에 선다) ---
     # 서쪽 들판: 큰 둥근 나무
-    for (x, size, kind) in ((40, 150, 'leaf'), (600, 170, 'leaf'), (1080, 130, 'cherry'), (1600, 160, 'leaf')):
+    for (x, size, kind) in ((40, 150, 'leaf'), (600, 170, 'leaf'), (1080, 130, 'cherry'), (1420, 120, 'leaf'), (260, 110, 'cherry')):
         P.tree(s, w(x), GY + 4, size, sub(rng), kind)
     # 마을: 버섯 집들
-    houses = [(1790, 300, 400, 'cap_red', 2), (2070, 220, 300, 'cap_orange', 1), (2690, 260, 350, 'cap_blue', 2),
-              (2990, 210, 280, 'cap_yellow', 1), (3140, 160, 210, 'cap_purple', 1)]
-    P.tree(s, w(2560), GY + 4, 175, sub(rng), 'cherry')
+    houses = [(1960, 300, 400, 'cap_red', 2), (2180, 220, 300, 'cap_orange', 1), (2760, 260, 350, 'cap_blue', 2),
+              (3130, 210, 280, 'cap_yellow', 1)]
+    P.tree(s, w(2330), GY + 4, 150, sub(rng), 'cherry')
+    P.tree(s, w(2960), GY + 4, 165, sub(rng), 'leaf')
     for (x, ww, hh, cap, nw) in houses:
         P.mushroom_house(s, w(x), GY + 2, ww, hh, cap, sub(rng), windows=nw)
+    # 동쪽 숲 (엘리니아): 거대한 나무 기둥 + 큰 수관 (발판 뒤)
+    for (x, cy, rx) in ((3580, 300, 250), (4250, 360, 230), (4700, 300, 210), (3150, 380, 170)):
+        giant_tree(s, w(x), w(cy), rx, sub(rng))
     # 동쪽 숲: 크고 짙은 나무, 벚꽃, 침엽수
     for (x, size, kind) in ((3290, 185, 'leaf2'), (3760, 150, 'cherry'), (4150, 200, 'leaf2'), (4520, 160, 'leaf'), (4780, 170, 'leaf2')):
         P.tree(s, w(x), GY + 4, size, sub(rng), kind)
@@ -587,19 +611,19 @@ def build_ground():
         P.bush(s, w(x), GY + 3, rr.uniform(70, 120), rr.uniform(34, 46), rr, M['leaf'] if x < 2400 else M['leaf2'],
                flowers=['cap_pink', 'cap_yellow', 'cap_purple'] if rr.random() < 0.6 else None)
     # 마을 울타리, 가로등, 우물, 표지판, 통, 상자
-    P.fence(s, w(1660), w(1720), GY + 2)
-    P.fence(s, w(1900), w(1990), GY + 2)
-    P.fence(s, w(2810), w(2880), GY + 2)
-    P.fence(s, w(3200), w(3250), GY + 2)
-    for x in (1960, 2290, 2510, 2850):
+    P.fence(s, w(1560), w(1620), GY + 2)
+    P.fence(s, w(2050), w(2110), GY + 2)
+    P.fence(s, w(2830), w(2900), GY + 2)
+    P.fence(s, w(3190), w(3240), GY + 2)
+    for x in (1860, 2250, 2620, 3040):
         P.lamp(s, w(x), GY + 2)
-    P.well(s, w(2440), GY + 2)
-    P.signpost(s, w(1640), GY + 2, rr)
+    P.well(s, w(2510), GY + 2)
+    P.signpost(s, w(1590), GY + 2, rr)
     P.signpost(s, w(3215), GY + 2, rr)
-    P.barrel(s, w(2140), GY + 2)
-    P.barrel(s, w(2160), GY + 2, r=12)
-    P.crate(s, w(2620), GY + 2, 30)
-    P.crate(s, w(2640), GY + 2, 22)
+    P.barrel(s, w(2125), GY + 2)
+    P.barrel(s, w(2142), GY + 2, r=12)
+    P.crate(s, w(2680), GY + 2, 30)
+    P.crate(s, w(2700), GY + 2, 22)
     P.barrel(s, w(3070), GY + 2)
     # 바위
     for (x, r) in ((330, 16), (1010, 22), (1380, 12), (3530, 24), (3900, 14), (4420, 20), (4720, 13)):

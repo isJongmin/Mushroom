@@ -9,7 +9,7 @@ import { PROFILE_MESSAGES as M } from '../errors.js';
 import { createAvatarRenderer, smooth } from '../avatar.js';
 import { drawFootShadow, drawMap } from '../game/world.js';
 import { pickAvatar } from '../avatar-data.js';
-import { writeProfile } from '../store.js';
+import { writeProfile, inventoryKey, readInventory } from '../store.js';
 import { trimWs, charLength } from '../backend/common.js';
 
 // 미리보기 무대 (사이클 5, 월드 단위): 112x144 = CSS 56x72 x --pv (데스크톱 4 → 224x288, 모바일 3 → 168x216).
@@ -53,6 +53,9 @@ export function mount(root, app, opts = {}) {
   let raf = 0;
   let cancelRepaint = () => {};
   const nick = { value: '', status: 'empty' };
+  // (사이클 9) 드롭 전용 파츠(manifest drop: true)는 인벤토리에 있어야 고를 수 있다 (없으면 자물쇠)
+  const owned = new Set(readInventory(inventoryKey(app.as)));
+  const isLocked = (part, id) => !!(assets && assets.isDropPart && assets.isDropPart(part, id)) && !owned.has(`${part}:${id}`);
 
   // --- 요소 ---------------------------------------------------------------
 
@@ -147,7 +150,9 @@ export function mount(root, app, opts = {}) {
 
   // 배경 = 방과 같은 맵 그리기(drawMap)를 카메라 (mapX, mapY)로 (패럴랙스 레이어 포함 작은 장면)
   function drawStageBg(c) {
-    drawMap(c, map, STAGE.mapX, STAGE.mapY, k, stageCanvas.width, stageCanvas.height);
+    // (사이클 9) 맵 지면이 바뀌어도(큰 맵 groundY 900) 지면선이 무대 기준점에 오게
+    const gy = map && typeof map.groundY === 'number' ? map.groundY : 440;
+    drawMap(c, map, STAGE.mapX, gy - STAGE.ay, k, stageCanvas.width, stageCanvas.height);
   }
 
   function previewFrame(now) {
@@ -227,11 +232,14 @@ export function mount(root, app, opts = {}) {
     slots = assets.parts[part].map((item) => {
       const isNone = part === 'hat' && item.id === HAT_NONE;
       const canvas = isNone ? null : thumbCanvas(THUMB_SIZE * 2);
+      const locked = isLocked(part, item.id) && avatar[part] !== item.id; // 이미 입고 있으면 그대로 둔다
       const btn = h('button', {
-        type: 'button', class: 'bk-slot', role: 'radio', 'aria-checked': 'false', 'aria-label': item.label,
-        testid: `slot-${part}-${item.id}`, 'data-id': item.id, tabindex: '-1', disabled: creating,
-      }, isNone ? h('span', { class: 'bk-slot__none', 'aria-hidden': 'true' }) : canvas);
-      return { id: item.id, btn, canvas };
+        type: 'button', class: locked ? 'bk-slot is-locked' : 'bk-slot', role: 'radio', 'aria-checked': 'false',
+        'aria-label': locked ? `${item.label} (잠김: 몬스터 드롭으로 얻을 수 있어요)` : item.label, title: locked ? '몬스터 드롭으로 얻을 수 있어요' : null,
+        testid: `slot-${part}-${item.id}`, 'data-id': item.id, 'data-locked': locked ? 'true' : null, tabindex: '-1', disabled: creating || locked,
+      }, isNone ? h('span', { class: 'bk-slot__none', 'aria-hidden': 'true' }) : canvas,
+      locked ? h('span', { class: 'bk-ico bk-ico--lock slot-lock', 'aria-hidden': 'true' }) : null);
+      return { id: item.id, btn, canvas, locked };
     });
     slotGrid.replaceChildren(...slots.map((s) => s.btn));
     paintSlots();
@@ -269,7 +277,7 @@ export function mount(root, app, opts = {}) {
   function announcePart(part) { announce(`${PART_LABELS[part]}: ${assets.labelOf(part, avatar[part])}`); }
 
   function selectPart(part, id) {
-    if (creating || !ready || avatar[part] === id) return;
+    if (creating || !ready || avatar[part] === id || isLocked(part, id)) return;
     avatar = { ...avatar, [part]: id };
     paintSlots();
     drawPreview();
@@ -281,6 +289,7 @@ export function mount(root, app, opts = {}) {
     const p = assets.presets[i];
     if (!p) return;
     avatar = assets.sanitizeAvatar(p.avatar); // manifest에 없는 id는 기본값
+    for (const part of PART_KEYS) if (isLocked(part, avatar[part])) avatar[part] = assets.defaultAvatar[part]; // (사이클 9) 잠긴 드롭 파츠 제외
     paintSlots();
     drawPreview();
     announce(`추천 조합 적용: ${p.label}`);
@@ -467,6 +476,10 @@ export function mount(root, app, opts = {}) {
     else return;
     e.preventDefault();
     n = Math.max(0, Math.min(slots.length - 1, n));
+    // (사이클 9) 잠긴 슬롯은 건너뛴다
+    const step = n >= i ? 1 : -1;
+    while (slots[n] && slots[n].locked) n += step;
+    if (!slots[n]) return;
     selectPart(activeTab, slots[n].id);
     slots[n].btn.focus();
   });
@@ -493,6 +506,7 @@ export function mount(root, app, opts = {}) {
     walking,
     frame: renderer && avatar ? previewFrame(performance.now()) : null,
     slots: slots.length,
+    locked: slots.filter((x) => x.locked).map((x) => x.id), // (사이클 9) 현재 탭의 잠긴 드롭 전용 파츠
     presets: assets ? assets.presets.length : 0,
   });
 

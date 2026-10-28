@@ -143,16 +143,17 @@ export function drawHpBar(ctx, cx, top, hp, max, alpha = 1) {
 }
 
 // ---------------------------------------------------------------------------
-// 슬래시 (무기 궤적): assets/fx/slash.png가 있으면 그 그림, 없으면 절차적 초승달. 0.2초.
+// 슬래시 (무기 궤적): 몬스터 manifest fx.slash(assets/fx/slash.png, 가로 프레임, 기준점 = 공격자 발)가 있으면 그 그림,
+// 없으면 절차적 초승달. 0.2초. (manifest에 없는 파일을 짐작해 요청하지 않는다: 404 방지)
 
 const SLASH_MS = 200;
 
 export function createSlashes() {
   const list = [];
-  let img = null; // HTMLImageElement | null
+  let spr = null; // loadSprite 결과 { img, frameW, frameH, anchorX, anchorY, density, fps } | null
   return {
-    setImage(v) { img = v || null; },
-    get hasImage() { return !!img; },
+    setSprite(v) { spr = v && v.img ? v : null; },
+    get hasImage() { return !!spr; },
     /** owner = 플레이어 객체(위치를 따라감) */
     add(owner, dir, at = performance.now()) {
       list.push({ owner, dir: dir < 0 ? -1 : 1, at });
@@ -170,17 +171,19 @@ export function createSlashes() {
       for (const s of list) {
         const t = Math.min(1, (now - s.at) / SLASH_MS);
         const o = s.owner;
-        const cx = (o.x - camX + s.dir * 22) * k;
-        const cy = (o.y - camY - 42) * k;
-        if (img) {
-          const w = 90 * k;
-          const h = (w * img.naturalHeight) / Math.max(1, img.naturalWidth);
-          ctx.globalAlpha = t < 0.5 ? 1 : 1 - (t - 0.5) / 0.5;
-          ctx.setTransform(s.dir, 0, 0, 1, cx, cy);
-          ctx.drawImage(img, -w * 0.25, -h / 2, w, h);
+        if (spr) {
+          const frames = Math.max(1, Math.floor(spr.img.naturalWidth / spr.frameW));
+          const f = Math.min(frames - 1, Math.floor(((now - s.at) / 1000) * spr.fps));
+          const sc = k / spr.density;
+          ctx.globalAlpha = t < 0.6 ? 1 : 1 - (t - 0.6) / 0.4;
+          ctx.setTransform(s.dir, 0, 0, 1, (o.x - camX) * k, (o.y - camY) * k);
+          ctx.drawImage(spr.img, f * spr.frameW, 0, spr.frameW, spr.frameH, -spr.anchorX * sc, -spr.anchorY * sc, spr.frameW * sc, spr.frameH * sc);
           ctx.setTransform(1, 0, 0, 1, 0, 0);
+          ctx.globalAlpha = 1;
           continue;
         }
+        const cx = (o.x - camX + s.dir * 22) * k;
+        const cy = (o.y - camY - 42) * k;
         drawSlashArc(ctx, cx, cy, k, s.dir, t);
       }
       ctx.restore();
@@ -238,7 +241,7 @@ export function drawGhost(ctx, sprite, x, y, k, t, facingLeft, alpha = 0.78) {
   const bob = Math.sin(t * 3.2) * 4 * k - 8 * k;
   ctx.save();
   ctx.setTransform(facingLeft ? -1 : 1, 0, 0, 1, x, y + bob);
-  ctx.globalAlpha = alpha;
+  ctx.globalAlpha = sprite && sprite.img ? 1 : alpha; // 스프라이트는 반투명이 PNG에 들어 있다
   if (sprite && sprite.img) {
     const s = k / sprite.density;
     const img = sprite.img;
@@ -284,8 +287,9 @@ export function drawTombstone(ctx, sprite, x, y, k, squash = 0) {
   ctx.setTransform(1 + squash * 0.25, 0, 0, 1 - squash * 0.25, x, y);
   if (sprite && sprite.img) {
     const s = k / sprite.density;
-    const img = sprite.img;
-    ctx.drawImage(img, -sprite.anchorX * s, -sprite.anchorY * s, img.naturalWidth * s, img.naturalHeight * s);
+    const fw = sprite.frameW || sprite.img.naturalWidth;
+    const fh = sprite.frameH || sprite.img.naturalHeight;
+    ctx.drawImage(sprite.img, 0, 0, fw, fh, -sprite.anchorX * s, -sprite.anchorY * s, fw * s, fh * s);
   } else {
     const u = k;
     ctx.beginPath();

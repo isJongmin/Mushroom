@@ -100,7 +100,7 @@ export const ROOM_MESSAGES = Object.freeze({
   LEAVING: '나가는 중',
   // v3 문구 그대로 유지 (design handoff 4.3 마지막 줄)
   COOLDOWN: '1초 뒤에 다시 보낼 수 있습니다.',
-  HINT: '←→ 이동 · ↑/Space 점프 · ↓ 엎드리기 · ↓+점프 내려가기 · 방향키 2번 슈퍼점프 · Enter 채팅',
+  HINT: '←→ 이동 · ↑/Space 점프 · ↓ 엎드리기 · ↓+점프 내려가기 · 방향키 2번 슈퍼점프 · Ctrl/J/X 공격 · Z 줍기 · Enter 채팅',
   DELETE: '방 삭제',
 });
 

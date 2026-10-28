@@ -159,3 +159,38 @@ body[data-screen="room"] { background: var(--letterbox); }
 @media (max-width: 419px) {
   .touch-row--4 [data-testid="crouch"] .bk-ico { display: none; }
 }
+
+/* ---------- 사이클 9: 전투, 부활, 가방, 모바일 공격·줍기 ----------
+   ui-kit 컴포넌트(.bk-panel, .bk-slot, .bk-btn, .bk-badge)를 그대로 쓰고 위치만 정한다. 디자인 정본 반영 요청(handoff). */
+.hud-r .bk-btn .bag-count { margin-left: var(--sp-1); }
+.debug-host { font-size: var(--fs-xs); }
+/* 부활 안내: 캔버스 위 가운데 */
+.revive-box { position: absolute; z-index: 3; left: 50%; top: 30%; transform: translateX(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: var(--sp-3); width: max-content; max-width: calc(100% - 32px); text-align: center; }
+.revive-text { margin: 0; color: var(--text); font-weight: 700; }
+/* 가방 패널: HUD 아래 오른쪽 */
+.inv-panel { position: absolute; z-index: 4; right: 8px; top: 56px; width: min(392px, calc(100% - 16px)); max-height: calc(100% - 72px); overflow-y: auto; }
+.inv-head { display: flex; align-items: center; gap: var(--sp-2); margin-bottom: var(--sp-3); }
+.inv-title { margin: 0; font-size: var(--fs-md, 16px); flex: 1; }
+.inv-head .bk-btn { flex: none; }
+.inv-empty, .inv-status { margin: var(--sp-2) 0 0; }
+.inv-slots .bk-slot[aria-pressed="true"] {
+  background: var(--pal-y1);
+  box-shadow: inset 0 0 0 2px var(--pal-y2), inset 4px 4px 0 0 var(--pal-y3);
+}
+.inv-slots .bk-slot[aria-pressed="true"]::after {
+  content: ""; position: absolute; right: -4px; top: -4px; width: 16px; height: 16px;
+  background: var(--pal-g2);
+  box-shadow: inset 2px 2px 0 0 var(--pal-g1), inset -2px -2px 0 0 var(--pal-g3), 0 0 0 2px var(--pal-g4);
+}
+/* 프로필: 잠긴 드롭 전용 파츠 */
+.bk-slot.is-locked { cursor: not-allowed; }
+.bk-slot.is-locked canvas { opacity: 0.35; filter: grayscale(1); }
+.bk-slot .slot-lock { position: absolute; right: 6px; bottom: 6px; z-index: 2; }
+/* 모바일 공격·줍기: 캔버스 오른쪽 아래. 데스크톱은 키보드(Ctrl/J/X, Z) */
+.touch-float { display: none; }
+@media (max-width: 719px) {
+  .touch-float { display: flex; position: absolute; z-index: 2; right: 12px; bottom: 12px; gap: var(--sp-2); }
+  .touch-float .bk-btn { width: 64px; height: 56px; padding: 0; touch-action: none; user-select: none; -webkit-user-select: none; -webkit-tap-highlight-color: transparent; }
+  .inv-panel { top: 88px; max-height: calc(100% - 96px); }
+}

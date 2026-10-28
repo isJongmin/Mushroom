@@ -21,7 +21,6 @@ export const DIE_MS = 650; // 처치 후 목록에 남는 시간 (die 애니메�
 export const HIT_MS = 300;
 const INTERP_MS = 220;
 const BUF_MAX = 6;
-const GRAV = 2000;
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const clampN = (v, lo, hi, d) => (fin(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -101,6 +100,9 @@ export function normalizeMobManifest(raw) {
     kinds,
     ghost: spriteSpec(raw.ghost, 'assets/mob/ghost.png', density),
     tombstone: spriteSpec(raw.tombstone, 'assets/mob/tombstone.png', density),
+    // 아트 확장 키: 슬래시(fx.slash), 드롭 받침(dropBag). 없으면 절차적 그림
+    slash: raw.fx && raw.fx.slash ? spriteSpec(raw.fx.slash, null, density) : null,
+    dropBag: raw.dropBag ? spriteSpec(raw.dropBag, null, density) : null,
   };
 }
 
@@ -242,17 +244,7 @@ export function createMobSim(o) {
       if (spec.behavior === 'fly') {
         if (moving) m.x += m.dir * spec.speed * dt;
         m.y = z.y - 64 + Math.sin(m.phase * 2.2) * 16;
-      } else if (spec.behavior === 'hop') {
-        if (!m.air) {
-          m.hopT -= dt;
-          if (moving && m.hopT <= 0) { m.air = true; m.vy = -420; m.hopT = 0.5 + rnd() * 0.8; }
-        } else {
-          if (moving) m.x += m.dir * spec.speed * 1.8 * dt;
-          m.vy += GRAV * dt;
-          m.y += m.vy * dt;
-          if (m.y >= m.base) { m.y = m.base; m.vy = 0; m.air = false; }
-        }
-      } else if (moving) {
+      } else if (moving) { // walk, hop (hop의 뜀 높이는 시트 프레임에 들어 있다: 아트 manifest note. y는 바닥 그대로)
         if (m.pauseT > 0) m.pauseT -= dt;
         else m.x += m.dir * spec.speed * dt;
       }
@@ -480,6 +472,7 @@ export function drawMobFallback(ctx, kind, spec, u, t, s) {
   const h = spec.size.h;
   const lw = Math.max(1, 2 * u);
   const sq = s === 'hit' ? 0.12 : Math.sin(t * 8) * 0.04;
+  if (spec.behavior === 'hop' && s === 'move') ctx.translate(0, -Math.abs(Math.sin(t * 5)) * 14 * u); // 대체 그림만 통통
   ctx.scale(1 + sq, 1 - sq);
   switch (kind) {
     case 'snail': {

@@ -242,7 +242,7 @@ def grass_cap(s, x0, x1, Y, thick, rng, m=None, round_ends=True, lw=LW, drip=8.0
     b = scallop(x0, x1, Y + thick, drip, 26, rng)
     top = [(x0, Y), (x1, Y)]
     if round_ends:
-        e = 7.0
+        e = 4.0
         right = catmull([(x1, Y), (x1 + e * 0.8, Y + 2), (x1 + e, Y + thick * 0.6), (x1 + e * 0.4, Y + thick + drip * 0.8)], False, 6)
         left = catmull([(x0 - e * 0.4, Y + thick + drip * 0.8), (x0 - e, Y + thick * 0.6), (x0 - e * 0.8, Y + 2), (x0, Y)], False, 6)
         p = np.concatenate([poly(top), right[1:], b[::-1][1:-1], left[:-1]])

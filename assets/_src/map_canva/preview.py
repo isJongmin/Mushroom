@@ -3,7 +3,7 @@
 python3 assets/_src/map_canva/preview.py MAPDIR OUTDIR [--k 1.0]
   MAPDIR: build.py --out 결과 폴더 (manifest.json 의 src 는 파일 이름만 사용)
   view_<n>.png        1280x720 게임 화면(시차 적용, 카메라는 world.js 와 같은 규칙)
-  view_<n>_debug.png  같은 화면 + 발판 빨간 선, 지면선, 스폰 구역(주황)
+  view_<n>_debug.png  같은 화면 + 발판 빨간 선, 지면선, 스폰 구역(주황), 로프 파란 선
   view_<n>_chars.png  같은 화면 + 프리셋 캐릭터와 몬스터
   map_full.png        전체 축소 + 발판 선
 """
@@ -118,6 +118,11 @@ def debug_overlay(img, man, k, camx, camy):
         d.line((x2, y - 5, x2, y + 5), fill=(255, 0, 0, 255), width=2)
         d.text((x1 + 3, y + 4), '%s y%d' % (p['id'], p['y']), fill=(255, 255, 255, 255), stroke_width=2,
                stroke_fill=(140, 0, 0, 255))
+    for r in man.get('ropes', []):
+        x, y1, y2 = (r['x'] - camx) * k, (r['y1'] - camy) * k, (r['y2'] - camy) * k
+        d.line((x, y1, x, y2), fill=(30, 110, 255, 255), width=3)
+        d.line((x - 6, y2, x + 6, y2), fill=(30, 110, 255, 255), width=2)
+        d.text((x + 6, (y1 + y2) / 2), r['id'], fill=(255, 255, 255, 255), stroke_width=2, stroke_fill=(0, 50, 160, 255))
     gy = (man['groundY'] - camy) * k
     d.line((0, gy, img.width, gy), fill=(255, 0, 0, 255), width=1)
     sp = man['spawn']

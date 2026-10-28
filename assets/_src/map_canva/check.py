@@ -112,6 +112,45 @@ def check(mapdir):
                 (dq.appendleft if c == 0 else dq.append)(b['id'])
     print('  최소 슈퍼 점프 수: %s' % ', '.join('%s=%d' % (p['id'], cost.get(p['id'], -1)) for p in pl))
     if never: err('닿지 않는 발판: %s' % never)
+    # 로프 (사이클 10): 형식, 위끝 = 발판 서는 높이(x 범위 안), 아래끝 = 서 있는 곳에서 ↑로 잡히는 높이(5~30 위),
+    # 그림에 밧줄이 있는지, 그리고 일반 점프 + 로프만으로 모든 발판 도달
+    ropes = man.get('ropes')
+    if not isinstance(ropes, list): err('ropes 없음'); ropes = []
+    rids = set()
+    redges = []
+    for r in ropes:
+        if set(r) != {'id', 'x', 'y1', 'y2'}: err('rope 키 %s' % r)
+        if r['id'] in rids or r['id'] in ids: err('rope id 중복 ' + r['id'])
+        rids.add(r['id'])
+        if not (0 <= r['x'] <= W and 0 < r['y1'] < r['y2'] <= GY): err('%s 범위' % r['id'])
+        tops = [p for p in pl if p['y'] == r['y1'] and p['x1'] + 4 <= r['x'] <= p['x2'] - 2]
+        if not tops: err('%s 위끝이 발판 서는 높이/범위와 안 맞음' % r['id'])
+        bots = [n for n in nodes if n['x1'] <= r['x'] <= n['x2'] and 5 <= n['y'] - r['y2'] <= 30]
+        if not bots: err('%s 아래끝을 잡을 수 있는 발판/지면 없음' % r['id'])
+        # 그림: 밧줄 몸통 색(따뜻한 갈색)이 로프 열 가운데에 세로로 이어지는지
+        xs = int(round(r['x'] * D))
+        ys = np.arange(int(r['y1'] * D) + 14, int(r['y2'] * D))
+        c = rgb[ys, xs]
+        rope_px = (c[:, 0] > c[:, 1]) & (c[:, 1] > c[:, 2]) & (c[:, 0] - c[:, 2] > 45) & (c[:, 0] > 110)
+        cov = rope_px.mean()
+        print('  %-16s x=%-5d y %d~%d  위 %s  아래 %s  그림 %.0f%%' % (
+            r['id'], r['x'], r['y1'], r['y2'], [p['id'] for p in tops], [n['id'] for n in bots], cov * 100))
+        if cov < 0.9: err('%s 그림에 밧줄이 안 보임 (%.0f%%)' % (r['id'], cov * 100))
+        for a in bots:
+            for b in tops:
+                redges.append((a['id'], b['id']))
+    seen = {'ground'}; frontier = ['ground']
+    while frontier:
+        a = byid[frontier.pop()]
+        nxt = [b['id'] for b in nodes if b['id'] not in seen and hgap(a, b) <= HGAP
+               and (a['y'] - b['y'] <= 0 or a['y'] - b['y'] <= JUMP - MARGIN)]
+        nxt += [b for (x, b) in redges if x == a['id'] and b not in seen]
+        for b in nxt:
+            if b not in seen:
+                seen.add(b); frontier.append(b)
+    miss = [p['id'] for p in pl if p['id'] not in seen]
+    print('도달 (일반 점프 + 로프 %d개): %d/%d' % (len(ropes), len(seen) - 1, len(pl)))
+    if miss: err('일반 점프 + 로프로 닿지 않는 발판: %s' % miss)
     # 스폰
     plat = {p['id']: p for p in pl}
     for s in man['spawns']:

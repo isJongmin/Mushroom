@@ -155,10 +155,77 @@ def geometry(ps, Gpx):
         if p.get('spawn_x') is not None and spawn is None:
             spawn = dict(x=int(round(tx(p['spawn_x']))), y=None)
     groundY = int(round((SKY_PAD_PX + Gpx) / D))
+    byid = {q['id']: q for q in pf}
+    rp = []
+    for p in ps:
+        tx = lambda x, p=p: (p['x0'] + x * U) / D
+        for (rid, x, top, bot) in p.get('ropes', []):
+            yb = groundY if bot == 'ground' else byid[bot]['y']
+            rp.append(dict(id=rid, x=int(round(tx(x))), y1=byid[top]['y'], y2=int(yb - PN.ROPE_REACH)))
     if spawn is None:
         spawn = dict(x=None, y=None)
     spawn['y'] = groundY
-    return pf, sp, spawn, groundY
+    return pf, sp, spawn, groundY, rp
+
+
+ROPE_COL = dict(hi=(232, 186, 120), mid=(198, 144, 82), lo=(146, 98, 54), dark=(98, 62, 34),
+                knot=(170, 126, 76), peg=(110, 72, 42), peg_hi=(150, 104, 62))
+
+
+def draw_rope(img, X, Y1, Y2, ss=4):
+    """복셀풍 꼰 밧줄 (에셋 px). X 가운데, Y1 위끝(발판 서는 높이), Y2 아래끝. 굵기 7px, 위끝에 나무 말뚝과 매듭,
+    아래끝에 매듭과 풀린 술. 4배 슈퍼샘플로 가장자리를 부드럽게 하고, 오른쪽 아래로 옅은 그림자를 드리운다."""
+    H, W, _ = img.shape
+    x0, x1 = int(X) - 16, int(X) + 18
+    y0, y1 = int(Y1) - 10, int(Y2) + 24
+    x0, y0 = max(0, x0), max(0, y0); x1, y1 = min(W, x1), min(H, y1)
+    h, w = (y1 - y0) * ss, (x1 - x0) * ss
+    yy, xx = np.mgrid[0:h, 0:w]
+    px = x0 + (xx + 0.5) / ss; py = y0 + (yy + 0.5) / ss
+    # 블록 단위(에셋 1px)로 양자화한 좌표로 무늬를 만든다 (원본 그림의 복셀 결)
+    qx = np.floor(px); qy = np.floor(py)
+    col = np.zeros((h, w, 3)); a = np.zeros((h, w))
+    C = {k: np.array(v, float) for k, v in ROPE_COL.items()}
+
+    def paint(mask, rgb):
+        col[mask] = rgb[mask] if rgb.ndim == 3 else rgb
+        a[mask] = 1.0
+    # 몸통
+    hw = 4.0
+    body = (np.abs(px - X) <= hw) & (py >= Y1 + 4) & (py <= Y2 + 4)
+    u = (qx + 0.5 - X) / (2 * hw)                       # -0.5 .. 0.5
+    seg = 8.0
+    t = ((np.floor((qy - Y1) / 2) * 2) / seg + np.round(u * 4) / 4 * 1.0) % 1.0
+    base = np.where((t < 0.42)[..., None], C['hi'], C['mid'])
+    base = np.where(((t >= 0.86))[..., None], C['lo'], base)
+    shade = (1.0 - 0.32 * np.clip(u + 0.5, 0, 1))[..., None]    # 왼쪽 위 빛
+    edge = (np.abs(qx + 0.5 - X) >= hw - 0.6)[..., None]
+    rgb = base * shade * np.where(edge, 0.85, 1.0)
+    paint(body, rgb)
+    # 아래끝: 매듭 + 풀린 술 3가닥
+    kn = (np.abs(px - X) <= 5.0) & (py >= Y2 + 2) & (py <= Y2 + 9)
+    paint(kn, np.where(((qy - Y2) < 4)[..., None], C['knot'], C['lo']) * shade)
+    for dx, ln in ((-3, 9), (0, 12), (3, 8)):
+        tail = (np.abs(px - (X + dx)) <= 1.0) & (py > Y2 + 9) & (py <= Y2 + 9 + ln)
+        paint(tail, C['mid'] * shade)
+    # 위끝: 나무 말뚝 + 말뚝에 감은 고리(2단 감김, 사이 어두운 홈) + 아래로 좁아지는 매듭
+    peg = (np.abs(px - X) <= 3.5) & (py >= Y1 - 11) & (py < Y1 + 2)
+    paint(peg, np.where(((qx - X) < 0)[..., None], C['peg_hi'], C['peg']))
+    for (ya, yb, hw2) in ((Y1 - 7, Y1 - 3, 7.0), (Y1 - 2, Y1 + 2, 7.0), (Y1 + 3, Y1 + 8, 5.5)):
+        band = (np.abs(px - X) <= hw2) & (py >= ya) & (py < yb)
+        paint(band, np.where(((qy - ya) < 1.5)[..., None], C['hi'], C['knot']) * shade)
+    gap = (np.abs(px - X) <= 6.5) & (np.abs(py - (Y1 - 2.5)) < 0.5)
+    paint(gap, C['dark'] * shade)
+    A = a.reshape(y1 - y0, ss, x1 - x0, ss).mean((1, 3))
+    RGB = (col * a[..., None]).reshape(y1 - y0, ss, x1 - x0, ss, 3).sum((1, 3)) / np.maximum(
+        a.reshape(y1 - y0, ss, x1 - x0, ss).sum((1, 3))[..., None], 1e-6)
+    # 그림자 (오른쪽 아래 3,2 px, 흐림)
+    sh = ndimage.shift(A, (2, 3), order=1)
+    sh = ndimage.gaussian_filter(sh, 1.2) * 0.28
+    patch = img[y0:y1, x0:x1]
+    patch = patch * (1 - sh[..., None]) + np.array([40, 26, 18], float) * sh[..., None]
+    patch = patch * (1 - A[..., None]) + RGB * A[..., None]
+    img[y0:y1, x0:x1] = patch
 
 
 def build(out_dir, src_prefix='assets/map/'):
@@ -166,6 +233,9 @@ def build(out_dir, src_prefix='assets/map/'):
     img, Gpx = compose(ps)
     img = edge_fade(img)
     full, top = add_sky(img)
+    pf, sp, spawn, groundY, rp = geometry(ps, Gpx)
+    for r in rp:
+        draw_rope(full, r['x'] * D, r['y1'] * D, r['y2'] * D)
     H, W, _ = full.shape
     rgb = np.clip(np.round(full), 0, 255).astype(np.uint8)
     os.makedirs(out_dir, exist_ok=True)
@@ -176,7 +246,6 @@ def build(out_dir, src_prefix='assets/map/'):
     sky = np.repeat(col[:, None, :], 16, 1)
     Image.fromarray(np.clip(np.round(sky), 0, 255).astype(np.uint8), 'RGB').convert('RGBA').save(
         os.path.join(out_dir, 'sky.png'), optimize=True)
-    pf, sp, spawn, groundY = geometry(ps, Gpx)
     man = dict(
         density=D, width=round(W / D, 3), height=round(H / D, 3), groundY=groundY, spawn=spawn,
         layers=[
@@ -185,15 +254,15 @@ def build(out_dir, src_prefix='assets/map/'):
             dict(name='ground', src=src_prefix + 'ground.webp', parallax=1.0, y=0, w=round(W / D, 3),
                  h=round(H / D, 3), repeatX=False),
         ],
-        platforms=pf, spawns=sp,
+        platforms=pf, ropes=rp, spawns=sp,
         source=dict(panels=[p['name'] for p in ps], upscale=U, skyPadPx=SKY_PAD_PX, overlapPx=PN.OVERLAP),
     )
     with open(os.path.join(out_dir, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(man, f, ensure_ascii=False, indent=2)
         f.write('\n')
     tot = sum(os.path.getsize(os.path.join(out_dir, f)) for f in ('ground.webp', 'sky.png', 'manifest.json'))
-    print('panels %s  ground %dx%d px  world %.1f x %.1f  groundY %d  platforms %d  spawns %d  total %.2f MB' % (
-        [p['name'] for p in ps], W, H, W / D, H / D, groundY, len(pf), len(sp), tot / 1048576))
+    print('panels %s  ground %dx%d px  world %.1f x %.1f  groundY %d  platforms %d  ropes %d  spawns %d  total %.2f MB' % (
+        [p['name'] for p in ps], W, H, W / D, H / D, groundY, len(pf), len(rp), len(sp), tot / 1048576))
     return man
 
 

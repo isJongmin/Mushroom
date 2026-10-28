@@ -38,6 +38,18 @@ def rbox(g, c, h, r=1.0):
     return out + np.minimum(np.maximum(qx, np.maximum(qy, qz)), 0) - r
 
 
+def dome(g, c, a, b, cz, p=2.6, below=None):
+    """위는 초타원체(지수 p), 중심 높이 c[1] 아래는 같은 단면 그대로 내려가는 기둥 (머리카락 바가지).
+    a: x 반폭, b: 위 높이, cz: z 반폭. below: 아래쪽 반높이 (None = 끝없이)."""
+    c = np.asarray(c, float)
+    X = np.abs(g.X - c[0]) / a
+    Z = np.abs(g.Z - c[2]) / cz
+    dy = g.Y - c[1]
+    Y = np.where(dy > 0, dy / b, 0 if below is None else np.maximum(-dy, 0) / below)
+    q = (X ** p + Y ** p + Z ** p) ** (1 / p)
+    return (q - 1) * min(a, b, cz)
+
+
 def capsule(g, a, b, ra, rb=None, sz=1.0):
     """두 점 a, b 를 잇는 굵기가 ra -> rb 로 변하는 캡슐. sz: z 방향 납작함 (0.5 = 앞뒤로 절반 두께)."""
     rb = ra if rb is None else rb

@@ -15,7 +15,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ORIG = os.path.join(HERE, 'orig')
 
 PANELS = [
-    dict(name='left', file=os.path.join(ORIG, 'left.png'), ground=None, platforms=[], spawns=[]),
+    dict(name='left', file=os.path.join(ORIG, 'left.png'), ground=None, platforms=[], spawns=[], ropes=[]),
     dict(
         name='center', file=os.path.join(ORIG, 'center.png'),
         ground=790,                       # 잔디 윗면 띠 784~797 의 가운데
@@ -41,9 +41,18 @@ PANELS = [
             ('c-ground-w', 'ground', 10, 150, ['snail'], 1),
             ('c-ground-e', 'ground', 1630, 1766, ['snail'], 1),
         ],
+        # 로프 (id, x 원본 px, 위끝 발판 id, 아래끝이 닿는 곳 'ground' | 발판 id). 위끝 y = 위 발판 서는 높이,
+        # 아래끝 y = 아래 서는 높이 - ROPE_REACH(월드). x 는 두 발판 x 범위 안.
+        ropes=[
+            ('c-rope-cafe', 506, 'c-cafe-ledge', 'ground'),        # 카페 턱 오른쪽 끝 → 지면
+            ('c-rope-bakery', 1200, 'c-bakery-eave', 'ground'),    # 베이커리 처마 왼쪽 끝 → 지면
+            ('c-rope-lt', 144, 'c-isle-lt', 'c-isle-lamp'),        # 가로등 섬 → 왼쪽 위 섬
+            ('c-rope-bench', 1446, 'c-isle-bench', 'c-bakery-eave'),   # 처마 → 벤치 섬
+            ('c-rope-cherry2', 1574, 'c-isle-cherry2', 'c-bakery-eave'),  # 처마 → 오른쪽 벚나무 섬
+        ],
         spawn_x=800,                      # 플레이어 시작: 파라솔과 벤치 사이 광장 앞 지면
     ),
-    dict(name='right', file=os.path.join(ORIG, 'right.png'), ground=None, platforms=[], spawns=[]),
+    dict(name='right', file=os.path.join(ORIG, 'right.png'), ground=None, platforms=[], spawns=[], ropes=[]),
 ]
 
 UPSCALE = 1.25          # 원본 px → 에셋 px (최대 1.25)
@@ -51,3 +60,4 @@ DENSITY = 1.5           # 에셋 px / 월드 단위 (계약)
 SKY_PAD = 141.667       # 그림 위에 덧붙이는 하늘 (월드). groundY 가 정수(800)가 되도록 고른 값
 OVERLAP = 120           # 패널 이음매 겹침 (원본 px)
 EDGE_FADE = 90          # 맵 양 끝 마감 폭 (에셋 px)
+ROPE_REACH = 15         # 로프 아래끝을 서는 높이보다 이만큼 위에 (월드)

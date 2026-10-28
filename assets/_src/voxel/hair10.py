@@ -12,6 +12,7 @@ from sdf import Grid3, ellipsoid, rbox, capsule, tube, smin
 
 ZC = -1.5                # 정수리 축 z
 FACE_TOP = 17.4          # 얼굴 창(머리카락을 파내는 곳) 위끝 y
+GROOVE = 0.7             # 가닥 경계 파냄 깊이
 
 
 def tint(hexcol, k):
@@ -36,7 +37,7 @@ def _front_z(x, y):
 class HairV:
     """머리카락 볼륨 키트. 라벨: 0 바탕, 1 밝은 가닥, 2 어두운 가닥, 3 결(홈), 4 아주 어두움(언더컷/안쪽), 5.. 강조색."""
 
-    def __init__(self, col, seed=1, lo=(-24, -8, -25), hi=(24, 40, 22), n=34, accents=()):
+    def __init__(self, col, seed=1, lo=(-24, -8, -25), hi=(24, 40, 22), n=24, accents=()):
         self.col, self.seed, self.n = col, seed, n
         self.g = g = Grid3(lo, hi)
         self.d = np.full(g.X.shape, 1e3)
@@ -47,7 +48,7 @@ class HairV:
         self.f = u - np.floor(u)                               # 가닥 안 위치 0..1
         hs = _hash(self.sid, seed)
         self.strand_lab = np.where(hs < 0.3, 1, np.where(hs > 0.75, 2, 0))
-        self.cols = {0: col, 1: tint(col, 0.10), 2: tint(col, -0.10), 3: tint(col, -0.22), 4: tint(col, -0.35)}
+        self.cols = {0: col, 1: tint(col, 0.08), 2: tint(col, -0.07), 3: tint(col, -0.16), 4: tint(col, -0.35)}
         for i, c in enumerate(accents):
             self.cols[5 + i] = c
 
@@ -67,31 +68,31 @@ class HairV:
         self.d = np.maximum(self.d, d)
 
     # ---------------------------------------------------------------- 볼륨
-    def shell(self, d, bottom, tip=2.6, jit=1.6, groove=True, lab=None):
-        """d: 볼륨 SDF. bottom: y 아래끝 (배열 가능). 가닥마다 길이 흔들고 가운데로 뾰족하게, 결 홈."""
+    def shell(self, d, bottom, tip=1.6, jit=0.9, groove=True, lab=None):
+        """d: 볼륨 SDF. bottom: y 아래끝 (배열 가능). 가닥마다 길이 흔들고 가운데로 뾰족하게,
+        가닥 단면을 둥글게(경계 쪽을 파냄: 결)."""
         g = self.g
         hs = _hash(self.sid, self.seed + 7)
         yb = bottom + (hs - 0.5) * 2 * jit - tip * (1 - np.abs(2 * self.f - 1))
         d = np.maximum(d, yb - g.Y)
         if groove:
-            gm = np.abs(self.f - 0.5) > 0.40
-            d = d + gm * 0.55
+            w = 1 - np.clip((g.Y - 27.0) / 5.0, 0, 1) * 0.7          # 정수리 쪽은 결을 약하게
+            d = d + GROOVE * w * (1 - np.sin(np.pi * self.f)) ** 2
         inside = d <= 0
         self.d = np.minimum(self.d, d)
         L = self.strand_lab if lab is None else lab
         if groove:
-            L = np.where(np.abs(self.f - 0.5) > 0.36, 3, L)
+            L = np.where(np.abs(self.f - 0.5) > 0.42, 3, L)
         self.lab = np.where(inside, L, self.lab)
 
     def helmet(self, top=33.2, hx=17.4, front=15.4, back=-17.6, side=8.0, rear=4.0, zs=4.0, zb=-6.0, r=10.0,
-               puff=0.0, py=16.0, **kw):
-        """둥근 바가지 볼륨. side: 얼굴 옆(z > zs) 아래끝, rear: 뒤(z < zb) 아래끝 (그 사이 선형)."""
+               puff=0.0, py=16.0, p=2.4, **kw):
+        """둥근 바가지 볼륨 (위: 초타원체, 관자놀이 py 아래: 같은 단면 기둥). side: 얼굴 옆(z > zs) 아래끝,
+        rear: 뒤(z < zb) 아래끝 (그 사이 선형). puff: 관자놀이 높이 가로 볼륨."""
         g = self.g
         hz = (front - back) / 2
         zc = (front + back) / 2
-        d = rbox(g, (0, (top - 40) / 2, zc), (hx, (top + 40) / 2, hz), r)
-        if puff:
-            d = smin(d, ellipsoid(g, (0, py, zc - 1.0), (hx + puff, 9.5, hz + puff * 0.8)), 2.0)
+        d = sdf.dome(g, (0, py, zc), hx + puff, top - py, hz + puff * 0.5, p)
         t = np.clip((g.Z - zb) / max(zs - zb, 1e-3), 0, 1)
         self.shell(d, rear + (side - rear) * t, **kw)
 
@@ -157,8 +158,8 @@ def hair_ash_twoblock():
 def hair_black_seethrough():
     """시스루뱅 긴 흑발: 얇은 앞머리 가닥(이마 비침), 얼굴 옆 직선 커튼, 허리까지 뒷머리, 헤어핀 2개."""
     k = HairV('#27232C', 202, lo=(-24, -30, -25), accents=('#FBF3EA', '#F6B6CA'))
-    k.helmet(side=-2.0, rear=-2.0, puff=0.6, py=14.0, tip=3.0)
-    k.curtain(-17.8, 17.8, -24.0, 8.0, -18.2, -6.8, r=4.0, tip=3.2, jit=1.4)          # 뒷머리 (허리)
+    k.helmet(side=-2.0, rear=-2.0, puff=0.6, py=14.0, tip=2.0)
+    k.curtain(-17.4, 17.4, -24.0, 8.0, -17.4, -6.8, r=4.0, tip=2.4, jit=1.0)          # 뒷머리 (허리)
     for sg in (1, -1):
         k.curtain(sg * 12.6 - 2.6, sg * 12.6 + 2.6, -16.0, 14.0, 2.0, 13.8, r=2.4, tip=2.4, jit=1.0)   # 얼굴 옆 직선
     k.face_window(hx=12.4)
@@ -197,9 +198,9 @@ def hair_pink_bridge_ponytail():
     for sg in (1, -1):
         k.lock([(sg * 13.6, 21.0, 12.4), (sg * 14.2, 10.0, 12.6), (sg * 13.4, 2.0, 11.6)], [1.5, 1.2, 0.4], 1, sz=0.8)   # 잔머리
         k.lock([(sg * 16.2, 22.0, 8.0), (sg * 16.6, 12.0, 8.6), (sg * 16.0, 5.0, 8.0)], [1.4, 1.2, 0.5], 5)            # 핑크 브릿지
-    pts = [(0, 30.0, -12.0), (0.5, 35.0, -18.0), (1.5, 34.5, -24.0), (3.0, 30.0, -28.4), (4.6, 23.0, -29.6),
-           (6.0, 15.5, -29.0), (7.0, 8.5, -27.6), (7.6, 2.0, -25.6), (8.0, -3.0, -23.6)]
-    rad = [3.4, 4.2, 4.6, 4.6, 4.3, 3.9, 3.3, 2.4, 0.6]
+    pts = [(0, 30.0, -12.5), (0.5, 33.6, -17.6), (1.5, 33.0, -22.6), (3.0, 28.6, -26.0), (4.6, 22.0, -27.0),
+           (6.0, 15.0, -26.4), (7.0, 8.5, -25.0), (7.6, 2.5, -23.4), (8.0, -2.5, -21.6)]
+    rad = [4.2, 5.0, 5.4, 5.3, 5.0, 4.5, 3.8, 2.6, 0.7]
     k.lock(pts, rad, 0, k=1.0)
     for sg in (1, -1):                                                           # 꼬리 핑크 결
         k.lock([(p[0] + sg * r * 0.72, p[1], p[2] + 0.4) for p, r in zip(pts[1:8], rad[1:8])],
@@ -257,7 +258,7 @@ def hair_pink_long():
     """분홍 긴 머리: 일자 앞머리, 볼을 감싸고 가슴까지 오는 앞 가닥, 허리까지 오는 뒷머리(끝 안쪽 말림)."""
     k = HairV('#F49AC1', 41, lo=(-24, -28, -25))
     k.helmet(side=-2.0, rear=-2.0, puff=1.0, py=14.0, tip=2.0)
-    k.curtain(-17.8, 17.8, -20.0, 8.0, -18.0, -6.8, r=4.0, tip=2.4, jit=1.0)
+    k.curtain(-17.6, 17.6, -20.0, 8.0, -17.6, -6.8, r=4.0, tip=2.0, jit=0.8)
     for sg in (1, -1):
         k.curtain(sg * 13.2 - 2.4, sg * 13.2 + 2.4, -17.0, 14.0, 4.0, 14.0, r=2.4, tip=1.4, jit=0.6)    # 앞 가닥 (가슴까지)
         k.lock([(sg * 12.6, -15.0, 11.5), (sg * 11.2, -17.4, 12.6)], [2.2, 1.4], 2)                     # 끝 말림

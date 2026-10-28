@@ -89,28 +89,28 @@ def patch_smile(ctx):
     if ctx.q:
         x = c - 3.5
     sq = cr([(x - 2.2, y - 2.2, 'c'), (x + 2.2, y - 2.2, 'c'), (x + 2.2, y + 2.2, 'c'), (x - 2.2, y + 2.2, 'c')], 3)
-    ctx.fig('top', T(ctx, sq), '#E4DAFB', lw=1.2, line='#7B66B8',
-            shapes=[(T(ctx, ellipse(x - 0.9, y - 0.5, 0.35, 0.5, 8)), '#7B66B8'),
-                    (T(ctx, ellipse(x + 0.9, y - 0.5, 0.35, 0.5, 8)), '#7B66B8'),
+    ctx.fig('top', T(ctx, sq), '#E6E0EE', lw=1.2, line='#6E6490',
+            shapes=[(T(ctx, ellipse(x - 0.9, y - 0.5, 0.35, 0.5, 8)), '#6E6490'),
+                    (T(ctx, ellipse(x + 0.9, y - 0.5, 0.35, 0.5, 8)), '#6E6490'),
                     (T(ctx, taper(quad((x - 1.1, y + 0.7), (x, y + 1.6), (x + 1.1, y + 0.7), 6), 0.45, 0.2, 0.2)),
-                     '#7B66B8')])
+                     '#6E6490')])
 
 
 def t_hoodie_lavender(ctx):
-    hoodie(ctx, '#C3AEF0', '#FFFFFF', patch=patch_smile, hem=6.0)
+    hoodie(ctx, '#B9AED8', '#FFFFFF', patch=patch_smile, hem=6.0)
 
 
 def t_hoodie_black(ctx):
-    hoodie(ctx, '#45404F', '#D8D2DE', hem=5.0)
+    hoodie(ctx, '#3E3C42', '#CFCBD2', hem=5.0)
 
 
 def t_hoodie_white(ctx):
-    hoodie(ctx, '#F7F2EA', '#B8AFA4', hem=5.0)
+    hoodie(ctx, '#F2EEE7', '#B4AAA0', hem=5.0)
 
 
 # ------------------------------------------------------------------ 가디건 + 숄더백
 def t_cardigan_cream(ctx):
-    cr_ = '#F1E3C6'
+    cr_ = '#E9DCC3'
     tee = '#FFFFFF'
     c = cxo(ctx)
     hem = 3.0
@@ -124,9 +124,9 @@ def t_cardigan_cream(ctx):
         # 리본 프린트
         bx, by = c, -18
         for sx in (-1, 1):
-            ctx.fig('top', T(ctx, cr([(bx, by), (bx + sx * 2.6, by - 1.6), (bx + sx * 2.8, by + 1.4)], 5)), '#F59AC0',
-                    lw=0.9, line='#C24E80')
-        ctx.fig('top', T(ctx, ellipse(bx, by, 0.9, 0.9, 10)), '#E0628E', lw=0.8, line='#A83A66')
+            ctx.fig('top', T(ctx, cr([(bx, by), (bx + sx * 2.6, by - 1.6), (bx + sx * 2.8, by + 1.4)], 5)), '#D99AA5',
+                    lw=0.9, line='#A86A7A')
+        ctx.fig('top', T(ctx, ellipse(bx, by, 0.9, 0.9, 10)), '#C27A88', lw=0.8, line='#94606E')
         # 가디건 앞판 두 쪽 (가운데가 열림)
         gap = 3.6
         for sx in (-1, 1):
@@ -145,18 +145,18 @@ def t_cardigan_cream(ctx):
             # 단추 3개
             for y in (-17, -11, -5):
                 bxp = x_in + sx * 1.6
-                ctx.fig('top', T(ctx, ellipse(bxp, y, 0.95, 0.95, 10)), '#D9B97E', lw=0.9, line='#8E6A30')
+                ctx.fig('top', T(ctx, ellipse(bxp, y, 0.95, 0.95, 10)), '#B89A72', lw=0.9, line='#7A5E3E')
             ctx.fig('top', T(ctx, cr([(x_in, hem - 3, 'c'), (x_out, hem - 3, 'c'), (x_out, hem, 'c'), (x_in, hem, 'c')], 2)),
                     cr_, lw=1.4, shapes=_ribs(ctx, min(x_in, x_out) + 0.6, max(x_in, x_out) - 0.6, hem - 2.6, hem - 0.4,
                                               5, cr_))
     for k in ('F', 'N'):
         sleeve(ctx, k, cr_, w0=8.2, w1=7.4, t1=0.88, cuff=cr_, cuff_len=0.2)
-    shoulder_bag(ctx, '#2C2834', strap_from='N')
+    shoulder_bag(ctx, '#34313A', strap_from='N')
 
 
 def shoulder_bag(ctx, col, strap_from='N'):
     """한쪽 어깨에 멘 작은 가방 (금색 잠금)."""
-    gold = '#E3B04B'
+    gold = '#C9A060'
     if ctx.front:
         s0, b = (8.5, -25.5), (13.5, -2.5)
         lay = 'top_near'
@@ -181,7 +181,7 @@ def shoulder_bag(ctx, col, strap_from='N'):
             shapes=[(T(ctx, taper(np.array([(x - bw + 1, y - bh + 1.2), (x + bw - 1, y - bh + 1.2)]), 0.5, 0.1, 0.1)),
                      light(col, 0.7), 0.6)])
     ctx.fig(lay, T(ctx, cr([(x - 1.4, y + 0.6, 'c'), (x + 1.4, y + 0.6, 'c'), (x + 1.4, y + 2.0, 'c'),
-                            (x - 1.4, y + 2.0, 'c')], 2)), gold, lw=0.9, line='#8E6A30')
+                            (x - 1.4, y + 2.0, 'c')], 2)), gold, lw=0.9, line='#7A5E3E')
 
 
 # ------------------------------------------------------------------ 바시티 재킷
@@ -193,7 +193,7 @@ def letter_R(ctx, x, y, s, col):
 
 
 def t_varsity_navy(ctx):
-    nv, crm, wt = '#2B3A62', '#EEE2C8', '#FFFFFF'
+    nv, crm, wt = '#2F3A52', '#ECE3D0', '#FFFFFF'
     c = cxo(ctx)
     hem = 4.0
     stripe = lambda y0, y1, xl, xr: [(T(ctx, cr([(xl, y, 'c'), (xr, y, 'c'), (xr, y + 0.7, 'c'), (xl, y + 0.7, 'c')], 2)),
@@ -207,7 +207,7 @@ def t_varsity_navy(ctx):
                 shapes=[(T(ctx, fold(quad((c - 1, -12), (c, -8), (c - 0.6, -3), 6))), '#D8D4E4', 0.8)])
         # 은 목걸이
         ctx.fig('top', T(ctx, taper(quad((c - 3.4, -25.4), (c + 0.2, -19.6), (c + 3.6, -25.4), 14), 0.8, 0.05, 0.05)),
-                '#D9DCE6', lw=0.6, line='#7A8098')
+                '#D4D6DC', lw=0.6, line='#7E8290')
         gap = 3.4
         for sx in (-1, 1):
             x_in = c + sx * gap
@@ -220,7 +220,7 @@ def t_varsity_navy(ctx):
             sh = body_folds(ctx, nv, hem, 0.5)
             # 스냅 단추
             for y in (-19, -13, -7):
-                sh.append((T(ctx, ellipse(x_in + sx * 1.5, y, 0.75, 0.75, 10)), '#F4F0E6'))
+                sh.append((T(ctx, ellipse(x_in + sx * 1.5, y, 0.75, 0.75, 10)), '#EEEAE0'))
             # 주머니 (가죽 테)
             sh.append((T(ctx, taper(np.array([(x_in + sx * 3.2, -8), (x_in + sx * 4.6, -2.5)]), 1.2, 0.05, 0.05)), crm))
             ctx.fig('top', T(ctx, cr(pts, 6)), nv, shapes=sh)
@@ -254,7 +254,7 @@ def puffy(pts_func, amp):
 
 
 def t_puffer_mint(ctx):
-    mt, wt, pink, blk = '#AEE6CC', '#FFFFFF', '#F48CBB', '#2C2834'
+    mt, wt, pink, blk = '#B7D6C4', '#FFFFFF', '#E3A0B8', '#34313A'
     c = cxo(ctx)
     hem = -3.5
     # 안쪽 흰 크롭 탑 (패딩 아래로 보임)
@@ -310,14 +310,14 @@ def t_puffer_mint(ctx):
 
 # ------------------------------------------------------------------ 블라우스
 def t_blouse_white(ctx):
-    wt, pink = '#FBF7F2', '#F58AB4'
+    wt, pink = '#F4EEE2', '#D99AA5'
     c = cxo(ctx)
     hem = -2.0
     sh = body_folds(ctx, wt, hem)
     if not ctx.back:
         sh.append((T(ctx, taper(np.array([(c, -24), (c, hem)]), 1.6, 0.02, 0.02)), shade(wt, 0.6), 1.0))
         for y in (-19, -13, -7):
-            sh.append((T(ctx, ellipse(c, y, 0.7, 0.7, 10)), '#F7C0D6'))
+            sh.append((T(ctx, ellipse(c, y, 0.7, 0.7, 10)), '#E8C4CB'))
     ctx.fig('top', T(ctx, body_poly(ctx, hem=hem, flare=1.02, loose=0.3)), wt, shapes=sh)
     # 프릴 밑단
     xs = np.linspace(-12.6, 12.6, 9) if not ctx.q else np.linspace(-11.3, 11.8, 9)
@@ -348,7 +348,7 @@ def t_blouse_white(ctx):
 
 # ------------------------------------------------------------------ 초록 멜빵
 def t_overalls_green(ctx):
-    tee, g, yl = '#FFF6E4', '#55B24E', '#F7C948'
+    tee, g, yl = '#F4EEE2', '#8FA982', '#D9B05A'
     c = cxo(ctx)
     ctx.fig('top', T(ctx, body_poly(ctx, hem=-1.0)), tee, shapes=body_folds(ctx, tee, -1.0, 0.6))
     for k in ('F', 'N'):
@@ -367,7 +367,7 @@ def t_overalls_green(ctx):
             x = c + sx * 5.0
             st = quad((x, -19), (x + sx * 1.2, -23.5), (x + sx * 2.5 - (2 if ctx.q else 0), -26.5), 8)
             ctx.fig('top', T(ctx, ribbon(st, 2.6, cap0=False)), g)
-            ctx.fig('top', T(ctx, ellipse(x, -18.0, 1.3, 1.3, 12)), yl, lw=1.0, line='#9A6A10')
+            ctx.fig('top', T(ctx, ellipse(x, -18.0, 1.3, 1.3, 12)), yl, lw=1.0, line='#8A6A30')
     else:
         ctx.fig('top', T(ctx, wb), g)
         for sx in (-1, 1):
@@ -377,7 +377,7 @@ def t_overalls_green(ctx):
 
 # ------------------------------------------------------------------ 빨간 줄무늬 티
 def t_tee_stripe_red(ctx):
-    w, red = '#FBF7F2', '#E8483E'
+    w, red = '#F4EEE2', '#C8664F'
     hem = 2.5
     stripes = []
     for y in np.arange(-22, hem, 4.0):
@@ -397,7 +397,7 @@ def t_tee_stripe_red(ctx):
 
 # ------------------------------------------------------------------ 파란 망토 셔츠
 def t_cape_blue(ctx):
-    shirt, blue, yl = '#EEF2FA', '#3E6BD8', '#F7C948'
+    shirt, blue, yl = '#EEF0F2', '#6E8DB5', '#D9B05A'
     c = cxo(ctx)
     hem = 2.0
     sw = ctx.sway
@@ -424,9 +424,9 @@ def t_cape_blue(ctx):
     if not ctx.back:
         sh.append((T(ctx, taper(np.array([(c, -24), (c, hem)]), 1.4, 0.02, 0.02)), shade(shirt, 0.6), 1.0))
         for y in (-18, -12, -6):
-            sh.append((T(ctx, ellipse(c, y, 0.7, 0.7, 10)), '#9AA8C8'))
+            sh.append((T(ctx, ellipse(c, y, 0.7, 0.7, 10)), '#9AA6B8'))
         # 허리 벨트
-        sh.append((T(ctx, cr([(-15, -5, 'c'), (15, -5, 'c'), (15, -2.2, 'c'), (-15, -2.2, 'c')], 2)), '#8A5A3A', 1.0))
+        sh.append((T(ctx, cr([(-15, -5, 'c'), (15, -5, 'c'), (15, -2.2, 'c'), (-15, -2.2, 'c')], 2)), '#8A6A52', 1.0))
         sh.append((T(ctx, cr([(c - 1.6, -5.4, 'c'), (c + 1.6, -5.4, 'c'), (c + 1.6, -1.8, 'c'), (c - 1.6, -1.8, 'c')], 2)), yl, 1.0))
     ctx.fig('top', T(ctx, body_poly(ctx, hem=hem)), shirt, shapes=sh)
     for k in ('F', 'N'):
@@ -442,12 +442,12 @@ def t_cape_blue(ctx):
             mant = cr([(-11.5, -20), (-8, -28), (2, -28.5), (9, -27), (8, -23), (1, -23.5), (-5, -23)], 6)
             cx = c + 1.5
         ctx.fig('top', T(ctx, mant), blue, shapes=[(T(ctx, fold(quad((-6, -25), (0, -24.4), (6, -25), 8), 0.8)), deep(blue), 0.6)])
-        ctx.fig('top', T(ctx, ellipse(cx, -24.5, 1.9, 1.9, 14)), yl, line='#9A6A10',
-                shapes=[(T(ctx, ellipse(cx - 0.5, -25.0, 0.6, 0.6, 8)), '#FFFBE0')])
+        ctx.fig('top', T(ctx, ellipse(cx, -24.5, 1.9, 1.9, 14)), yl, line='#8A6A30',
+                shapes=[(T(ctx, ellipse(cx - 0.5, -25.0, 0.6, 0.6, 8)), '#FFF6E0')])
 
 
 # ------------------------------------------------------------------ 드롭: 슬라임 젤리 후드
-SLIME = '#86DC6C'
+SLIME = '#B9D9A4'
 
 
 def slime_face(ctx, x, y, s, layer, lay_fn=None):
@@ -497,9 +497,9 @@ def t_slime_hood(ctx):
         ctx.fig('top', T(ctx, cr(hp, 6)), g, shapes=hshapes)
         slime_face(ctx, 0, -22, 1.4, 'top')
     elif ctx.front:
-        slime_face(ctx, c, -9.5, 1.4, 'top')
+        slime_face(ctx, c - 6.5, -19.0, 0.8, 'top')
     else:
-        slime_face(ctx, c + 2.5, -9.5, 1.3, 'top')
+        slime_face(ctx, c - 2.5, -19.0, 0.75, 'top')
     for k in ('F', 'N'):
         sleeve(ctx, k, g, w0=9.4, w1=8.4, t1=0.9, puff=0.6, folds=False,
                shapes_extra=[(taper(sub(arm_line(ctx, k, 16), 0.1, 0.5) + (-1.2, -0.6), 1.4, 0.3, 0.3), gl, 0.8)])
@@ -510,14 +510,14 @@ def t_slime_hood(ctx):
 
 
 # ------------------------------------------------------------------ 드롭: 박쥐 날개 상의
-BAT = '#4C3B6E'
-BAT_W = '#6A4E94'
+BAT = '#4A4458'
+BAT_W = '#6E6680'
 
 
-def bat_wing(ctx, side, layer, span=31.0, flap=0.0):
+def bat_wing(ctx, side, layer, span=24.0, flap=0.0):
     """side: -1 왼쪽 / +1 오른쪽 (몸통 로컬). 손가락 뼈 + 물결 아래 가장자리."""
     root = np.array([side * 4.0, -21.0]) if not ctx.q else np.array([-6.0, -21.0])
-    up = -30 - flap * 6
+    up = -27 - flap * 5
     tips = [(side * span, up - 4), (side * (span - 2), up + 11), (side * (span - 9), up + 20), (side * 10, -6)]
     pts = [tuple(root + (0, -2))] + [(side * span * 0.5, up - 3)] + [tips[0] + ('c',)]
     for i in range(1, len(tips)):
@@ -525,13 +525,13 @@ def bat_wing(ctx, side, layer, span=31.0, flap=0.0):
         m = (a + b) / 2 + np.array([-side * 2.0, -3.0])
         pts += [tuple(m), tuple(b) + ('c',)]
     pts += [tuple(root + (side * 2, 4))]
-    bones = [(T(ctx, fold(np.array([root, t[:2]]), 0.9)), '#2E2244', 0.9) for t in tips[:3]]
-    memb = [(T(ctx, cr([tuple(root), tips[0][:2], tips[1][:2]], 3)), '#8A6CB8', 0.6)]
-    ctx.fig(layer, T(ctx, cr(pts, 5)), '#5E4A8A', shapes=memb + bones, sd=(1.2, 1.6))
+    bones = [(T(ctx, fold(np.array([root, t[:2]]), 0.9)), '#2C2836', 0.9) for t in tips[:3]]
+    memb = [(T(ctx, cr([tuple(root), tips[0][:2], tips[1][:2]], 3)), '#857C98', 0.6)]
+    ctx.fig(layer, T(ctx, cr(pts, 5)), '#5A5268', shapes=memb + bones, sd=(1.2, 1.6))
 
 
 def t_bat_cape(ctx):
-    vest, red = BAT, '#E2465A'
+    vest, red = BAT, '#B85A5A'
     c = cxo(ctx)
     hem = 3.5
     flap = ctx.lift if ctx.lift else (0.3 * math.sin(ctx.sway * 2))
@@ -540,13 +540,13 @@ def t_bat_cape(ctx):
             bat_wing(ctx, s, 'top_back', flap=flap)
     elif ctx.q:
         # 옆에서는 두 날개가 등 뒤(왼쪽)로 겹쳐 보인다
-        bat_wing(ctx, -1, 'top_back', span=30, flap=flap + 0.4)
-        bat_wing(ctx, -1, 'top_back', span=25, flap=flap - 0.3)
+        bat_wing(ctx, -1, 'top_back', span=24, flap=flap + 0.4)
+        bat_wing(ctx, -1, 'top_back', span=20, flap=flap - 0.3)
     sh = body_folds(ctx, vest, hem)
     if not ctx.back:
         # V 앞섶 + 지그재그 밑단 무늬
-        sh.append((T(ctx, cr([(c - 3.5, -25.5), (c + 3.5, -25.5), (c, -16, 'c')], 3)), '#2E2244', 1.0))
-        sh.append((T(ctx, taper(np.array([(c, -16), (c, hem)]), 0.9, 0.05, 0.05)), '#2E2244', 0.9))
+        sh.append((T(ctx, cr([(c - 3.5, -25.5), (c + 3.5, -25.5), (c, -16, 'c')], 3)), '#2C2836', 1.0))
+        sh.append((T(ctx, taper(np.array([(c, -16), (c, hem)]), 0.9, 0.05, 0.05)), '#2C2836', 0.9))
     ctx.fig('top', T(ctx, body_poly(ctx, hem=hem, loose=0.6)), vest, shapes=sh)
     # 박쥐 모양 밑단
     xs = np.linspace(-13.2, 13.2, 7) if not ctx.q else np.linspace(-12.0, 12.4, 7)
@@ -554,25 +554,25 @@ def t_bat_cape(ctx):
     for i in range(len(xs) - 1):
         hp += [((xs[i] + xs[i + 1]) / 2, hem - 0.8), (xs[i + 1], hem + 1.6, 'c')]
     hp += [(xs[-1], hem - 2.5, 'c')]
-    ctx.fig('top', T(ctx, cr(hp, 4)), '#3A2C58', lw=1.4)
+    ctx.fig('top', T(ctx, cr(hp, 4)), '#3A3546', lw=1.4)
     # 높은 박쥐 칼라 + 빨간 보석
     if not ctx.back:
         for sx in (-1, 1):
             cp = [(c + sx * 1.0, -25.0), (c + sx * 6.5, -31.5, 'c'), (c + sx * 7.5, -27.5), (c + sx * 9.5, -26.5, 'c'),
                   (c + sx * 7.0, -23.5)]
-            ctx.fig('top', T(ctx, cr(cp, 4)), '#3A2C58', lw=1.4, shapes=[(T(ctx, ellipse(c + sx * 5, -27, 1.4, 2.0, 8)), BAT_W, 0.8)])
+            ctx.fig('top', T(ctx, cr(cp, 4)), '#3A3546', lw=1.4, shapes=[(T(ctx, ellipse(c + sx * 5, -27, 1.4, 2.0, 8)), BAT_W, 0.8)])
         ctx.fig('top', T(ctx, rot(cr([(0, -2.0, 'c'), (1.6, 0, 'c'), (0, 2.0, 'c'), (-1.6, 0, 'c')], 3), 0) + (c, -24.6)), red,
-                line='#7A1A2A', lw=1.0, shapes=[(T(ctx, ellipse(c - 0.5, -25.3, 0.5, 0.5, 8)), '#FFD0D8')])
+                line='#7A3A3A', lw=1.0, shapes=[(T(ctx, ellipse(c - 0.5, -25.3, 0.5, 0.5, 8)), '#F2D6D6')])
     else:
         for s in (-1, 1):
             bat_wing(ctx, s, 'top_near', flap=flap)
     for k in ('F', 'N'):
-        sleeve(ctx, k, vest, w0=8.0, w1=7.0, t1=0.88, cuff='#3A2C58', cuff_len=0.2)
+        sleeve(ctx, k, vest, w0=8.0, w1=7.0, t1=0.88, cuff='#3A3546', cuff_len=0.2)
 
 
 # ------------------------------------------------------------------ 드롭: 골렘 돌갑옷
 STONE = '#B2A89A'
-MOSS = '#7FBF4A'
+MOSS = '#93AE6E'
 
 
 def crack(p):
@@ -580,48 +580,37 @@ def crack(p):
 
 
 def t_golem_armor(ctx):
-    st, dk = STONE, '#6E6458'
+    """드롭: 골렘 돌갑옷 -> 돌 무늬 퀼팅 조끼 + 이끼색 터틀넥 (패션 아이템)."""
+    st, dk = '#ABA59C', '#7E786E'
+    moss = '#93AE6E'
     c = cxo(ctx)
-    hem = 3.0
-    under = '#6A4A36'
-    ctx.fig('top', T(ctx, body_poly(ctx, hem=hem, loose=0.4)), under)
-    # 가슴판 (돌 판 3장)
-    if not ctx.back:
-        plates = [
-            [(c - 11.5, -24.5), (c - 1.0, -26.0), (c - 0.6, -13.5), (c - 12.0, -12.5)],
-            [(c + 1.0, -26.0), (c + 12.0, -24.5), (c + 12.5, -12.5), (c + 0.6, -13.5)],
-            [(c - 12.5, -11.5), (c + 12.8, -11.5), (c + 13.0, hem), (c - 13.0, hem)],
-        ]
-    else:
-        plates = [[(-11.5, -25), (11.5, -25), (12.5, -12.5), (-12.5, -12.5)],
-                  [(-12.8, -11.5), (12.8, -11.5), (13.0, hem), (-13.0, hem)]]
-    cracks = [crack([(-6, -22), (-4.5, -19), (-6.5, -16.5)]), crack([(7, -20), (5, -17.5)]), crack([(-2, -8), (1, -5), (0, -2)])]
-    for i, p in enumerate(plates):
-        pc = [(x, y, 'c') for x, y in p]
-        sh = [(T(ctx, cracks[i % len(cracks)]), dk, 0.9),
-              (T(ctx, taper(np.array([p[0], p[1]]) + (0, 1.2), 1.4, 0.15, 0.15)), light(st, 0.8), 0.9)]
-        ctx.fig('top', T(ctx, cr(pc, 3)), st, shapes=sh)
-    # 이끼
-    for x, y, r in ((-9, -24.5, 3.2), (9, -24.5, 2.8), (c + 7, hem - 1, 2.4)):
-        m = cr([(x - r, y + 0.6), (x - r * 0.5, y - 0.9), (x, y - 0.3), (x + r * 0.5, y - 1.1), (x + r, y + 0.4),
-                (x + r * 0.4, y + 1.6), (x - r * 0.4, y + 1.4)], 4)
-        ctx.fig('top', T(ctx, m), MOSS, lw=1.2)
-    # 돌 벨트 + 룬 보석
-    if not ctx.back:
-        ctx.fig('top', T(ctx, ellipse(c, -6.0, 2.2, 2.2, 6)), '#6BD4E8', line='#2A6C82',
-                shapes=[(T(ctx, ellipse(c - 0.6, -6.6, 0.7, 0.7, 6)), '#E8FCFF')])
+    hem = 3.5
+    # 터틀넥
+    ctx.fig('top', T(ctx, body_poly(ctx, hem=hem - 1, neck='high', top=-25.5)), moss,
+            shapes=[(T(ctx, fold(np.array([(c - 3, -28.5), (c + 3, -28.5)]), 0.6)), shade(moss), 0.8)])
     for k in ('F', 'N'):
-        cl = sleeve(ctx, k, under, w0=7.8, w1=7.0, t1=0.88, folds=True)
-        lay = arm_layer(ctx, k, 'top')
-        # 팔뚝 돌 보호대
-        fc = sub(arm_line(ctx, k, 20), 0.62, 0.95, 8)
-        ctx.fig(lay, ribbon(fc, 8.4, cap0=False, cap1=False), st,
-                shapes=[(taper(sub(fc, 0.2, 0.8, 4) + (0.6, 0.2), 0.8, 0.2, 0.2), dk, 0.8)])
-        # 어깨 바위
-        s = ctx.arms[k]['sh']
-        a = rot(cr([(-6.5, 1.5), (-5.5, -3.5), (-1, -5.5), (4.5, -4.5), (6.5, 0.5), (4, 3.5), (-3, 3.8)], 5), ctx.torso_a) + s
-        ctx.fig(lay, a, st, shapes=[(rot(cr([(-4.5, -2.8), (0, -4.6), (3.5, -3.5), (0.5, -2.2)], 4), ctx.torso_a) + s, MOSS, 1.0),
-                                    (rot(crack([(1, -1), (2.5, 1.5), (1.6, 3)]), ctx.torso_a) + s, dk, 0.9)])
+        sleeve(ctx, k, moss, w0=7.8, w1=6.8, t1=0.88, cuff=moss, cuff_len=0.16)
+    # 조끼 (앞 지퍼 + 돌 조각 같은 둥근 퀼팅 칸)
+    poly = body_poly(ctx, hem=hem, loose=1.4, flare=1.04, neck='v' if not ctx.back else 'crew', top=-24.5)
+    q = []
+    rs = np.random.RandomState(7)
+    for y in (-19, -13, -7, -1):
+        for x in np.arange(-14, 15, 6.5):
+            xx = x + (3.2 if int((y + 19) / 6) % 2 else 0) + rs.uniform(-0.6, 0.6)
+            r = 2.9 + rs.uniform(-0.3, 0.3)
+            stone = cr([(xx - r, y), (xx - r * 0.6, y - r * 0.85), (xx + r * 0.5, y - r * 0.9), (xx + r, y - 0.2),
+                        (xx + r * 0.6, y + r * 0.85), (xx - r * 0.5, y + r * 0.9)], 4)
+            q.append((T(ctx, taper(np.concatenate([stone, stone[:1]]), 0.55, 0.0, 0.0)), dk, 0.7))
+            q.append((T(ctx, taper(stone[1:4] + (0.2, 0.4), 0.8, 0.3, 0.3)), light(st, 0.8), 0.6))
+    if not ctx.back:
+        q.append((T(ctx, taper(np.array([(c + 0.3, -20), (c + 0.3, hem)]), 0.8, 0.02, 0.02)), dk, 0.9))
+    ctx.fig('top', T(ctx, poly), st, shapes=q + body_folds(ctx, st, hem, 0.5))
+    if not ctx.back:
+        # 가슴 작은 룬 돌 배지 + 이끼
+        ctx.fig('top', T(ctx, cr([(c + 6.0, -17.5, 'c'), (c + 8.6, -18.2, 'c'), (c + 9.0, -15.4, 'c'), (c + 6.2, -15.0, 'c')], 3)),
+                '#8CC4CC', lw=0.8, line='#4E7E86')
+        m = cr([(c - 10, -23.5), (c - 7, -25), (c - 4.5, -24), (c - 6, -22), (c - 9, -21.8)], 4)
+        ctx.fig('top', T(ctx, m), moss, lw=0.8)
 
 
 TOPS = {

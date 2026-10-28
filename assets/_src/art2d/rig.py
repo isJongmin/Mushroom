@@ -8,22 +8,22 @@ import numpy as np
 from raster import Xf, fig as _fig, paint as _paint, stroke as _stroke, Layer, AX, AY, rgb
 
 SCALE = 1.15
-HEAD_K = 0.93               # 머리(머리카락, 모자 포함) 배율
-UA, FA = 10.0, 9.0         # 위팔, 아래팔
-TH, SH, ANK = 16.0, 15.0, 4.6   # 허벅지, 정강이, 발목 높이
+HEAD_SX, HEAD_SY = 0.58, 0.62   # 머리(머리카락, 모자 포함) 배율: 머리 로컬 60x54.5 -> 약 36x36 단위 (약 4.2등신)
+UA, FA = 17.5, 15.5        # 위팔, 아래팔
+TH, SH, ANK = 29.5, 28.5, 4.2   # 허벅지, 정강이, 발목 높이
 HIP_Y = -(TH + SH + ANK)
-SHOE_K = 1.28              # 신발 배율 (shoes.py 와 같음)
-TORSO = 25.0               # 엉덩이 -> 어깨
-NECK_Y = -27.0             # 몸통 로컬: 머리 원점(턱 밑)
+SHOE_K = 1.36              # 신발 배율 (shoes.py 와 같음)
+TSX, TSY = 1.12, 1.30      # 몸통 로컬 -> 단위 배율 (옷 좌표는 몸통 로컬 25 높이 기준으로 쓴다)
+NECK_Y = -30.5             # 몸통 로컬: 머리 원점(턱 밑). 어깨(-23)보다 위 = 목
 
 FRAMES = ['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back', 'jump', 'fall', 'prone',
           'attack0', 'attack1']
 
 # 관절 로컬 위치 (보기별)
-SHOULDER = {'front': ((-11.5, -23.0), (11.5, -23.0)), 'back': ((-11.5, -23.0), (11.5, -23.0)),
-            'q': ((-3.5, -23.0), (6.5, -23.5))}
-HIPJ = {'front': ((-5.4, -1.0), (5.4, -1.0)), 'back': ((-5.4, -1.0), (5.4, -1.0)),
-        'q': ((-2.0, -1.0), (4.0, -1.5))}
+SHOULDER = {'front': ((-10.6, -22.6), (10.6, -22.6)), 'back': ((-10.6, -22.6), (10.6, -22.6)),
+            'q': ((-3.0, -22.6), (6.0, -23.0))}
+HIPJ = {'front': ((-5.0, -0.5), (5.0, -0.5)), 'back': ((-5.0, -0.5), (5.0, -0.5)),
+        'q': ((-1.5, -0.5), (3.5, -1.0))}
 NECK = {'front': (0.0, NECK_Y), 'back': (0.0, NECK_Y), 'q': (1.5, NECK_Y)}
 
 
@@ -38,23 +38,23 @@ POSES = {
     'front_b': P('front', hip=(0, HIP_Y + 0.7), armN=(10, -8), armF=(10, -8), legN=(-2, 0, 0), legF=(2, 0, 0),
                  head=0, breathe=1.0, sway=0.3),
     'side': P('q', torso=2, head=-2, armN=(-8, 10), armF=(10, 14), legN=(-5, 0, 0), legF=(6, -2, 0)),
-    'walk0': P('q', torso=4, head=-1, armN=(-30, 14), armF=(28, 22), legN=(25, -6, -14), legF=(-22, -16, 16),
+    'walk0': P('q', torso=3, head=-1, armN=(-22, 12), armF=(20, 18), legN=(17, -5, -12), legF=(-15, -14, 14),
                sway=-0.6),
-    'walk1': P('q', torso=3, head=-2, armN=(-8, 10), armF=(8, 16), legN=(3, -2, 0), legF=(14, -50, 18), sway=-1.0),
-    'walk2': P('q', torso=4, head=-1, armN=(26, 22), armF=(-28, 14), legN=(-22, -16, 16), legF=(25, -6, -14),
+    'walk1': P('q', torso=2, head=-2, armN=(-6, 10), armF=(6, 14), legN=(2, -2, 0), legF=(12, -40, 16), sway=-1.0),
+    'walk2': P('q', torso=3, head=-1, armN=(20, 18), armF=(-22, 12), legN=(-15, -14, 14), legF=(17, -5, -12),
                sway=-0.6),
-    'walk3': P('q', torso=3, head=-2, armN=(6, 16), armF=(-6, 10), legN=(14, -50, 18), legF=(3, -2, 0), sway=-1.0),
+    'walk3': P('q', torso=2, head=-2, armN=(6, 14), armF=(-6, 10), legN=(12, -40, 16), legF=(2, -2, 0), sway=-1.0),
     'back': P('back', armN=(7, -6), armF=(7, -6), legN=(-2, 0, 0), legF=(2, 0, 0)),
-    'jump': P('q', hip=(0, HIP_Y - 4), torso=-3, head=-5, armN=(104, -34), armF=(150, -20), legN=(62, -100, 15),
+    'jump': P('q', hip=(0, HIP_Y - 2), torso=-3, head=-5, armN=(58, -20), armF=(150, -20), legN=(62, -100, 15),
               legF=(-6, -38, 22), ground=False, sway=1.6, lift=1.0),
-    'fall': P('q', hip=(0, HIP_Y - 5), torso=3, head=4, armN=(-62, -20), armF=(78, 20), legN=(16, -10, 10),
+    'fall': P('q', hip=(0, HIP_Y - 1), torso=3, head=4, armN=(-48, -24), armF=(56, 26), legN=(16, -10, 10),
               legF=(-16, -16, 22), ground=False, sway=-1.8, lift=-1.0),
     'prone': P('q', hip=(-16.0, -9.6), torso=90, head=-92, armN=(66, 104), armF=(168, 24), head_off=(4.0, 9.5),
                head_sq=0.9,
-               legN=(-90, -72, 0), legF=(-86, -48, 0), ground=False, sway=0.4, prone=True),
-    'attack0': P('q', torso=-8, head=-6, armN=(-104, -28), armF=(40, 34), legN=(-16, -4, 0), legF=(22, -10, -6),
+               legN=(-86, -128, 0), legF=(-82, -108, 0), ground=False, sway=0.4, prone=True),
+    'attack0': P('q', torso=-7, head=-5, armN=(-104, -28), armF=(36, 34), legN=(-12, -4, 0), legF=(16, -10, -6),
                  sway=0.8),
-    'attack1': P('q', torso=13, head=6, armN=(78, 8), armF=(-38, 18), legN=(-24, -6, 4), legF=(28, -22, -8),
+    'attack1': P('q', torso=10, head=4, armN=(80, 8), armF=(-34, 18), legN=(-18, -6, 4), legF=(22, -20, -8),
                  sway=-1.2),
 }
 
@@ -90,7 +90,7 @@ class Ctx:
         hip = np.array(p['hip'] if p['hip'] is not None else (0.0, HIP_Y), float)
         self.torso_a = p['torso']
         sh = SHOULDER[v]; hj = HIPJ[v]
-        Tt0 = Xf.T(*hip) @ Xf.R(self.torso_a)
+        Tt0 = Xf.T(*hip) @ Xf.R(self.torso_a) @ Xf.S(TSX, TSY)
         # 다리 (절대 각도). 엉덩이 관절은 몸통과 함께 돈다
         legs = {}
         for k, (a, kb, f), hp in (('N', p['legN'], hj[0]), ('F', p['legF'], hj[1])):
@@ -115,7 +115,8 @@ class Ctx:
                     L[key] = L[key] + (0, dy)
             hip = hip + (0, dy)
         self.hip = hip
-        self.Tt = Xf.T(*hip) @ Xf.R(self.torso_a)
+        self.Tr = Xf.T(*hip) @ Xf.R(self.torso_a)
+        self.Tt = self.Tr @ Xf.S(TSX, TSY)
         self.legs = legs
         # 팔 (몸통 기준 상대 각도)
         arms = {}
@@ -135,17 +136,21 @@ class Ctx:
             arms[k] = dict(sh=s, el=el, wr=wr, a=a, e=e, d2=d2)
         self.arms = arms
         neck = NECK[v]
-        self.Th = Xf.T(*p['head_off']) @ self.Tt @ Xf.T(neck[0], neck[1] + self.breathe * 0.8) @ Xf.R(p['head']) \
-            @ Xf.S(HEAD_K, HEAD_K * p['head_sq'])
+        self.Th = Xf.T(*p['head_off']) @ self.Tr @ Xf.T(neck[0] * TSX, (neck[1] + self.breathe * 0.6) * TSY) \
+            @ Xf.R(p['head']) @ Xf.S(HEAD_SX, HEAD_SY * p['head_sq'])
         if self.prone and not getattr(self, '_fitted', False):
             # 엎드리기: 화면 최저점(턱, 팔꿈치, 손, 몸통)을 기준선에 맞춘다
             from body import head_poly, torso_poly
             lows = [self.Th(head_poly('q'))[:, 1].max(), self.Tt(torso_poly('q'))[:, 1].max()]
             for a in arms.values():
-                lows += [a['el'][1] + 2.9, a['wr'][1] + a['d2'][1] * 2.2 + 4.0]
+                lows += [a['el'][1] + 2.9, a['wr'][1] + a['d2'][1] * 2.6 + 3.6]
             dy = -max(lows)
+            xs = [self.Th(head_poly('q'))[:, 0].max() + 3.0, self.Tt(torso_poly('q'))[:, 0].min()]
+            for g in legs.values():
+                xs += [g['knee'][0] - 6.0, g['ank'][0] - 8.0, g['ank'][0] + 8.0]
+            dx = -(max(xs) + min(xs)) / 2
             self._fitted = True
-            self.p = dict(p, hip=(hip[0], hip[1] + dy))
+            self.p = dict(p, hip=(hip[0] + dx, hip[1] + dy))
             self._solve()
 
     # 보기 편의

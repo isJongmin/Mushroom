@@ -48,7 +48,7 @@ def socks(ctx, col, t0=0.35, band=None, w=6.6, frill=None):
                                                     shade(frill), 0.8)])
 
 
-def sneaker(ctx, up, sole='#FFFFFF', accent=None, st=1.9, high=0.0, lace='#FFFFFF', toe=None, heel=None,
+def sneaker(ctx, up, sole='#F6F3EE', accent=None, st=1.9, high=0.0, lace='#F6F3EE', toe=None, heel=None,
             extra=None):
     for k in ('F', 'N'):
         X = foot_xf(ctx, k)
@@ -73,7 +73,7 @@ def sneaker(ctx, up, sole='#FFFFFF', accent=None, st=1.9, high=0.0, lace='#FFFFF
                 ctx.fig(lay, X(taper(np.array([p + (-1.0, -0.8), p + (1.0, 0.9)]), 1.1, 0.1, 0.1)), lace, lw=0.8)
             if high:
                 ctx.fig(lay, X(cr([(-5.0, top - 0.4, 'c'), (0.8, top - 1.0, 'c'), (1.0, top + 1.6, 'c'), (-5.2, top + 2.0, 'c')], 2)),
-                        light(up, 0.15) if up != '#FFFFFF' else '#F2F0F6', lw=1.2)
+                        light(up, 0.15) if up != '#F6F3EE' else '#F2F0F6', lw=1.2)
             sl = cr([(-6.0, stp, 'c'), (11.0, stp, 'c'), (11.0, G - 0.8), (10.2, G, 'c'), (-5.6, G, 'c'), (-6.1, G - 0.7)], 4)
             ctx.fig(lay, X(sl), sole, shapes=[(X(taper(np.array([(-5.2, stp + st * 0.55), (10.4, stp + st * 0.55)]), 0.5, 0.05, 0.05)),
                                                shade(sole, 1.0), 0.9)], sd=(0.6, 0.8))
@@ -95,11 +95,11 @@ def sneaker(ctx, up, sole='#FFFFFF', accent=None, st=1.9, high=0.0, lace='#FFFFF
             ctx.fig(lay, X(upper), up, shapes=[(X(s[0]),) + tuple(s[1:]) for s in sh], sd=(0.9, 1.1))
             if not back:
                 tongue = cr([(-2.4, top - 0.4), (2.4, top - 0.4), (2.0, -0.6), (-2.0, -0.6)], 3)
-                ctx.fig(lay, X(tongue), light(up, 0.15) if up != '#FFFFFF' else '#F0EEF4', lw=1.0,
+                ctx.fig(lay, X(tongue), light(up, 0.15) if up != '#F6F3EE' else '#F0EEF4', lw=1.0,
                         shapes=[(X(taper(np.array([(-2.0, y), (2.0, y)]), 0.9, 0.1, 0.1)), lace, 1.0) for y in (top + 1.2, top + 2.6)])
             if high:
                 ctx.fig(lay, X(cr([(-5.4, top - 0.6, 'c'), (5.4, top - 0.6, 'c'), (5.4, top + 1.6, 'c'), (-5.4, top + 1.6, 'c')], 2)),
-                        light(up, 0.15) if up != '#FFFFFF' else '#F2F0F6', lw=1.2)
+                        light(up, 0.15) if up != '#F6F3EE' else '#F2F0F6', lw=1.2)
             sl = cr([(-6.6, stp, 'c'), (6.6, stp, 'c'), (6.5, G - 0.5), (5.8, G, 'c'), (-5.8, G, 'c'), (-6.5, G - 0.5)], 3)
             ctx.fig(lay, X(sl), sole, sd=(0.6, 0.8))
             if extra:
@@ -107,23 +107,23 @@ def sneaker(ctx, up, sole='#FFFFFF', accent=None, st=1.9, high=0.0, lace='#FFFFF
 
 
 def s_chunky_white(ctx):
-    sneaker(ctx, '#FFFFFF', sole='#F4F0EA', accent='#C3AEF0', st=3.0, lace='#E8E4F0', heel='#D8CCF4')
+    sneaker(ctx, '#F6F3EE', sole='#F4F0EA', accent='#B9AED8', st=3.0, lace='#E8E4F0', heel='#D6CFE8')
 
 
 def s_sneakers_white(ctx):
-    sneaker(ctx, '#FFFFFF', sole='#ECE6DE', accent='#7FB3F0', st=1.8, lace='#E8E4F0')
+    sneaker(ctx, '#F6F3EE', sole='#ECE6DE', accent='#9DB6D3', st=1.8, lace='#E8E4F0')
 
 
 def s_sneakers_black(ctx):
-    sneaker(ctx, '#3A3742', sole='#FFFFFF', accent='#FFFFFF', st=1.8, lace='#FFFFFF')
+    sneaker(ctx, '#3A393E', sole='#F6F3EE', accent='#F6F3EE', st=1.8, lace='#F6F3EE')
 
 
 def s_hightop_black(ctx):
-    socks(ctx, '#FFFFFF', t0=0.72, w=6.6)
-    sneaker(ctx, '#2C2934', sole='#FFFFFF', accent='#FFFFFF', st=2.0, high=4.5, lace='#FFFFFF', toe='#FFFFFF')
+    socks(ctx, '#F6F3EE', t0=0.72, w=6.6)
+    sneaker(ctx, '#323036', sole='#F6F3EE', accent='#F6F3EE', st=2.0, high=4.5, lace='#F6F3EE', toe='#F6F3EE')
 
 
-def loafer(ctx, col, bit='#E3B04B', strap=False, heel_h=1.4):
+def loafer(ctx, col, bit='#C9A060', strap=False, heel_h=1.4):
     for k in ('F', 'N'):
         X = foot_xf(ctx, k)
         lay = leg_layer(ctx, k, 'shoes')
@@ -135,34 +135,34 @@ def loafer(ctx, col, bit='#E3B04B', strap=False, heel_h=1.4):
             ctx.fig(lay, X(up), col, shapes=[(X(s[0]),) + tuple(s[1:]) for s in sh], sd=(0.9, 1.1))
             if strap:
                 ctx.fig(lay, X(cr([(-0.4, -1.6, 'c'), (1.6, -1.6, 'c'), (1.8, stp - 0.4, 'c'), (-0.2, stp - 0.4, 'c')], 2)), col, lw=1.2)
-                ctx.fig(lay, X(ellipse(0.8, 0.6, 0.8, 0.8, 8)), '#F4E6B0', lw=0.8)
+                ctx.fig(lay, X(ellipse(0.8, 0.6, 0.8, 0.8, 8)), '#E8DCB8', lw=0.8)
             elif bit:
                 ctx.fig(lay, X(cr([(3.2, -2.2, 'c'), (6.0, -1.2, 'c'), (5.8, -0.2, 'c'), (3.0, -1.2, 'c')], 2)), bit, lw=0.8,
                         line='#8E6A30')
             sole = cr([(-5.8, stp, 'c'), (10.4, stp, 'c'), (10.2, G, 'c'), (2.0, G, 'c'), (1.6, stp + 0.6), (-1.6, stp + 0.6),
                        (-1.8, G, 'c'), (-5.6, G, 'c')], 3)
-            ctx.fig(lay, X(sole), '#4A2E26', lw=1.2, sd=(0.5, 0.6))
+            ctx.fig(lay, X(sole), '#4A3A34', lw=1.2, sd=(0.5, 0.6))
         else:
             up = cr([(-5.0, -1.6), (0, -2.2), (5.0, -1.6), (5.8, 0.6), (6.0, stp, 'c'), (-6.0, stp, 'c'), (-5.8, 0.6)], 6)
             sh = [(ellipse(0, stp - 1.8, 4.2, 1.8, 16), light(col, 0.4), 0.8)] if not ctx.back else []
             ctx.fig(lay, X(up), col, shapes=[(X(s[0]),) + tuple(s[1:]) for s in sh], sd=(0.9, 1.1))
             if strap and not ctx.back:
                 ctx.fig(lay, X(cr([(-5.6, -0.4, 'c'), (5.6, -0.4, 'c'), (5.6, 1.0, 'c'), (-5.6, 1.0, 'c')], 2)), col, lw=1.1)
-                ctx.fig(lay, X(ellipse(3.6, 0.3, 0.8, 0.8, 8)), '#F4E6B0', lw=0.8)
+                ctx.fig(lay, X(ellipse(3.6, 0.3, 0.8, 0.8, 8)), '#E8DCB8', lw=0.8)
             elif bit and not ctx.back:
                 ctx.fig(lay, X(cr([(-2.6, -1.2, 'c'), (2.6, -1.2, 'c'), (2.6, 0.0, 'c'), (-2.6, 0.0, 'c')], 2)), bit, lw=0.8,
                         line='#8E6A30')
-            ctx.fig(lay, X(cr([(-6.2, stp, 'c'), (6.2, stp, 'c'), (6.0, G, 'c'), (-6.0, G, 'c')], 2)), '#4A2E26', lw=1.2)
+            ctx.fig(lay, X(cr([(-6.2, stp, 'c'), (6.2, stp, 'c'), (6.0, G, 'c'), (-6.0, G, 'c')], 2)), '#4A3A34', lw=1.2)
 
 
 def s_loafer_socks(ctx):
-    socks(ctx, '#FFFFFF', t0=0.18, band='#FFFFFF', w=7.0)
-    loafer(ctx, '#2C2630')
+    socks(ctx, '#F6F3EE', t0=0.18, band='#F6F3EE', w=7.0)
+    loafer(ctx, '#3A3035')
 
 
 def s_maryjane_red(ctx):
-    socks(ctx, '#FFFFFF', t0=0.78, w=6.4, frill='#FFFFFF')
-    loafer(ctx, '#E0443E', bit=None, strap=True)
+    socks(ctx, '#F6F3EE', t0=0.78, w=6.4, frill='#F6F3EE')
+    loafer(ctx, '#B85A4E', bit=None, strap=True)
 
 
 def boot(ctx, col, h=9.5, cuff=None, lace=None, extra=None, pointy=0.0):
@@ -204,13 +204,13 @@ def boot(ctx, col, h=9.5, cuff=None, lace=None, extra=None, pointy=0.0):
 
 
 def s_boots_brown(ctx):
-    boot(ctx, '#9A6440', h=9.0, cuff='#F2E4C8', lace='#E8C890')
+    boot(ctx, '#8E6A4E', h=9.0, cuff='#ECE0CC', lace='#D9C29A')
 
 
 # ------------------------------------------------------------------ 드롭
 def s_snail_boots(ctx):
     """파란 달팽이 부츠: 발목에 소용돌이 껍질, 발끝에 눈 더듬이."""
-    shell, body_c = '#5AA6EC', '#B9E0A0'
+    shell, body_c = '#8FAFCB', '#C5D6AE'
 
     def ex(ctx, X, lay, cc, n, d):
         p = cc[int(len(cc) * 0.45)]
@@ -235,7 +235,7 @@ def s_snail_boots(ctx):
 
 
 def s_bat_boots(ctx):
-    col = '#5C4682'
+    col = '#4E485C'
 
     def ex(ctx, X, lay, cc, n, d):
         p = cc[2]
@@ -245,8 +245,8 @@ def s_bat_boots(ctx):
             mid = base + n * s * 3.4 + d * 1.2
             wing = cr([tuple(base - d * 1.4), tuple(tip) + ('c',), tuple(base + n * s * 4.6 + d * 0.8), tuple(mid) + ('c',),
                        tuple(base + n * s * 1.6 + d * 2.4), tuple(base + d * 1.6)], 3)
-            ctx.fig(lay, wing, '#3A2C58', lw=1.1, shapes=[(fold(np.array([base, tip]), 0.6), '#7A60A8', 0.9)])
-        ctx.fig(lay, ellipse(p[0] + d[0] * 2, p[1] + d[1] * 2, 1.2, 1.2, 10), '#E2465A', lw=0.8, line='#7A1A2A')
+            ctx.fig(lay, wing, '#3A3546', lw=1.1, shapes=[(fold(np.array([base, tip]), 0.6), '#857C98', 0.9)])
+        ctx.fig(lay, ellipse(p[0] + d[0] * 2, p[1] + d[1] * 2, 1.2, 1.2, 10), '#B85A5A', lw=0.8, line='#7A3A3A')
     boot(ctx, col, h=8.5, extra=ex, pointy=2.0)
 
 

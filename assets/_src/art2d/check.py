@@ -11,7 +11,7 @@ python3 assets/_src/art2d/check.py --dir <폴더>     # 다른 아바타 폴더 
  3. 시트 크기 1872x192 RGBA
  4. 아이콘 icon/<파츠>/<id>.png 64x64 RGBA, 모든 id(hat none 제외), 네 모서리 투명
  5. 프리셋 + 무작위 조합 합성: 프레임 안(가장자리 1px 여백), 지면 프레임은 발이 기준선(y 180±2),
-    jump/fall은 기준선 아래로 넘지 않음, prone은 최하단 기준선 + 키가 side의 35~50%, 정면 머리 맨 위가 월드 85~106
+    jump/fall은 기준선 아래로 넘지 않음, prone은 최하단 기준선 + 키가 side의 35~50%, 정면 머리 맨 위가 월드 85~116 (v2 4.3등신, 프레임 위 y>=8)
  6. truth/presetN.png = 이 폴더 PNG를 layerOrder로 합성한 결과 (프리멀티 RGB 평균 <= 6.0, 알파 MAE <= 2.0)
  7. 결정적 빌드: 임시 폴더에 다시 빌드한 PNG/manifest 해시가 out/avatar 와 같다 (--fast 면 생략)
 """
@@ -163,7 +163,7 @@ def main(av_dir, fast):
             probs.append('%d prone 최하단 %d 비율 %.2f 중심 %.1f %s' % (ci, y1, r, cx, av))
         ht = (180 - st['front'][0]) / 1.5
         tops.append(ht)
-        if not (85 <= ht <= 106):
+        if not (85 <= ht <= 116):
             probs.append('%d 정면 머리 맨 위 월드 %.1f %s' % (ci, ht, av['hat']))
     ok(not probs, '프리셋 6 + 무작위 30 조합 %s' % probs[:6])
     print('       prone 비율 %.2f~%.2f, 정면 머리 맨 위(월드) %.1f~%.1f' % (min(ratios), max(ratios), min(tops), max(tops)))

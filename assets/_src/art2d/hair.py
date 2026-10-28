@@ -1,431 +1,351 @@
-"""머리카락 12종. 머리 로컬 좌표(원점 = 턱 밑 가운데, 머리 x ±30, y -54.5..0)."""
+"""머리카락 12종 (사이클 9 v2: 레이어드 컷, 가닥 잎 모양 겹치기).
+
+머리 로컬 좌표(원점 = 턱 밑 가운데, 머리 x ±28.5, y -54.5..0, 눈 y≈-22, 이마선 y≈-42).
+구성: 바탕 덩어리(cap) + 정수리에서 뻗는 가닥(leaf)들을 겹쳐 그린다. 가닥마다 얇은 색선과 그늘이 있어 결이 보인다.
+"""
 import math
 import numpy as np
 from raster import cr, ellipse, ribbon, taper, quad, bez, rot, shade, light, deep, line_of, rgb, mix, sub, resample
 
-# --------------------------------------------------------------- 보조
+
 def arc(cx, cy, rx, ry, a0, a1, n=12):
     return [(cx + rx * math.cos(math.radians(a)), cy + ry * math.sin(math.radians(a)))
             for a in np.linspace(a0, a1, n)]
 
 
-def wavy_arc(cx, cy, rx, ry, a0, a1, bumps, amp, n_per=3, spike=False, seed=0):
-    """둥근 덩어리(곱슬) 또는 가시(spike) 외곽."""
-    rs = np.random.RandomState(seed)
-    pts = []
-    tot = bumps * n_per
-    for i in range(tot + 1):
-        t = i / tot
-        a = math.radians(a0 + (a1 - a0) * t)
-        ph = (i % n_per) / n_per
-        if spike:
-            k = amp * (1.0 + 0.25 * rs.uniform(-1, 1)) if ph == 0 and 0 < i < tot else 0.0
-            p = (cx + (rx + k) * math.cos(a), cy + (ry + k) * math.sin(a))
-            pts.append(p + (('c',) if ph == 0 and 0 < i < tot else ()))
-        else:
-            k = amp * math.sin(ph * math.pi) * (1.0 + 0.2 * rs.uniform(-1, 1))
-            p = (cx + (rx + k) * math.cos(a), cy + (ry + k) * math.sin(a))
-            pts.append(p + (('c',) if ph == 0 else ()))
-    return pts
-
-
-def bang_run(xs, tip_y, val_y, curl=0.0):
-    """오른쪽 -> 왼쪽 앞머리. xs: 끝 x 목록(오른->왼). tip_y/val_y: 함수(x) 또는 수."""
-    ty = tip_y if callable(tip_y) else (lambda x, v=tip_y: v)
-    vy = val_y if callable(val_y) else (lambda x, v=val_y: v)
-    out = []
-    for i, x in enumerate(xs):
-        sg = 1 if x > 3 else (-1 if x < -3 else 0)
-        out.append((x + curl + sg * 1.6, ty(x), 'c'))
-        if i + 1 < len(xs):
-            xm = (x + xs[i + 1]) / 2
-            out.append((xm - curl * 0.3, vy(xm)))
-    return out
-
-
-def strands_from(pts, crown, frac=0.45, w=1.2):
-    """골(valley) -> 정수리 방향 결 선."""
-    out = []
-    crown = np.asarray(crown, float)
-    for p in pts:
-        p = np.asarray(p[:2], float)
-        q = p + (crown - p) * frac
-        m = (p + q) / 2 + np.array([(p[0] - crown[0]) * 0.08, 0])
-        out.append(taper(quad(p, m, q, 10), w, a=0.15, b=0.6))
-    return out
-
-
 class HairStyle:
     def __init__(self, col, hl=None, ln=None, dk=None):
         self.col = col
-        self.sh = shade(col)
-        self.dk = dk or deep(col, 1.1)
-        self.hl = hl or light(col, 1.0)
+        self.sh = shade(col, 0.9)
+        self.dk = dk or deep(col, 0.9)
+        self.hl = hl or light(col, 0.7)
         self.ln = ln or line_of(col)
 
-    # 레이어 편의
     def F(self, ctx, layer, poly, shapes=(), col=None, **kw):
         H = ctx.Th
         sh = [(H(s[0]),) + tuple(s[1:]) for s in shapes if s is not None]
-        ctx.fig(layer, H(poly), col or self.col, sh=kw.pop('sh', self.sh), line=kw.pop('line', self.ln),
-                shapes=sh, sd=kw.pop('sd', (1.6, 1.9)), **kw)
+        c = col or self.col
+        ctx.fig(layer, H(poly), c, sh=kw.pop('sh', self.sh if col is None else shade(c, 0.9)),
+                line=kw.pop('line', self.ln if col is None else line_of(c)), shapes=sh, sd=kw.pop('sd', (1.4, 1.7)), **kw)
 
 
-def angel_ring(cx, cy, rx, ry, a0, a1, segs=3, w=2.6, gap=0.25):
+def sheen(cx, cy, rx, ry, a0, a1, segs=3, w=2.2, gap=0.3):
     out = []
     span = (a1 - a0) / segs
     for i in range(segs):
         s0 = a0 + span * i + span * gap * 0.5
         s1 = a0 + span * (i + 1) - span * gap * 0.5
-        c = np.array(arc(cx, cy, rx, ry, s0, s1, 10))
-        out.append(taper(c, w, a=0.45, b=0.45))
+        out.append(taper(np.array(arc(cx, cy, rx, ry, s0, s1, 10)), w, a=0.45, b=0.45))
     return out
 
 
-def shade_bangs(ctx, poly, dy=2.6):
+def leaf(S, ctx, layer, root, tip, w, bend=0.0, a=0.45, b=0.5, sheen_on=True, col=None):
+    root = np.asarray(root, float); tip = np.asarray(tip, float)
+    d = tip - root
+    L = np.linalg.norm(d)
+    n = np.array([-d[1], d[0]]) / max(L, 1e-6)
+    c = quad(root, (root + tip) / 2 + n * bend, tip, 18)
+    shapes = []
+    if sheen_on:
+        shapes.append((taper(sub(c, 0.25, 0.55, 8) - n * w * 0.12, w * 0.22, 0.4, 0.4), S.hl if col is None else light(col, 0.7), 0.55))
+    S.F(ctx, layer, taper(c, w, a=a, b=b, wmin=0.3), shapes=shapes, col=col)
+    return c
+
+
+def shade_bangs(ctx, tips, dy=2.4, w=9.0):
+    """앞머리가 이마에 드리우는 그늘 (shade_hair, source-atop)."""
     H = ctx.Th
-    p = np.asarray([q[:2] for q in poly], float) + (0.6, dy)
-    ctx.paint('shade_hair', H(p), '#B65A4E', alpha=0.30)
+    for (r, t, ww) in tips:
+        c = quad(np.asarray(r) + (0.6, dy), (np.asarray(r) + np.asarray(t)) / 2 + (0.6, dy), np.asarray(t) + (0.6, dy), 10)
+        ctx.paint('shade_hair', H(taper(c, ww * 0.9, 0.5, 0.4)), '#B07468', alpha=0.22)
 
 
-# --------------------------------------------------------------- 기본 짧은 머리 생성기
-def base_short(ctx, S, *, front_xs, front_tip, q_xs, q_tip, val=-41.0, lockF=(-12, 3.5), lockQ=-13,
-               nape=-6.0, ear=True, vol=(33.5, 31.0, -29.5), crown_spike=None, curly=None, back_tips=None,
-               ring=True, qside=None, extra_front=None, extra_q=None, strand_w=1.15):
-    """front_xs: 정면 앞머리 끝 x (오른->왼), front_tip: 끝 y 함수. lockF=(옆머리 끝 y, 두께)."""
+# --------------------------------------------------------------- 기본 생성기
+def hair_base(ctx, S, *, vol=(33.5, 32.0, -30.0), side=-16.0, nape=-8.0, ear=True, bangs=(), sidelocks=True,
+              side_w=8.5, back_tips=9, back_len=None, crown=(0, -60.0), tufts=(), hairline=-43.5, lock_bend=2.0,
+              q_shift=6.0, flat_back=False):
+    """bangs: [(tip_x, tip_y, w, bend)] 정면 기준. side: 얼굴 옆 머리 끝 y. nape: 뒷머리 끝 y."""
     rx, ry, cy = vol
     hv = ctx.view
-
-    def dome(a0, a1, n=16):
-        if curly:
-            return wavy_arc(0, cy, rx, ry, a0, a1, curly[0], curly[1], seed=curly[2] if len(curly) > 2 else 1)
-        if crown_spike:
-            return wavy_arc(0, cy, rx, ry, a0, a1, crown_spike[0], crown_spike[1], spike=True,
-                            seed=crown_spike[2] if len(crown_spike) > 2 else 1)
-        return arc(0, cy, rx, ry, a0, a1, n)
-
-    valf = (lambda x: val + (x / 30.0) ** 2 * 7.0)
+    back_len = nape if back_len is None else back_len
+    if ctx.prone:  # 엎드리면 턱이 바닥: 턱 아래로 내려가는 머리는 자른다
+        side, nape, back_len = min(side, -4.0), min(nape, -4.0), min(back_len, -4.0)
+    sw = ctx.sway
+    dx = -3 if hv == 'q' else 0
+    for (r, t, w, bend) in tufts:  # 바탕 뒤에 먼저: 끝만 실루엣 밖으로 삐친다
+        leaf(S, ctx, 'hair_front', (r[0] + dx, r[1]), (t[0] + dx, t[1]), w, bend=bend, a=0.3, b=0.5)
     if hv == 'front':
-        ly, lt = lockF
-        pts = [(-29.5, ly, 'c')] + [(-33.5, ly - 9)] + dome(168, 372) + [(33.5, ly - 9), (29.5, ly, 'c'),
-                                                                          (27.5 - lt * 0.3, ly - 7), (25.5, -27),
-                                                                          (24.0, -35)]
-        bx = bang_run(front_xs, front_tip, valf)
-        pts += bx + [(-24.0, -35), (-25.5, -27), (-27.5 + lt * 0.3, ly - 7)]
-        if extra_front:
-            pts = extra_front(pts)
-        vals = [p for p in bx if len(p) == 2]
-        sh = strands_from(vals, (0, -60), 0.42, strand_w)
-        sh += [taper(quad((-30, ly - 2), (-30.5, -24), (-27, -36), 10), strand_w, 0.2, 0.5),
-               taper(quad((30, ly - 2), (30.5, -24), (27, -36), 10), strand_w, 0.2, 0.5)]
-        rings = angel_ring(0, cy - 2, rx - 6.5, ry - 8, 205, 335, 3) if ring else []
-        S.F(ctx, 'hair_front', cr(pts, 6), shapes=[(s, S.dk, 0.85) for s in sh] + [(r, S.hl, 0.95) for r in rings])
-        shade_bangs(ctx, cr(pts, 6))
+        cap = arc(0, cy, rx, ry, 158, 382, 20)
+        cap = cap + [(rx * 0.93, side - 2), (rx * 0.86, side, 'c'), (26.5, side - 3), (27.5, -26), (24.5, -38),
+                     (13, hairline - 1), (0, hairline - 1.5), (-13, hairline - 1), (-24.5, -38), (-27.5, -26),
+                     (-26.5, side - 3), (-rx * 0.86, side, 'c'), (-rx * 0.93, side - 2)]
+        S.F(ctx, 'hair_front', cr(cap, 6), shapes=[(s, S.hl, 0.45) for s in sheen(0, cy - 1, rx - 6, ry - 7, 212, 328, 3)])
+        if sidelocks:
+            for sx in (-1, 1):
+                leaf(S, ctx, 'hair_front', (sx * 20, -50), (sx * (rx * 0.84) - sw * 0.5, side + 0.5), side_w, bend=-sx * 2.5,
+                     a=0.35, b=0.35)
+        sb = []
+        order = sorted(bangs, key=lambda t: -abs(t[0]))
+        for (tx, ty, w, bend) in order:
+            root = (crown[0] + tx * 0.28, crown[1] + 4)
+            leaf(S, ctx, 'hair_front', root, (tx, ty), w, bend=bend if bend else (lock_bend if tx < 0 else -lock_bend))
+            sb.append((root, (tx, ty), w))
+        shade_bangs(ctx, sb)
     elif hv == 'q':
-        pts = []
-        # 뒤통수 쪽 (왼쪽)
+        cx0 = -4.0
+        cap = arc(cx0, cy, rx, ry, 150, 372, 20)
+        cap = cap + [(rx * 0.95 + cx0 + 2, side - 2), (29.0, side, 'c'), (27.0, side - 4), (27.0, -30), (19, hairline),
+                     (6, hairline - 1.5), (-6, hairline + 1)]
         if ear:
-            pts += [(-27.5, nape, 'c'), (-23.5, nape - 5), (-23.0, -17), (-23.5, -26), (-19.5, -30.5),
-                    (-13.5, -30), (-11.5, -21.5, 'c'), (-9.5, -31.5)]
+            cap += [(-9.5, -33), (-10.0, -25, 'c'), (-12.5, -31.5), (-19, -32.5), (-22.5, -27), (-22.8, -16), (-24, nape + 3),
+                    (-27, nape, 'c')]
         else:
-            pts += [(-27.5, nape, 'c'), (-22.5, nape - 3), (-16.5, -12), (-13, -24), (-10.5, -33.5)]
-        if qside:
-            pts = qside(pts)
-        bx = bang_run(q_xs, q_tip, lambda x: valf(x - 6.0))
-        rly = lockQ
-        tail = [(25.5, -30), (27.0, rly - 6), (29.0, rly, 'c'), (31.5, rly - 9)]
-        front = pts + bx[::-1] + tail
-        if not curly and not crown_spike:
-            front = [front[0]] + front[1:] + dome(8, -197 + 360 - 360, 16)[::-1] if False else front
-        domep = dome(-12 + 360, 166, 18) if not (curly or crown_spike) else dome(348, 166)
-        # dome: 오른쪽(348도) -> 위 -> 왼쪽(166도) 반시계로 가야 하므로 각도 감소
-        poly = front + domep + [(-33.0, nape - 10)]
-        # 순서 보정: front 는 왼쪽 아래 -> 앞머리(왼->오) -> 오른쪽 옆머리
-        if extra_q:
-            poly = extra_q(poly)
-        vals = [p for p in bx if len(p) == 2]
-        sh = strands_from(vals, (-6, -60), 0.42, strand_w)
-        sh += [taper(quad((-27, nape - 2), (-31, -22), (-27, -40), 12), strand_w, 0.2, 0.5),
-               taper(quad((-20, -14), (-22, -30), (-18, -44), 12), strand_w, 0.2, 0.6),
-               taper(quad((29.5, rly - 2), (30, -26), (26, -38), 10), strand_w, 0.2, 0.5)]
-        rings = angel_ring(-3, cy - 2, rx - 6.5, ry - 8, 200, 330, 3) if ring else []
-        S.F(ctx, 'hair_front', cr(poly, 6), shapes=[(s, S.dk, 0.85) for s in sh] + [(r, S.hl, 0.95) for r in rings])
-        shade_bangs(ctx, cr(poly, 6))
+            cap += [(-11, -34), (-13, -22), (-15.5, side + 2), (-17, side, 'c'), (-24, side - 2), (-28, nape, 'c')]
+        cap += [(-33.5, nape - 6)]
+        S.F(ctx, 'hair_front', cr(cap, 6), shapes=[(s, S.hl, 0.45) for s in sheen(cx0, cy - 1, rx - 6, ry - 7, 205, 322, 3)])
+        # 뒤통수 결 (가닥 2~3개)
+        for (r, t, w, bend) in (((-14, -58), (-30, nape + 1), 11, 3), ((-6, -60), (-22, nape - 2), 10, 2)):
+            leaf(S, ctx, 'hair_front', r, (t[0] + sw * 0.6, t[1]), w, bend=bend, a=0.4, b=0.4)
+        if sidelocks:
+            leaf(S, ctx, 'hair_front', (21, -50), (29.5 - sw * 0.5, side + 0.5), side_w * 0.85, bend=-2.0, a=0.35, b=0.35)
+        sb = []
+        tr = [(tx * 0.82 + q_shift, ty, w, bend) for (tx, ty, w, bend) in bangs]
+        tr = [t for t in tr if t[0] > -11]
+        for (tx, ty, w, bend) in sorted(tr, key=lambda t: -abs(t[0] - 8)):
+            root = (cx0 + tx * 0.3, crown[1] + 4)
+            leaf(S, ctx, 'hair_front', root, (tx, ty), w, bend=bend if bend else (lock_bend if tx < 8 else -lock_bend))
+            sb.append((root, (tx, ty), w))
+        shade_bangs(ctx, sb)
     else:  # back
-        tips = back_tips or [-26, -17, -8, 1, 10, 19, 27]
-        bot = []
-        for i, x in enumerate(tips[::-1]):
-            bot.append((x, nape + 1.0 + (1.5 if i % 2 else 0), 'c'))
-            if i + 1 < len(tips):
-                xm = (x + tips[::-1][i + 1]) / 2
-                bot.append((xm, nape - 4))
-        pts = dome(150, 390) + [(31.5, nape - 6)] + bot + [(-31.5, nape - 6)]
-        sh = [taper(quad((x, nape - 2), (x * 1.08, -26), (x * 0.4, -52), 12), strand_w, 0.15, 0.5) for x in tips[1:-1]]
-        rings = angel_ring(0, cy - 2, rx - 5, ry - 7, 210, 330, 3) if ring else []
-        S.F(ctx, 'hair_front', cr(pts, 6), shapes=[(s, S.dk, 0.85) for s in sh] + [(r, S.hl, 0.95) for r in rings])
+        cap = arc(0, cy, rx, ry, 148, 392, 22)
+        cap = cap + [(rx * 0.9, back_len - 4), (rx * 0.8, back_len, 'c')]
+        xs = np.linspace(rx * 0.8, -rx * 0.8, back_tips)
+        for i in range(1, len(xs) - 1):
+            cap.append((xs[i], back_len + (0 if i % 2 else 1.6) - (abs(xs[i]) / rx) * 2))
+        cap += [(-rx * 0.8, back_len, 'c'), (-rx * 0.9, back_len - 4)]
+        S.F(ctx, 'hair_front', cr(cap, 6), shapes=[(s, S.hl, 0.45) for s in sheen(0, cy - 1, rx - 5, ry - 6, 215, 325, 3)])
+        for x in np.linspace(-rx * 0.62, rx * 0.62, max(3, back_tips - 4)):
+            leaf(S, ctx, 'hair_front', (x * 0.25, -58), (x - sw * 0.4, back_len - 1.0), 11, bend=x * 0.08, a=0.45, b=0.4)
 
 
-def long_back(ctx, S, length=26.0, width=33.0, tips=7, layer=None, flare=1.0, wave=0.0, inward=0.0):
-    """긴 머리 뒷덩어리. 정면/옆: hair_back, 뒤: hair_front(앞에서 덮음)."""
+def long_back(ctx, S, length=26.0, width=33.0, wave=0.0, inward=0.0, layer=None, locks=5):
+    """긴 머리 뒷덩어리. 정면/옆: hair_back, 뒤: hair_front."""
     hv = ctx.view
-    sway = ctx.sway * 2.2
+    sw = ctx.sway * 2.0
     lay = layer or ('hair_front' if hv == 'back' else 'hair_back')
     if ctx.prone:
-        length = min(length, 6.0)
+        length = min(length, -5.0)
     if hv == 'q':
-        x0, x1 = -33.0 - flare * 2, 20.0
+        x0, x1 = -width - 2, 18.0
     else:
-        x0, x1 = -width - flare * 2, width + flare * 2
-    xs = np.linspace(x1, x0, tips)
+        x0, x1 = -width, width
+    n = 7
+    xs = np.linspace(x1, x0, n)
     bot = []
     for i, x in enumerate(xs):
         t = abs(x) / max(abs(x0), abs(x1))
-        y = length - (2.5 if i % 2 else 0) - t * 3 - (inward * 6 * (1 - t))
-        bot.append((x - sway * (1 + y / 30), y, 'c'))
-        if i + 1 < len(xs):
-            xm = (x + xs[i + 1]) / 2
-            bot.append((xm - sway, y - 5 - wave))
-    top = arc(0 if hv != 'q' else -3, -30, 34.5, 31.5, 180, 360, 12)
-    pts = [(x1 + 1.5, -20)] + bot + [(x0 - 0.5, -20)] + top
-    sh = []
-    for x in np.linspace(x0 + 6, x1 - 6, max(2, tips - 2)):
-        sh.append(taper(quad((x - sway, length - 4), (x * 1.05, length * 0.3), (x * 0.9, -26), 12), 1.2, 0.15, 0.5))
-    rings = []
-    if hv == 'back':
-        rings = angel_ring(0, -32, 28, 25, 215, 325, 3)
-    S.F(ctx, lay, cr(pts, 6), shapes=[(s, S.dk, 0.8) for s in sh] + [(r, S.hl, 0.9) for r in rings])
+        y = length - t * 3.0 - inward * 5 * (1 - t) - (1.5 if i % 2 else 0)
+        bot.append((x - sw * (1 + y / 40) + (wave * (1 if i % 2 else -1)), y))
+    top = arc(0 if hv != 'q' else -4, -30, width + 1.5, 31.5, 182, 358, 12)
+    pts = [(x1 + 1.0, -18)] + bot + [(x0 - 0.5, -18)] + top
+    S.F(ctx, lay, cr(pts, 6))
+    for x in np.linspace(x0 + 7, x1 - 7, locks):
+        c0 = (x * 0.7, -30)
+        c1 = (x - sw * (1 + length / 40), length - 2)
+        leaf(S, ctx, lay, c0, c1, 12, bend=wave * 1.5 + x * 0.04, a=0.5, b=0.35)
 
 
-def tail(ctx, S, root, d, length, w0, w1, layer, tie=None, curl=0.0, tipn=3, streak=None):
-    """포니테일/양갈래 꼬리. root=머리 로컬 시작점, d=방향 각(도, 0=아래)."""
+def tail(ctx, S, root, d, length, w0, w1, layer, tie=None, curl=0.0, streak=None):
+    """포니테일/양갈래 꼬리 (가닥 3개 묶음)."""
+    if ctx.prone:  # 엎드리면 등 쪽(왼쪽)으로 눕힌다
+        d, length, curl = -84.0, length * 0.85, abs(curl)
     root = np.asarray(root, float)
     a = math.radians(d)
     dv = np.array([math.sin(a), math.cos(a)])
     nv = np.array([dv[1], -dv[0]])
     sw = ctx.sway * 3.0
-    p1 = root + dv * length * 0.45 + nv * (curl * 0.5) + np.array([-sw * 0.4, 0])
-    p2 = root + dv * length + nv * curl + np.array([-sw, 0])
-    c = quad(root, p1, p2, 18)
-    w = lambda t: (w0 + (w1 - w0) * t) * (math.sin(min(1, (1 - t) / 0.35) * math.pi / 2) if t > 0.65 else 1) \
-        * (0.75 + 0.25 * math.sin(min(1, t / 0.15) * math.pi / 2))
-    poly = ribbon(c, w, cap0=True, cap1=False)
-    # 끝을 여러 갈래로
-    sh = [taper(sub(c, 0.1, 0.95, 12) + nv * k, 1.1, 0.2, 0.3) for k in (-w0 * 0.22, w0 * 0.18)]
-    hl = [taper(sub(c, 0.12, 0.45, 10) + nv * (-w0 * 0.12), 2.0, 0.4, 0.4)]
-    shapes = [(s, S.dk, 0.8) for s in sh] + [(h, S.hl, 0.9) for h in hl]
-    if streak:
-        shapes.append((taper(sub(c, 0.05, 0.98, 14) + nv * (w0 * 0.12), w0 * 0.26, 0.1, 0.25), streak, 1.0))
-    for kk, (ang, lf, wf) in enumerate(((-14, 0.82, 0.55), (12, 0.9, 0.5))):
+    for k, (ang, lf, wf, cf) in enumerate(((-12, 0.86, 0.65, 0.6), (14, 0.92, 0.6, 1.2), (0, 1.0, 1.0, 1.0))):
         a2 = math.radians(d + ang)
         dv2 = np.array([math.sin(a2), math.cos(a2)])
-        q1 = root + dv2 * length * 0.45 * lf + nv * (curl * 0.4) + np.array([-sw * 0.4, 0])
-        q2 = root + dv2 * length * lf + nv * curl * 0.8 + np.array([-sw, 0])
-        c2 = quad(root, q1, q2, 14)
-        S.F(ctx, layer, ribbon(c2, lambda t: w(t) * wf * 1.6 if t > 0.3 else w(t) * 0.5, cap0=True, cap1=False),
-            shapes=[(taper(sub(c2, 0.3, 0.9, 8), 0.9, 0.2, 0.3), S.dk, 0.7)])
-    S.F(ctx, layer, poly, shapes=shapes)
+        tip = root + dv2 * length * lf + nv * curl * cf + np.array([-sw, 0])
+        mid = root + dv2 * length * 0.5 * lf + nv * curl * 0.9 + np.array([-sw * 0.4, 0])
+        c = quad(root, mid, tip, 18)
+        wfn = lambda t, w0=w0 * wf, w1=w1 * wf: (w0 + (w1 - w0) * t) * (math.sin(min(1, (1 - t) / 0.45) * math.pi / 2)) \
+            * (0.7 + 0.3 * math.sin(min(1, t / 0.2) * math.pi / 2))
+        shapes = [(taper(sub(c, 0.15, 0.5, 8) - nv * w0 * 0.12, w0 * 0.2, 0.4, 0.4), S.hl, 0.5)]
+        if streak and k == 2:
+            shapes.append((taper(sub(c, 0.05, 0.95, 14) + nv * (w0 * 0.12), w0 * 0.3, 0.1, 0.3), streak, 0.95))
+        S.F(ctx, layer, ribbon(c, wfn, cap0=True, cap1=False), shapes=shapes)
     if tie:
-        tp = root + dv * 2.6
-        S.F(ctx, layer, rot(ellipse(0, 0, w0 * 0.42, 2.6, 18), math.degrees(-a)) + tp, col=tie, sh=shade(tie),
-            line=line_of(tie))
+        tp = root + dv * 2.4
+        S.F(ctx, layer, rot(ellipse(0, 0, w0 * 0.42, 2.4, 18), math.degrees(-a)) + tp, col=tie)
 
 
 # --------------------------------------------------------------- 스타일 12종
 def h_ash_twoblock(ctx):
-    S = HairStyle('#8A7670', hl='#C9B8B0')
-    base_short(ctx, S, front_xs=[24, 15, 5, -5, -15, -24],
-               front_tip=lambda x: -31.0 + abs(x) * 0.12 - (2 if abs(x) < 6 else 0),
-               q_xs=[29, 21, 12, 3, -6], q_tip=lambda x: -31 + (x - 8) ** 2 * 0.006,
-               lockF=(-14, 4), lockQ=-17, nape=-10, vol=(35.5, 34.5, -28.5), curly=(9, 1.8, 5))
+    """애쉬브라운 투블럭: 정수리 볼륨 + 눈썹을 덮는 가닥 앞머리, 옆은 짧게."""
+    S = HairStyle('#8E807A', hl='#C4B8B2')
+    hair_base(ctx, S, vol=(34.5, 34.5, -29.0), side=-24, nape=-12, ear=True,
+              bangs=[(-20, -31, 12, 0), (-10, -28.5, 13, 0), (0, -29, 13, 0), (10, -28, 13, 0), (20, -31, 12, 0)],
+              side_w=7.0, lock_bend=3.0)
 
 
 def h_black_seethrough(ctx):
-    S = HairStyle('#2F2B38', hl='#7A7392', ln='#120F18')
-    long_back(ctx, S, length=34, width=33, tips=9)
-    if ctx.view == 'back':
-        base_short(ctx, S, front_xs=[], front_tip=0, q_xs=[], q_tip=0, nape=30, back_tips=[-30, -20, -10, 0, 10, 20, 30])
-        return
-    # 시스루뱅: 가는 앞머리 사이로 이마가 보인다
-    base_short(ctx, S, front_xs=[25, 19, 12, 5, -2, -9, -16, -21, -25],
-               front_tip=lambda x: -28.5 + abs(x) * 0.1, val=-42.5,
-               q_xs=[29, 24, 18, 12, 6, 0, -5, -10], q_tip=lambda x: -28.5,
-               lockF=(4, 5), lockQ=2, nape=4, ear=False, vol=(35, 33.5, -29.0))
-    # 앞 옆머리 긴 가닥 (얼굴 옆으로)
-    H = ctx.Th
-    for sx, side in ((-1, 'L'), (1, 'R')):
-        if ctx.q and sx < 0:
-            continue
-        x = 29.5 * sx if not ctx.q else 30.0
-        c = quad((x - sx * 2, -26), (x + sx * 1.0, -6), (x - sx * 1.5 - ctx.sway, 16), 14)
-        S.F(ctx, 'hair_front', taper(c, 7.0, a=0.0, b=0.35, wmin=0.5),
-            shapes=[(taper(sub(c, 0.1, 0.9) + (sx * 0.5, 0), 1.0, 0.2, 0.4), S.dk, 0.8)])
-    # 머리핀 2개 (오른쪽 앞머리)
-    if ctx.front:
-        pins = [(15.5, -43.5, 26), (17.5, -39.0, 26)]
-    else:
-        pins = [(19.0, -43.0, 22), (21.5, -38.5, 22)]
-    for (x, y, a), c in zip(pins, ('#FFF6EE', '#F8A8C8')):
-        S.F(ctx, 'hair_front', rot(cr([(-4.5, -1.1, 'c'), (4.5, -1.1, 'c'), (4.5, 1.1, 'c'), (-4.5, 1.1, 'c')], 3), a) + (x, y),
-            col=c, sh=shade(c), line=line_of(c), lw=1.5)
+    """시스루뱅 긴 흑발: 가는 앞머리 사이로 이마가 비치고, 얼굴 옆 가닥이 길다."""
+    S = HairStyle('#36323A', hl='#76707E', ln='#1E1B22')
+    long_back(ctx, S, length=40, width=33, wave=0.6)
+    hair_base(ctx, S, vol=(33.5, 32.5, -29.5), side=10, nape=36, back_len=38, ear=False,
+              bangs=[(-15, -29.5, 6.5, 0), (-7, -28, 6.0, 0), (1, -28.5, 6.0, 0), (9, -28, 6.0, 0), (16, -29.5, 6.5, 0)],
+              side_w=9.0, lock_bend=1.0)
+    if ctx.view != 'back':
+        pins = [(16.5, -44.0, 24), (18.5, -39.5, 24)] if ctx.front else [(20.0, -43.5, 20), (22.0, -39.0, 20)]
+        for (x, y, a), c in zip(pins, ('#F4EEE6', '#E2B8C2')):
+            S.F(ctx, 'hair_front', rot(cr([(-4.6, -1.1, 'c'), (4.6, -1.1, 'c'), (4.6, 1.1, 'c'), (-4.6, 1.1, 'c')], 3), a) + (x, y),
+                col=c, lw=0.8)
 
 
 def h_black_wolfcut(ctx):
-    S = HairStyle('#2A2733', hl='#6E6A86', ln='#110E16')
-    # 뒷목 울프 꼬리
+    """검은 울프컷: 결이 삐친 레이어, 목덜미까지 내려오는 뒷머리, 커튼 앞머리."""
+    S = HairStyle('#323036', hl='#6C6872', ln='#1C1A1E')
     if ctx.view != 'back':
         if ctx.q:
-            for x, l in ((-20, 9), (-14, 7)):
-                tail(ctx, S, (x, -6), 8 + ctx.sway * 2, l, 7.0, 4.5, 'hair_back')
+            for x, l, d in ((-22, 14, 14), (-15, 12, 6)):
+                tail(ctx, S, (x, -8), d + ctx.sway * 3, l, 8.0, 5.0, 'hair_back')
         else:
-            for x in (-22, -12, 12, 22):
-                tail(ctx, S, (x, -10), -x * 0.4, 13, 7.0, 4.0, 'hair_back')
-    base_short(ctx, S, front_xs=[26, 17, 8, -1, -10, -19, -26],
-               front_tip=lambda x: -30 + (2.5 if int(x) % 2 else 0) + abs(x) * 0.05, val=-42,
-               q_xs=[30, 22, 13, 4, -5], q_tip=lambda x: -30.5 + (2.5 if int(x) % 2 else 0),
-               lockF=(-8, 4.5), lockQ=-10, nape=-1, ear=False, vol=(35.5, 34.0, -29.0), crown_spike=(7, 3.6, 3),
-               back_tips=[-29, -21, -13, -5, 3, 11, 19, 27])
-    # 은 귀걸이(정면에서 왼쪽 귀 아래)
+            for x in (-24, -14, 14, 24):
+                tail(ctx, S, (x, -12), -x * 0.5, 14, 7.0, 4.5, 'hair_back')
+    tufts = [((-26, -40), (-35, -14), 7, 3), ((26, -40), (35, -14), 7, -3), ((-20, -50), (-34, -30), 7, 3), ((20, -50), (34, -30), 7, -3)]
+    hair_base(ctx, S, vol=(35.0, 34.0, -29.0), side=-10, nape=-2, back_len=2, ear=False,
+              bangs=[(-22, -27, 9, 3), (-12, -30, 11, 3), (-3, -33, 9, 2), (4, -33, 9, -2), (13, -30, 11, -3), (22, -27, 9, -3)],
+              side_w=9.0, tufts=tufts, back_tips=11)
     if ctx.front:
-        S.F(ctx, 'hair_front', ellipse(-29.5, -15.5, 1.5, 1.5, 12), col='#E8ECF4', sh='#9AA4BC', line='#5B6278', lw=1.2)
+        S.F(ctx, 'hair_front', ellipse(-28.0, -15.0, 1.3, 1.3, 12), col='#E4E6EC', lw=0.7)
 
 
 def h_pink_bridge_ponytail(ctx):
-    S = HairStyle('#4A3530', hl='#9C7A6E', ln='#22140F')
-    pink = '#F48CBB'
+    """핑크 브릿지 포니테일: 높은 포니테일, 얼굴 옆 잔머리에 분홍 브릿지."""
+    S = HairStyle('#4E3D37', hl='#8E766C', ln='#2A1D18')
+    pink = '#E3A0B8'
     if ctx.view == 'front':
-        tail(ctx, S, (22, -50), -22 + ctx.sway * 4, 40, 14, 6, 'hair_back', curl=-6, streak=pink)
+        tail(ctx, S, (20, -52), -24 + ctx.sway * 4, 44, 14, 6, 'hair_back', curl=-6, streak=pink)
     elif ctx.q:
-        tail(ctx, S, (-26, -50), -22 + ctx.sway * 10, 44, 15, 8, 'hair_back', curl=8, streak=pink)
-    base_short(ctx, S, front_xs=[24, 14, 4, -6, -16, -24],
-               front_tip=lambda x: -30 + abs(x) * 0.08, q_xs=[29, 20, 11, 2, -6], q_tip=lambda x: -30,
-               lockF=(-2, 4.0), lockQ=-4, nape=-14, vol=(34.5, 33.5, -29.0))
-    H = ctx.Th
-    # 분홍 브릿지 가닥 (앞 옆머리: 머리색 가닥 안에 분홍 줄)
+        tail(ctx, S, (-25, -52), -26 + ctx.sway * 10, 46, 15, 7, 'hair_back', curl=8, streak=pink)
+    hair_base(ctx, S, vol=(33.0, 32.5, -29.5), side=-8, nape=-16, ear=True,
+              bangs=[(-18, -31, 11, 0), (-7, -33.5, 12, 0), (5, -33, 12, 0), (17, -31, 11, 0)], side_w=6.5)
     sides = [1] if ctx.q else [-1, 1]
     for sx in sides:
-        x = 27.5 * sx if not ctx.q else 28.5
-        c = quad((x - sx * 4, -40), (x + sx * 1.5, -22), (x - sx * 0.5, -4), 14)
-        S.F(ctx, 'hair_front', taper(c, 6.0, a=0.05, b=0.3, wmin=0.6),
-            shapes=[(taper(sub(c, 0.08, 0.92) + (-sx * 0.6, 0), 2.6, 0.2, 0.3), pink, 1.0),
-                    (taper(sub(c, 0.1, 0.5) + (-sx * 1.0, 0), 0.9, 0.3, 0.3), light(pink), 0.9)])
+        x = 25.5 * sx if not ctx.q else 27.0
+        leaf(S, ctx, 'hair_front', (x - sx * 5, -46), (x + sx * 0.5 - ctx.sway * 0.5, -6), 3.6, bend=-sx * 1.5, col=pink, a=0.3, b=0.4)
     if ctx.view == 'back':
-        tail(ctx, S, (0, -52), 0 + ctx.sway * 5, 44, 15, 7, 'hair_front', tie='#F48CBB', streak=pink)
+        tail(ctx, S, (0, -54), ctx.sway * 5, 44, 14, 6, 'hair_front', tie=pink, streak=pink)
     elif ctx.q:
-        S.F(ctx, 'hair_front', rot(ellipse(0, 0, 3.0, 4.6, 16), 30) + (-27.5, -48), col=pink, sh=shade(pink),
-            line=line_of(pink))
+        S.F(ctx, 'hair_front', rot(ellipse(0, 0, 2.8, 4.4, 16), 30) + (-26.5, -50), col=pink, lw=0.8)
 
 
 def h_black_short(ctx):
-    S = HairStyle('#3A2C28', hl='#86706A', ln='#1A100D')
-    base_short(ctx, S, front_xs=[25, 16, 7, -2, -11, -19, -25],
-               front_tip=lambda x: -32.5 + (1.5 if int(x) % 2 else 0), val=-44,
-               q_xs=[29, 21, 13, 4, -5], q_tip=lambda x: -33,
-               lockF=(-18, 3.5), lockQ=-20, nape=-12, vol=(34.5, 33.5, -29.0))
+    """검은 짧은 머리: 한쪽으로 쓸어내린 쉼표 앞머리."""
+    S = HairStyle('#3D322E', hl='#7A6A64', ln='#221A17')
+    hair_base(ctx, S, vol=(33.5, 33.0, -29.5), side=-22, nape=-14, ear=True,
+              bangs=[(-22, -33, 10, 3), (-13, -31, 12, 4), (-3, -30.5, 13, 4), (7, -31.5, 12, 4), (17, -34, 11, 3)],
+              side_w=6.5)
 
 
 def h_brown_short(ctx):
-    S = HairStyle('#8A5636', hl='#D49A6A', ln='#3E2010')
-    # 옆가르마: 왼쪽으로 쓸어 넘긴 앞머리 (끝이 왼쪽으로 휨)
-    base_short(ctx, S, front_xs=[26, 16, 6, -4, -14, -23],
-               front_tip=lambda x: -32 - x * 0.12, val=-43,
-               q_xs=[30, 21, 12, 3, -6], q_tip=lambda x: -32 - (x - 10) * 0.1,
-               lockF=(-17, 3.5), lockQ=-18, nape=-11, vol=(35.0, 34.0, -29.0), curly=(7, 1.4, 9))
+    """밤색 짧은 머리: 가르마를 탄 부드러운 레이어."""
+    S = HairStyle('#80604A', hl='#B8967E', ln='#4A3426')
+    hair_base(ctx, S, vol=(34.0, 33.5, -29.5), side=-20, nape=-12, ear=True,
+              bangs=[(-21, -32, 11, 3), (-11, -30, 12, 3), (-1, -33, 11, 3), (12, -35, 12, -4), (22, -32, 10, -3)],
+              side_w=7.0)
 
 
 def h_blonde_spiky(ctx):
-    S = HairStyle('#F5C64E', hl='#FFF1B0', ln='#9A5A12', dk='#D8902A')
-    base_short(ctx, S, front_xs=[27, 17, 7, -3, -13, -22, -28],
-               front_tip=lambda x: -29 + (2.5 if int(x) % 3 == 0 else 0), val=-42,
-               q_xs=[31, 22, 13, 4, -5], q_tip=lambda x: -29.5,
-               lockF=(-12, 5), lockQ=-15, nape=-6, vol=(35.0, 33.5, -29.0), crown_spike=(7, 7.5, 7),
-               back_tips=[-29, -19, -9, 1, 11, 21, 29])
+    """금발 뻗친 머리: 텍스처 펌 느낌으로 위로 뻗은 결."""
+    S = HairStyle('#E2C384', hl='#F6E6BE', ln='#9A7638', dk='#C29C58')
+    tufts = [((-14, -44), (-30, -60), 10, -2), ((-4, -46), (-12, -68), 10, -2), ((6, -46), (8, -69), 10, 2),
+             ((14, -44), (26, -64), 10, 2), ((20, -40), (35, -50), 9, 2), ((-20, -40), (-36, -48), 9, -2)]
+    hair_base(ctx, S, vol=(33.5, 33.0, -29.5), side=-18, nape=-10, ear=True,
+              bangs=[(-20, -34, 10, 2), (-9, -32, 11, 2), (2, -35, 10, 2), (13, -33, 11, -2), (22, -35, 9, -2)],
+              side_w=6.5, tufts=tufts)
 
 
 def h_pink_long(ctx):
-    S = HairStyle('#F7A0C6', hl='#FFE0EE', ln='#A8406E')
-    long_back(ctx, S, length=36, width=34, tips=9, wave=2.5, flare=2.0)
-    if ctx.view == 'back':
-        base_short(ctx, S, front_xs=[], front_tip=0, q_xs=[], q_tip=0, nape=34, curly=(10, 1.6, 4),
-                   back_tips=[-32, -22, -11, 0, 11, 22, 32])
-        return
-    base_short(ctx, S, front_xs=[25, 15, 5, -5, -15, -24],
-               front_tip=lambda x: -30.5 + abs(x) * 0.06, val=-43,
-               q_xs=[29, 20, 11, 2, -7], q_tip=lambda x: -30.5,
-               lockF=(8, 6), lockQ=6, nape=8, ear=False, vol=(35.5, 34.0, -29.0), curly=(10, 1.6, 4))
-    # 옆 웨이브 가닥
-    for sx in ([1] if ctx.q else [-1, 1]):
-        x = 30.0 * sx
-        c = bez((x - sx * 3, -30), (x + sx * 4, -14), (x - sx * 4, 2), (x + sx * 1 - ctx.sway, 20), 16)
-        S.F(ctx, 'hair_front', taper(c, 8.0, a=0.0, b=0.3, wmin=0.6),
-            shapes=[(taper(sub(c, 0.15, 0.85) + (sx * 0.8, 0), 1.0, 0.2, 0.4), S.dk, 0.8),
-                    (taper(sub(c, 0.1, 0.4) + (-sx * 1.2, 0), 2.0, 0.3, 0.3), S.hl, 0.85)])
+    """분홍 긴 웨이브."""
+    S = HairStyle('#E2B0BF', hl='#F6DCE4', ln='#A06A7C')
+    long_back(ctx, S, length=42, width=35, wave=2.2)
+    hair_base(ctx, S, vol=(34.5, 33.5, -29.0), side=12, nape=38, back_len=40, ear=False,
+              bangs=[(-17, -31, 12, 0), (-6, -29.5, 12, 0), (6, -29.5, 12, 0), (17, -31, 12, 0)], side_w=10.0)
+    if ctx.view != 'back':
+        for sx in ([] if (ctx.q or ctx.prone) else [-1, 1]):
+            x = 31.0 * sx
+            c = bez((x - sx * 4, -30), (x + sx * 4, -14), (x - sx * 4, 2), (x + sx * 1.5 - ctx.sway, 20), 16)
+            S.F(ctx, 'hair_front', taper(c, 8.5, a=0.1, b=0.3, wmin=0.6),
+                shapes=[(taper(sub(c, 0.1, 0.4) + (-sx * 1.2, 0), 1.8, 0.3, 0.3), S.hl, 0.6)])
 
 
 def h_sky_bob(ctx):
-    S = HairStyle('#94CFF2', hl='#E2F4FF', ln='#2E6E9E')
-    long_back(ctx, S, length=0.0, width=33.5, tips=7, inward=0.6)
-    if ctx.view == 'back':
-        base_short(ctx, S, front_xs=[], front_tip=0, q_xs=[], q_tip=0, nape=2, back_tips=[-32, -21, -10, 0, 10, 21, 32])
-        return
-    base_short(ctx, S, front_xs=[25, 16, 7, -2, -11, -19, -25],
-               front_tip=lambda x: -32.0, val=-44,
-               q_xs=[29, 21, 13, 4, -5], q_tip=lambda x: -32.5,
-               lockF=(-1, 7), lockQ=-2, nape=0, ear=False, vol=(36.0, 34.5, -29.0))
+    """하늘색 단발: 턱선 길이, 끝이 안으로 말린다."""
+    S = HairStyle('#A8C4D8', hl='#DCEAF3', ln='#5E7E96')
+    long_back(ctx, S, length=0.0, width=34.5, inward=0.6, locks=4)
+    hair_base(ctx, S, vol=(35.0, 33.5, -29.0), side=-1, nape=1, back_len=2, ear=False,
+              bangs=[(-18, -33, 11, 0), (-8, -31, 11, 0), (2, -31.5, 11, 0), (12, -31, 11, 0), (21, -33, 10, 0)],
+              side_w=10.0)
 
 
 def h_tan_ponytail(ctx):
-    S = HairStyle('#9C6440', hl='#D9A57A', ln='#4A2410')
-    tie = '#E8483E'
+    """갈색 로우 포니테일: 가운데 가르마."""
+    S = HairStyle('#946C50', hl='#C4A086', ln='#583E2C')
+    tie = '#C8735E'
     if ctx.view == 'front':
-        tail(ctx, S, (17, -22), -30 + ctx.sway * 4, 30, 12, 6, 'hair_back', curl=-3)
+        tail(ctx, S, (17, -22), -26 + ctx.sway * 4, 32, 12, 6, 'hair_back', curl=-3)
     elif ctx.q:
-        tail(ctx, S, (-25, -24), -12 + ctx.sway * 8, 32, 13, 7, 'hair_back', curl=4)
-    base_short(ctx, S, front_xs=[24, 14, 4, -6, -16, -24],
-               front_tip=lambda x: -31 + abs(x) * 0.06, q_xs=[29, 20, 11, 2, -6], q_tip=lambda x: -31,
-               lockF=(-12, 4), lockQ=-14, nape=-16, vol=(34.0, 33.0, -29.0))
+        tail(ctx, S, (-25, -24), -12 + ctx.sway * 8, 34, 13, 7, 'hair_back', curl=4)
+    hair_base(ctx, S, vol=(33.0, 32.5, -29.5), side=-10, nape=-16, ear=True,
+              bangs=[(-22, -31, 11, 4), (-10, -35.5, 12, 4), (10, -35.5, 12, -4), (22, -31, 11, -4)], side_w=7.0)
     if ctx.view == 'back':
-        tail(ctx, S, (0, -24), ctx.sway * 5, 30, 12, 6, 'hair_front', tie=tie)
+        tail(ctx, S, (0, -24), ctx.sway * 5, 32, 12, 6, 'hair_front', tie=tie)
     elif ctx.q:
-        S.F(ctx, 'hair_front', rot(ellipse(0, 0, 2.8, 4.2, 16), 15) + (-28.0, -23), col=tie, sh=shade(tie),
-            line=line_of(tie))
+        S.F(ctx, 'hair_front', rot(ellipse(0, 0, 2.6, 4.0, 16), 15) + (-26.5, -23), col=tie, lw=0.8)
 
 
 def h_black_twintail(ctx):
-    S = HairStyle('#352D3E', hl='#7C7090', ln='#160F1C')
-    tie = '#E8483E'
+    """검은 양갈래 (낮게 묶은 투 테일)."""
+    S = HairStyle('#38323C', hl='#6E6676', ln='#1E1A22')
+    tie = '#C8735E'
     if ctx.view == 'front':
         for sx in (-1, 1):
-            tail(ctx, S, (sx * 30, -38), sx * 16 + ctx.sway * 4, 40, 13, 7, 'hair_back', curl=sx * 4)
+            tail(ctx, S, (sx * 28, -26), sx * 14 + ctx.sway * 4, 40, 12, 6, 'hair_back', curl=sx * 4)
     elif ctx.q:
-        tail(ctx, S, (27, -40), 14 + ctx.sway * 6, 38, 12, 6, 'hair_back', curl=-3)
-    base_short(ctx, S, front_xs=[24, 15, 5, -5, -15, -24],
-               front_tip=lambda x: -32 + abs(x) * 0.05, q_xs=[29, 20, 11, 2, -6], q_tip=lambda x: -32,
-               lockF=(-14, 4), lockQ=-15, nape=-14, vol=(34.0, 33.0, -29.0))
+        tail(ctx, S, (25, -28), 12 + ctx.sway * 6, 38, 11, 6, 'hair_back', curl=-3)
+    hair_base(ctx, S, vol=(33.0, 32.5, -29.5), side=-12, nape=-14, ear=False,
+              bangs=[(-19, -31, 11, 0), (-8, -29.5, 12, 0), (4, -29.5, 12, 0), (15, -31, 11, 0)], side_w=7.0)
     if ctx.view == 'front':
         for sx in (-1, 1):
-            S.F(ctx, 'hair_front', rot(ellipse(0, 0, 3.0, 4.4, 16), sx * 20) + (sx * 30, -38), col=tie, sh=shade(tie),
-                line=line_of(tie))
+            S.F(ctx, 'hair_front', rot(ellipse(0, 0, 2.6, 4.0, 16), sx * 20) + (sx * 29.5, -26), col=tie, lw=0.8)
     elif ctx.q:
-        tail(ctx, S, (-24, -40), -14 + ctx.sway * 8, 40, 13, 6, 'hair_front', curl=4, tie=tie)
+        tail(ctx, S, (-22, -28), -12 + ctx.sway * 8, 40, 12, 6, 'hair_front', curl=4, tie=tie)
     else:
         for sx in (-1, 1):
-            tail(ctx, S, (sx * 28, -38), sx * 18 + ctx.sway * 4, 40, 13, 6, 'hair_front', curl=sx * 4, tie=tie)
+            tail(ctx, S, (sx * 27, -26), sx * 16 + ctx.sway * 4, 40, 12, 6, 'hair_front', curl=sx * 4, tie=tie)
 
 
 def h_mint_curly(ctx):
-    S = HairStyle('#86DABD', hl='#DDF8EE', ln='#2E7E68')
-    # 뒤로 풍성한 곱슬 볼륨
-    if ctx.view != 'back':
-        H = ctx.Th
-        pts = wavy_arc(0 if ctx.front else -4, -29, 36, 27, 140, 400, 11, 2.6, seed=11)
-        S.F(ctx, 'hair_back', cr(pts, 5), shapes=[(c, S.dk, 0.7) for c in
-                                                     [taper(quad((x, -4), (x * 1.1, -14), (x, -24), 8), 1.1, 0.3, 0.3)
-                                                      for x in (-30, -20, 20, 30)]])
-    base_short(ctx, S, front_xs=[26, 17, 8, -1, -10, -19, -26],
-               front_tip=lambda x: -31.5 + (2 if int(x) % 2 else 0), val=-43,
-               q_xs=[30, 21, 12, 3, -6], q_tip=lambda x: -31.5,
-               lockF=(-6, 5), lockQ=-8, nape=-4, ear=False, vol=(36.5, 35.0, -28.5), curly=(12, 2.6, 13),
-               back_tips=[-31, -22, -13, -4, 5, 14, 23, 31])
+    """민트 곱슬 (볼륨 펌): 실루엣 둘레가 둥근 컬로 부풀어 있다."""
+    S = HairStyle('#A2CDBB', hl='#D8EEE4', ln='#5C8C7A')
+    cx = 0 if not ctx.q else -4
+    rx, ry, cy = 34.0, 33.5, -29.0
+    lay = 'hair_back' if not ctx.back else 'hair_front'
+    rs = np.random.RandomState(12)
+    angs = list(range(152, 392, 27))
+    for a in angs:
+        r = 6.0 + rs.uniform(0, 2.2)
+        a = a + rs.uniform(-6, 6)
+        x = cx + (rx - 2.5) * math.cos(math.radians(a)); y = cy + (ry - 2.5) * math.sin(math.radians(a))
+        if y > -6:
+            continue
+        S.F(ctx, lay, ellipse(x, y, r, r * 0.92, 20),
+            shapes=[(taper(np.array(arc(x, y, r * 0.55, r * 0.5, 200, 330, 8)), 1.4, 0.3, 0.3), S.hl, 0.55)])
+    hair_base(ctx, S, vol=(rx, ry, cy), side=-8, nape=-4, back_len=-2, ear=False,
+              bangs=[(-20, -31, 12, 5), (-9, -29, 12, 6), (3, -29.5, 12, 6), (15, -31, 12, 5)], side_w=10.0)
 
 
 HAIRS = {

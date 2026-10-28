@@ -27,7 +27,7 @@ def fold(c, w=0.9):
 
 # ------------------------------------------------------------------ 버킷햇
 def h_bucket_white(ctx):
-    col = '#FAF7F2'
+    col = '#F2EFE8'
     x = hx(ctx)
     crown = cr([(x - 27, -44), (x - 26, -57), (x - 16, -67), (x, -69), (x + 16, -67), (x + 26, -57), (x + 27, -44)], 6)
     brim = cr([(x - 38, -36.5), (x - 31, -46), (x, -48.5), (x + 31, -46), (x + 38, -36.5), (x + 30, -33.5), (x, -35.5),
@@ -36,7 +36,7 @@ def h_bucket_white(ctx):
       shapes=[(fold(quad((x - 18, -49), (x - 15, -58), (x - 9, -64), 8), 1.0), shade(col, 1.0), 0.7),
               (fold(quad((x + 18, -49), (x + 16, -58), (x + 10, -64), 8), 1.0), shade(col, 1.0), 0.7),
               (taper(quad((x - 14, -63), (x - 4, -67.2), (x + 6, -65.5), 10), 2.2, 0.3, 0.3), '#FFFFFF', 0.9),
-              (cr([(x - 27, -49, 'c'), (x + 27, -49, 'c'), (x + 27, -45.5, 'c'), (x - 27, -45.5, 'c')], 2), '#EDE6F8', 1.0)])
+              (cr([(x - 27, -49, 'c'), (x + 27, -49, 'c'), (x + 27, -45.5, 'c'), (x - 27, -45.5, 'c')], 2), '#E6E0EE', 1.0)])
     stitches = [(taper(quad((x - 33, -38.6), (x, -42.8 + i * 2.2), (x + 33, -38.6), 16), 0.45, 0.05, 0.05), shade(col, 0.8), 0.9)
                 for i in range(2)]
     F(ctx, 'hat', brim, col, shapes=stitches, sd=(1.0, 1.6))
@@ -44,9 +44,9 @@ def h_bucket_white(ctx):
     if not ctx.back:
         px, py = x + (14 if ctx.front else 13), -57
         sq = cr([(px - 3, py - 3, 'c'), (px + 3, py - 3, 'c'), (px + 3, py + 3, 'c'), (px - 3, py + 3, 'c')], 2)
-        F(ctx, 'hat', sq, '#C3AEF0', lw=1.2, line='#6A55A8',
-          shapes=[(ellipse(px - 1.2, py - 0.6, 0.5, 0.7, 8), '#6A55A8'), (ellipse(px + 1.2, py - 0.6, 0.5, 0.7, 8), '#6A55A8'),
-                  (taper(quad((px - 1.4, py + 1.0), (px, py + 2.2), (px + 1.4, py + 1.0), 6), 0.6, 0.2, 0.2), '#6A55A8')])
+        F(ctx, 'hat', sq, '#B9AED8', lw=1.2, line='#6E6490',
+          shapes=[(ellipse(px - 1.2, py - 0.6, 0.5, 0.7, 8), '#6E6490'), (ellipse(px + 1.2, py - 0.6, 0.5, 0.7, 8), '#6E6490'),
+                  (taper(quad((px - 1.4, py + 1.0), (px, py + 2.2), (px + 1.4, py + 1.0), 6), 0.6, 0.2, 0.2), '#6E6490')])
 
 
 # ------------------------------------------------------------------ 캡
@@ -95,15 +95,15 @@ def logo_mush(fill):
 
 
 def h_cap_black(ctx):
-    cap(ctx, '#2E2B36', logo_mush('#F1E3C6'), '#8E7E60')
+    cap(ctx, '#323036', logo_mush('#E9DCC3'), '#8A7A62')
 
 
 def h_cap_white(ctx):
-    cap(ctx, '#FAF7F2', logo_mush('#3E6BD8'), '#22346E', bill='#F0ECE6')
+    cap(ctx, '#F2EFE8', logo_mush('#6E8DB5'), '#3E5270', bill='#E8E4DC')
 
 
 # ------------------------------------------------------------------ 버섯 모자 (빨강) / 드롭 주황버섯
-def mushroom(ctx, col, spot, under='#FFF1DC', tall=0.0, spots=None, eyes=False):
+def mushroom(ctx, col, spot, under='#F2E6D4', tall=0.0, spots=None, eyes=False):
     x = hx(ctx) * 0.4
     capp = cr([(x - 42, -36), (x - 38, -50), (x - 24, -66 - tall * 0.6), (x, -72 - tall), (x + 24, -66 - tall * 0.6),
                (x + 38, -50), (x + 42, -36), (x + 30, -32.5), (x, -34), (x - 30, -32.5)], 7)
@@ -120,24 +120,34 @@ def mushroom(ctx, col, spot, under='#FFF1DC', tall=0.0, spots=None, eyes=False):
     brim_shadow(ctx, capp[np.asarray(capp)[:, 1] > -40] if False else capp, dy=3.0, alpha=0.22)
     if eyes and ctx.front:
         for sx in (-1, 1):
-            F(ctx, 'hat', ellipse(x + sx * 8, -52, 1.6, 2.4, 12), '#3A1E10', lw=0.6, shd=False,
+            F(ctx, 'hat', ellipse(x + sx * 8, -52, 1.6, 2.4, 12), '#4A3A30', lw=0.6, shd=False,
               shapes=[(ellipse(x + sx * 8 - 0.5, -53, 0.6, 0.7, 8), '#FFFFFF')])
 
 
 def h_mushroom_red(ctx):
-    mushroom(ctx, '#E8483E', '#FFFFFF')
+    mushroom(ctx, '#C9573F', '#FFFFFF')
 
 
 def h_mushroom_cap(ctx):
-    """드롭: 주황버섯 갓 (더 둥글고 높다, 크림 반점 + 작은 눈)."""
-    mushroom(ctx, '#F59A3C', '#FFE7B8', tall=4.0,
-             spots=[(-20, -60, 4.2, 3.4), (8, -68, 4.6, 3.6), (26, -55, 3.6, 3.0), (-34, -45, 2.8, 2.4), (30, -42, 2.4, 2.0)],
-             eyes=True)
+    """드롭: 주황버섯 갓 모자 -> 크림 물방울 무늬의 주황 베레모 + 작은 꼭지."""
+    col, spot = '#D98A4A', '#F2DDB8'
+    x = hx(ctx) * 0.5
+    ber = cr([(x - 35, -40), (x - 36, -50), (x - 24, -63), (x - 4, -68), (x + 18, -66), (x + 33, -57), (x + 37, -46),
+              (x + 31, -40), (x + 12, -43.5), (x - 14, -43.5)], 7)
+    sp = [(-24, -55, 3.4), (-8, -61, 3.8), (10, -61, 3.4), (25, -53, 3.0), (-30, -45, 2.4), (-14, -49, 2.6), (4, -50, 2.8),
+          (20, -46, 2.4), (33, -47, 1.8)]
+    shapes = [(ellipse(x + a, b_, r, r * 0.8, 16), spot, 1.0) for a, b_, r in sp]
+    shapes.append((taper(quad((x - 26, -58), (x - 10, -66), (x + 8, -65.5), 10), 2.6, 0.3, 0.3), light(col, 0.6), 0.6))
+    F(ctx, 'hat', ber, col, shapes=shapes, sd=(1.4, 1.8))
+    band = cr([(x - 31, -41.5, 'c'), (x, -45.0), (x + 31, -41.5, 'c'), (x + 31, -38.0, 'c'), (x, -41.0), (x - 31, -38.0, 'c')], 6)
+    F(ctx, 'hat', band, deep(col, 0.6))
+    brim_shadow(ctx, band, dy=2.4, alpha=0.22)
+    F(ctx, 'hat', cr([(x + 1, -67), (x + 1.5, -71.5), (x + 4, -72.5), (x + 4.6, -68)], 4), '#F2E6D4', lw=0.8)
 
 
 # ------------------------------------------------------------------ 탐험가 모자
 def h_explorer_brown(ctx):
-    col = '#B07A4A'
+    col = '#A8835E'
     band = '#5A3A26'
     x = hx(ctx)
     crown = cr([(x - 25, -45, 'c'), (x - 24, -58), (x - 14, -67), (x, -68.5), (x + 14, -67), (x + 24, -58), (x + 25, -45, 'c')], 6)
@@ -154,12 +164,12 @@ def h_explorer_brown(ctx):
         # 깃털
         fx = x + (17 if not ctx.q else 15)
         fe = quad((fx, -50), (fx + 4, -58), (fx + 1, -66), 10)
-        F(ctx, 'hat', taper(fe, 4.2, 0.1, 0.5, 0.6), '#E8483E', shapes=[(taper(fe, 0.6, 0.1, 0.1), '#9E2838', 0.9)])
+        F(ctx, 'hat', taper(fe, 4.2, 0.1, 0.5, 0.6), '#C9573F', shapes=[(taper(fe, 0.6, 0.1, 0.1), '#8E3E30', 0.9)])
 
 
 # ------------------------------------------------------------------ 비니
 def h_beanie_yellow(ctx):
-    col = '#F7C948'
+    col = '#D9B05A'
     x = hx(ctx) * 0.4
     dome = cr([(x - 32, -45, 'c'), (x - 30, -58), (x - 18, -69), (x, -72), (x + 18, -69), (x + 30, -58), (x + 32, -45, 'c')], 6)
     ribs = [(fold(quad((x + gx * 0.4, -70), (x + gx * 0.92, -60), (x + gx, -48), 8), 0.8), shade(col, 1.0), 0.75)
@@ -172,20 +182,20 @@ def h_beanie_yellow(ctx):
     brim_shadow(ctx, cuff, dy=2.6, alpha=0.25)
     if not ctx.back:
         F(ctx, 'hat', cr([(x + 10, -48.5, 'c'), (x + 17, -48.5, 'c'), (x + 17, -44, 'c'), (x + 10, -44, 'c')], 2), '#FFFFFF', lw=1.0,
-          line='#B8902A')
+          line='#9A7A3A')
     # 방울
     pp = []
     for i in range(16):
         a = math.radians(i * 22.5)
         r = 6.0 + (0.9 if i % 2 else 0)
-        pp.append((x + math.cos(a) * r, -74 + math.sin(a) * r))
-    F(ctx, 'hat', cr(pp, 3), '#FFF4D8', sd=(1.0, 1.2),
-      shapes=[(ellipse(x - 2, -76, 2.2, 1.6, 10), '#FFFFFF', 0.9)])
+        pp.append((x + math.cos(a) * r * 0.9, -72 + math.sin(a) * r * 0.85))
+    F(ctx, 'hat', cr(pp, 3), '#F4EBD6', sd=(1.0, 1.2),
+      shapes=[(ellipse(x - 2, -74, 2.0, 1.4, 10), '#FFFFFF', 0.6)])
 
 
 # ------------------------------------------------------------------ 리본
 def h_ribbon_pink(ctx):
-    col = '#F58AB4'
+    col = '#D99AA5'
     x = hx(ctx)
     bx, by = (x + 17, -60) if not ctx.back else (x - 17, -60)
     sgn = 1
@@ -204,56 +214,56 @@ def h_ribbon_pink(ctx):
 
 # ------------------------------------------------------------------ 드롭: 달팽이 껍질
 def h_snail_shell(ctx):
-    col = '#5AA6EC'
-    x = hx(ctx) * 0.5
-    cx, cy = (x - 2, -58) if not ctx.q else (x - 6, -58)
-    shell = cr([(cx - 30, -42, 'c'), (cx - 31, -55), (cx - 22, -71), (cx - 4, -77), (cx + 14, -74), (cx + 27, -63), (cx + 32, -48),
-                (cx + 31, -42, 'c')], 7)
-    sp = []
-    for i in range(52):
-        a = math.radians(-90 + i * 20)
-        r = 19 * (1 - i / 56)
-        sp.append((cx + 2 + math.cos(a) * r * 1.15, cy + math.sin(a) * r))
-    spiral = taper(np.array(sp), 3.0, 0.05, 0.3, 0.5)
-    shapes = [(spiral, deep(col, 1.0), 0.95),
-              (taper(np.array(sp[:24]) + (-0.8, -1.2), 1.6, 0.2, 0.4), light(col, 0.9), 0.9),
-              (taper(quad((cx - 22, -62), (cx - 12, -73), (cx + 2, -74.5), 10), 3.0, 0.3, 0.3), light(col, 1.0), 0.8)]
-    F(ctx, 'hat', shell, col, shapes=shapes, sd=(1.8, 2.2))
-    # 입구 테두리 (아래)
-    lip = cr([(cx - 31, -45, 'c'), (cx, -48.5), (cx + 32, -45, 'c'), (cx + 32, -40.5, 'c'), (cx, -42.5), (cx - 31, -40.5, 'c')], 6)
-    F(ctx, 'hat', lip, '#F2E2C2', shapes=[(fold(np.array([(cx - 28, -43), (cx + 28, -43)]), 0.5), '#C9A47A', 0.8)])
-    brim_shadow(ctx, lip, dy=2.6, alpha=0.25)
+    """드롭: 달팽이 껍질 모자 -> 소용돌이 패턴 버킷햇 + 꼭대기 더듬이 두 개."""
+    col, ink = '#9DB4CB', '#5E7896'
+    x = hx(ctx)
+    crown = cr([(x - 27, -44), (x - 26, -57), (x - 16, -67), (x, -69), (x + 16, -67), (x + 26, -57), (x + 27, -44)], 6)
+    brim = cr([(x - 38, -36.5), (x - 31, -46), (x, -48.5), (x + 31, -46), (x + 38, -36.5), (x + 30, -33.5), (x, -35.5),
+               (x - 30, -33.5)], 6)
 
-
-# ------------------------------------------------------------------ 드롭: 골렘 투구
-def h_golem_helm(ctx):
-    st = '#B2A89A'
-    moss = '#7FBF4A'
-    x = hx(ctx) * 0.5
-    helm = cr([(x - 33, -36, 'c'), (x - 34, -52), (x - 24, -68, 'c'), (x - 8, -73, 'c'), (x + 10, -73, 'c'), (x + 25, -67, 'c'),
-               (x + 34, -52), (x + 33, -36, 'c'), (x + 25, -36, 'c'), (x + 24, -44), (x + 10, -46.5), (x - 10, -46.5), (x - 24, -44),
-               (x - 25, -36, 'c')], 4)
-    if ctx.back:
-        helm = cr([(x - 33, -36, 'c'), (x - 34, -52), (x - 24, -68, 'c'), (x - 8, -73, 'c'), (x + 10, -73, 'c'), (x + 25, -67, 'c'),
-                   (x + 34, -52), (x + 33, -36, 'c')], 4)
-    shapes = [(fold(quad((x - 16, -66), (x - 12, -60), (x - 15, -54), 8), 1.0), '#6E6458', 0.9),
-              (fold(quad((x + 18, -58), (x + 14, -54), (x + 16, -50), 8), 0.9), '#6E6458', 0.9),
-              (fold(np.array([(x - 30, -52), (x + 30, -52)]), 0.8), '#7E7468', 0.6),
-              (taper(quad((x - 22, -63), (x - 8, -71), (x + 8, -71), 10), 2.6, 0.3, 0.3), light(st, 0.7), 0.85)]
-    F(ctx, 'hat', helm, st, shapes=shapes, sd=(1.6, 2.0))
-    brim_shadow(ctx, helm, dy=2.6, alpha=0.22)
-    # 이끼 + 새싹
-    mp = cr([(x - 18, -69), (x - 10, -75), (x - 2, -73), (x + 6, -76), (x + 16, -71), (x + 12, -68.5), (x, -70), (x - 12, -67.5)], 5)
-    F(ctx, 'hat', mp, moss, lw=1.6)
-    st_ = quad((x + 2, -74), (x + 2.6, -79), (x + 1.2, -83), 8)
-    F(ctx, 'hat', ribbon(st_, 1.4), '#5FA03A', lw=1.0)
+    def swirl(cx, cy, r, turns=2.2):
+        pts = [(cx + math.cos(t) * r * (1 - t / (turns * 2 * math.pi + 1)) * 1.1,
+                cy + math.sin(t) * r * (1 - t / (turns * 2 * math.pi + 1)))
+               for t in np.linspace(0, turns * 2 * math.pi, 40)]
+        return taper(np.array(pts), 1.2, 0.05, 0.3)
+    # 더듬이 (모자 뒤)
     for sx in (-1, 1):
-        leaf = cr([(x + 1.2, -83), (x + 1.2 + sx * 4, -87.5), (x + 1.2 + sx * 9, -86), (x + 1.2 + sx * 5, -82.5)], 5)
-        F(ctx, 'hat', leaf, '#8ED45A', shapes=[(fold(np.array([(x + 1.2, -83), (x + 1.2 + sx * 7.5, -86)]), 0.5), '#5FA03A', 0.9)])
-    # 이마 룬 보석
-    if ctx.front:
-        F(ctx, 'hat', cr([(x, -51, 'c'), (x + 3, -48, 'c'), (x, -45, 'c'), (x - 3, -48, 'c')], 3), '#6BD4E8', line='#2A6C82',
-          shapes=[(ellipse(x - 0.8, -49, 0.8, 0.8, 8), '#E8FCFF')])
+        st = quad((x + sx * 6, -66), (x + sx * 9, -71), (x + sx * 13, -73.5), 10)
+        F(ctx, 'hat_back', ribbon(st, 1.6), '#C5D6AE', lw=0.8)
+        F(ctx, 'hat_back', ellipse(x + sx * 13, -74, 2.0, 2.0, 12), '#C5D6AE', lw=0.8,
+          shapes=[(ellipse(x + sx * 13.4, -74.1, 0.8, 0.9, 8), '#3A3436')])
+    F(ctx, 'hat', crown, col, sd=(1.4, 1.8),
+      shapes=[(swirl(x + a, b_, r), ink, 0.85) for a, b_, r in ((-14, -56, 5.5), (6, -61, 5.0), (18, -51, 4.4), (-2, -50, 3.6))]
+      + [(taper(quad((x - 14, -63), (x - 4, -67.2), (x + 6, -65.5), 10), 2.0, 0.3, 0.3), '#FFFFFF', 0.5)])
+    F(ctx, 'hat', brim, col, sd=(1.0, 1.6),
+      shapes=[(taper(quad((x - 33, -38.6), (x, -42.8 + i * 2.2), (x + 33, -38.6), 16), 0.45, 0.05, 0.05), shade(col, 0.8), 0.9)
+              for i in range(2)] + [(swirl(x + a, -39.5, 2.6, 1.6), ink, 0.75) for a in (-26, -12, 4, 20)])
+    brim_shadow(ctx, brim)
+
+
+def h_golem_helm(ctx):
+    """드롭: 골렘 돌투구 -> 돌 무늬 꽈배기 니트 비니 + 이끼색 접단 + 새싹 핀."""
+    st, moss = '#ABA59C', '#93AE6E'
+    x = hx(ctx) * 0.4
+    dome = cr([(x - 32, -45, 'c'), (x - 30, -58), (x - 18, -69), (x, -72), (x + 18, -69), (x + 30, -58), (x + 32, -45, 'c')], 6)
+    cab = []
+    for gx in (-18, -6, 6, 18):
+        pts = []
+        for i, yy in enumerate(np.linspace(-68, -48, 7)):
+            pts.append((x + gx + (1.6 if i % 2 else -1.6), yy))
+        cab.append((taper(cr(pts, 4, closed=False), 1.0, 0.1, 0.1), '#7E786E', 0.7))
+    cab.append((taper(quad((x - 18, -64), (x - 8, -69.6), (x + 4, -69), 10), 2.2, 0.3, 0.3), light(st, 0.7), 0.55))
+    F(ctx, 'hat', dome, st, shapes=cab, sd=(1.4, 1.8))
+    cuff = cr([(x - 34, -50, 'c'), (x, -52.5), (x + 34, -50, 'c'), (x + 34.5, -41.5, 'c'), (x, -39.5), (x - 34.5, -41.5, 'c')], 6)
+    F(ctx, 'hat', cuff, moss, shapes=[(fold(np.array([(x + gx, -50.5), (x + gx, -41)]), 0.8), shade(moss, 1.1), 0.7)
+                                      for gx in np.linspace(-31, 31, 17)], sd=(1.0, 1.6))
+    brim_shadow(ctx, cuff, dy=2.6, alpha=0.22)
+    if not ctx.back:
+        px = x + (16 if ctx.front else 18)
+        F(ctx, 'hat', ribbon(quad((px, -46), (px + 0.6, -50), (px - 0.4, -54), 8), 1.2), '#6E8E4E', lw=0.7)
+        for sx in (-1, 1):
+            F(ctx, 'hat', cr([(px - 0.4, -54), (px - 0.4 + sx * 3.5, -57.5), (px - 0.4 + sx * 7, -56), (px - 0.4 + sx * 3.5, -53.5)], 5),
+              '#A8C47E', lw=0.7)
 
 
 HATS = {

@@ -13,8 +13,8 @@ from PIL import Image, ImageDraw
 SS = 4
 FW, FH = 144, 192
 AX, AY = 72, 180
-LW = 2.3          # 외곽선 두께 (출력 px)
-LIGHT = (1.0, 1.25)   # 그늘 초승달: 도형을 빛 쪽(왼쪽 위)으로 민 거리 (출력 px)
+LW = 1.15         # 외곽선 두께 (출력 px, 얇은 색선)
+LIGHT = (1.5, 1.7)   # 그늘 초승달: 도형을 빛 쪽(왼쪽 위)으로 민 거리 (출력 px)
 
 
 # ---------------------------------------------------------------- 색
@@ -45,8 +45,8 @@ def shade(c, k=1.0):
     if s < 0.08:
         h, s = 0.66, s + 0.05 * k
     h = _shift_h(h, 0.78 if (h > 0.25 and h < 0.85) else 0.98, 0.10 * k)
-    s = min(1.0, s * (1 + 0.22 * k) + 0.05 * k)
-    v = v * (1 - 0.16 * k)
+    s = min(1.0, s * (1 + 0.14 * k) + 0.03 * k)
+    v = v * (1 - 0.11 * k)
     return colorsys.hsv_to_rgb(h, s, v)
 
 
@@ -66,9 +66,9 @@ def line_of(c):
     h, s, v = _hsv(c)
     if s < 0.10:
         # 무채색: 차가운 회보라 계열
-        return colorsys.hsv_to_rgb(0.70, 0.22 + s, max(0.22, v * 0.50))
-    h = _shift_h(h, 0.80 if (h > 0.25 and h < 0.85) else 0.98, 0.12)
-    return colorsys.hsv_to_rgb(h, min(1.0, s * 1.05 + 0.25), max(0.14, v * 0.46))
+        return colorsys.hsv_to_rgb(0.72, 0.10 + s, max(0.30, v * 0.64))
+    h = _shift_h(h, 0.80 if (h > 0.25 and h < 0.85) else 0.98, 0.08)
+    return colorsys.hsv_to_rgb(h, min(1.0, s * 1.0 + 0.16), max(0.20, v * 0.60))
 
 
 def mix(a, b, t):

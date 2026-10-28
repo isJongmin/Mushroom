@@ -17,11 +17,12 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
 
 
-def load():
-    m = json.load(open(os.path.join(ROOT, 'assets', 'map', 'manifest.json')))
+def load(mapdir=None):
+    mapdir = mapdir or os.path.join(ROOT, 'assets', 'map')
+    m = json.load(open(os.path.join(mapdir, 'manifest.json')))
     layers = []
     for l in m['layers']:
-        im = Image.open(os.path.join(ROOT, l['src'])).convert('RGBA')
+        im = Image.open(os.path.join(mapdir, os.path.basename(l['src']))).convert('RGBA')
         layers.append((l, im))
     return m, layers
 
@@ -92,9 +93,11 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('out')
     ap.add_argument('--platforms', action='store_true')
+    ap.add_argument('--map', default=None, help='맵 폴더 (기본 assets/map)')
+    ap.add_argument('--k', type=float, default=1.5, help='크롭 배율 px/월드 (1.5 = P3 에셋 1:1, 1.0 = P2)')
     a = ap.parse_args()
     os.makedirs(a.out, exist_ok=True)
-    m, layers = load()
+    m, layers = load(a.map)
     W, Hw = m['width'], m['height']
     # 전체 축소본: 모든 레이어를 parallax 없이(카메라 0) 월드 전체 폭으로 펼쳐 합성(축소 0.5)
     k = 0.5
@@ -106,10 +109,11 @@ def main():
         overlay(dbg, m, 0, 0, k)
         dbg.convert('RGB').save(os.path.join(a.out, 'overview_dbg.png'))
     for (name, cx, cy) in CROPS:
-        v = view(m, layers, cx, cy, 1280, 720, 1.5)
+        vw, vh = 1920 / a.k if a.k == 1.5 else 1280 / a.k, 1080 / a.k if a.k == 1.5 else 720 / a.k
+        v = view(m, layers, cx, cy, vw, vh, a.k)
         v.convert('RGB').save(os.path.join(a.out, f'crop_{name}.png'))
         if a.platforms:
-            overlay(v, m, cx, cy, 1.5)
+            overlay(v, m, cx, cy, a.k)
             v.convert('RGB').save(os.path.join(a.out, f'crop_{name}_dbg.png'))
     print('ok', a.out)
 

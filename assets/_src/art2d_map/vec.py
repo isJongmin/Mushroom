@@ -54,8 +54,11 @@ class Scene:
             self.ops.append(('strokeclosed', _bbox(polys, lw + 1), polys, hexc(line), lw * 2, alpha))
         self.ops.append(('fill', _bbox(polys, 1), polys, hexc(fill), alpha, None))
 
-    def fill(self, polys, color, alpha=1.0, grad=None):
+    def fill(self, polys, color, alpha=1.0, grad=None, agrad=None):
+        """agrad = [(y, alpha), ..] 이면 세로 방향으로 불투명도가 바뀐다(안개, 글로우)."""
         polys = _as_polys(polys)
+        if agrad is not None:
+            alpha = (np.array([float(y) for y, _ in agrad]), np.array([float(a) for _, a in agrad]) * alpha)
         g = None
         if grad is not None:
             g = ([float(y) for y, _ in grad], np.stack([hexc(c) for _, c in grad]))
@@ -147,6 +150,17 @@ class _Tile:
             ys = self.y0 + (np.arange(by0, by1) + 0.5) / SS
             col = np.stack([np.interp(ys, grad[0], grad[1][:, i]) for i in range(3)], -1).astype(np.float32)
             col = np.broadcast_to(col[:, None, :], (by1 - by0, bx1 - bx0, 3))
+        if isinstance(alpha, tuple):
+            ys = self.y0 + (np.arange(by0, by1) + 0.5) / SS
+            arow = np.interp(ys, alpha[0], alpha[1]).astype(np.float32)
+            a = np.broadcast_to(arow[:, None], m.shape)[m][:, None]
+            sel = reg[m]
+            c = col[m] if grad is not None else rgb[None, :]
+            sel *= (1 - a)
+            sel[:, :3] += c * a
+            sel[:, 3:4] += a
+            reg[m] = sel
+            return
         if alpha >= 1.0:
             if grad is None:
                 reg[m] = (rgb[0], rgb[1], rgb[2], 1.0)

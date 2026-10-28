@@ -54,8 +54,8 @@ def side_pocket(ctx, k, col, t=0.42, w=6.0, h=6.5, flap=True):
 
 # ------------------------------------------------------------------
 def b_denim_wide(ctx):
-    col = '#A8C4E8'
-    cuff = '#C8DCF4'
+    col = '#B3C6DD'
+    cuff = '#CCDAEA'
     waist(ctx, col)
     for k in ('F', 'N'):
         c = pant_leg(ctx, k, col, w0=11.5, wk=11.6, w1=12.8, cuff=cuff, cuff_len=0.12,
@@ -68,14 +68,14 @@ def b_denim_wide(ctx):
     sq = cr([(p[0] - 2.2, p[1] - 2.2, 'c'), (p[0] + 2.2, p[1] - 2.2, 'c'), (p[0] + 2.2, p[1] + 2.2, 'c'),
              (p[0] - 2.2, p[1] + 2.2, 'c')], 2)
     if not ctx.back:
-        ctx.fig(leg_layer(ctx, k, 'bottom'), sq, '#C3AEF0', lw=1.1, line='#6A55A8',
-                shapes=[(ellipse(p[0] - 0.9, p[1] - 0.4, 0.35, 0.5, 8), '#6A55A8'),
-                        (ellipse(p[0] + 0.9, p[1] - 0.4, 0.35, 0.5, 8), '#6A55A8'),
-                        (taper(quad((p[0] - 1.1, p[1] + 0.8), (p[0], p[1] + 1.6), (p[0] + 1.1, p[1] + 0.8), 6), 0.4, 0.2, 0.2), '#6A55A8')])
+        ctx.fig(leg_layer(ctx, k, 'bottom'), sq, '#B9AED8', lw=1.1, line='#6E6490',
+                shapes=[(ellipse(p[0] - 0.9, p[1] - 0.4, 0.35, 0.5, 8), '#6E6490'),
+                        (ellipse(p[0] + 0.9, p[1] - 0.4, 0.35, 0.5, 8), '#6E6490'),
+                        (taper(quad((p[0] - 1.1, p[1] + 0.8), (p[0], p[1] + 1.6), (p[0] + 1.1, p[1] + 0.8), 6), 0.4, 0.2, 0.2), '#6E6490')])
 
 
 def b_cargo_black(ctx):
-    col = '#3A3742'
+    col = '#3A393E'
     waist(ctx, col)
     for k in ('F', 'N'):
         pant_leg(ctx, k, col, w0=11.0, wk=10.6, w1=8.6, cuff=col, cuff_len=0.1)
@@ -90,11 +90,11 @@ def b_cargo_black(ctx):
         ch = quad((x0, -4.5), ((x0 + x1) / 2, 3.5 + ctx.sway * 0.5), (x1, -3.5), 14)
         for i in range(0, 14, 2):
             p = ch[i]
-            ctx.fig('bottom', T(ctx, ellipse(p[0], p[1], 0.9, 0.6, 8)), '#DDE0EA', lw=0.7, line='#6E7488', shd=False)
+            ctx.fig('bottom', T(ctx, ellipse(p[0], p[1], 0.9, 0.6, 8)), '#D8DAE0', lw=0.7, line='#7E8290', shd=False)
 
 
 def b_cargo_beige(ctx):
-    col = '#E6D4B2'
+    col = '#DCCBAA'
     waist(ctx, col)
     for k in ('F', 'N'):
         pant_leg(ctx, k, col, w0=11.8, wk=11.8, w1=12.4, cuff=col, cuff_len=0.08)
@@ -107,7 +107,7 @@ def b_cargo_beige(ctx):
         c = cxo(ctx)
         x = c - 7 if not ctx.q else c - 4
         s = quad((x, -5), (x - 0.5 + ctx.sway * 0.3, -1), (x + 0.2 + ctx.sway * 0.6, 3.5), 8)
-        ctx.fig('bottom', T(ctx, ribbon(s, 1.3)), '#7ED6B4', lw=0.9)
+        ctx.fig('bottom', T(ctx, ribbon(s, 1.3)), '#9CC9B4', lw=0.9)
 
 
 def b_pants(col, crease=True):
@@ -123,13 +123,13 @@ def b_pants(col, crease=True):
 
 
 def b_jeans_blue(ctx):
-    col = '#4F7CC6'
-    stitch = '#E9A64A'
-    waist(ctx, col, belt='#3E68AE')
+    col = '#5F7FA8'
+    stitch = '#D2A062'
+    waist(ctx, col, belt='#4E6C94')
     for k in ('F', 'N'):
         c = leg_line(ctx, k, 16)
         sh = [(taper(sub(c, 0.05, 0.95, 10) + (1.8, 0), 0.45, 0.1, 0.1), stitch, 0.8)]
-        pant_leg(ctx, k, col, w0=10.4, wk=9.8, w1=10.0, shapes_extra=sh, cuff='#6E96D8', cuff_len=0.09)
+        pant_leg(ctx, k, col, w0=10.4, wk=9.8, w1=10.0, shapes_extra=sh, cuff='#7A96BA', cuff_len=0.09)
     if not ctx.back:
         c = cxo(ctx)
         for sx in (-1, 1):
@@ -138,7 +138,7 @@ def b_jeans_blue(ctx):
 
 
 def b_shorts_brown(ctx):
-    col = '#9C6C46'
+    col = '#9A7457'
     waist(ctx, col)
     for k in ('F', 'N'):
         pant_leg(ctx, k, col, w0=11.2, wk=11.0, w1=11.4, t1=0.5, cuff=light(col, 0.3), cuff_len=0.2, folds=False)
@@ -193,25 +193,25 @@ def check_pattern(dark, light_):
 
 
 def b_skirt_check(ctx):
-    skirt(ctx, '#B8A898', hem=10.0, flare=16.0, pleats=9, pattern=check_pattern('#6E5E52', '#E4D8C8'), band='#8E7E70')
+    skirt(ctx, '#B0A394', hem=10.0, flare=16.0, pleats=9, pattern=check_pattern('#6E5E52', '#E4D8C8'), band='#8E7E70')
 
 
 def b_skirt_pink(ctx):
-    skirt(ctx, '#F7A6C8', hem=11.0, flare=17.0, pleats=7, frill='#FFF0F6', band='#E886B0')
+    skirt(ctx, '#E3B5BF', hem=11.0, flare=17.0, pleats=7, frill='#F6EEEE', band='#D49AA8')
     if not ctx.back:
         c = cxo(ctx)
         x, y = c + (6 if not ctx.front else 7), -5.8
         for sx in (-1, 1):
             ctx.fig('bottom', T(ctx, cr([(x, y), (x + sx * 2.6, y - 1.6), (x + sx * 2.8, y + 1.4)], 5)), '#FFFFFF', lw=1.0,
-                    line='#C06890')
-        ctx.fig('bottom', T(ctx, ellipse(x, y, 0.8, 0.8, 8)), '#FFE0EC', lw=0.8, line='#C06890')
+                    line='#A86A7A')
+        ctx.fig('bottom', T(ctx, ellipse(x, y, 0.8, 0.8, 8)), '#F2DCE2', lw=0.8, line='#A86A7A')
 
 
 # ------------------------------------------------------------------ 드롭
 def b_mushroom_shorts(ctx):
-    col = '#F2903A'
-    spot = '#FFF1D6'
-    waist(ctx, '#8A5A3A', loops=False, band=False)
+    col = '#D9874E'
+    spot = '#F4E6CC'
+    waist(ctx, '#7E5E48', loops=False, band=False)
     for k in ('F', 'N'):
         c = leg_line(ctx, k, 16)
         spots = []
@@ -222,19 +222,19 @@ def b_mushroom_shorts(ctx):
         # 버섯 갓 아래 주름 밑단
         cc = sub(c, 0.46, 0.53, 6)
         ctx.fig(leg_layer(ctx, k, 'bottom'), ribbon(cc, 12.6, cap0=False, cap1=False), spot,
-                shapes=[(taper(sub(cc, 0.0, 1.0, 4) + (x, 0), 0.5, 0.1, 0.1), '#D8B88A', 0.9) for x in (-3, -1, 1, 3)])
+                shapes=[(taper(sub(cc, 0.0, 1.0, 4) + (x, 0), 0.5, 0.1, 0.1), '#CDB38E', 0.9) for x in (-3, -1, 1, 3)])
     # 갈색 허리 + 작은 버섯 단추
     c = cxo(ctx)
-    ctx.fig('bottom', T(ctx, cr([(-13, -7, 'c'), (13, -7, 'c'), (13, -3.5, 'c'), (-13, -3.5, 'c')], 2)), '#8A5A3A')
+    ctx.fig('bottom', T(ctx, cr([(-13, -7, 'c'), (13, -7, 'c'), (13, -3.5, 'c'), (-13, -3.5, 'c')], 2)), '#7E5E48')
     if not ctx.back:
-        ctx.fig('bottom', T(ctx, cr([(c - 2.4, -5.2), (c - 1.6, -7.4), (c + 1.6, -7.4), (c + 2.4, -5.2)], 4)), '#E8483E', lw=0.9,
+        ctx.fig('bottom', T(ctx, cr([(c - 2.4, -5.2), (c - 1.6, -7.4), (c + 1.6, -7.4), (c + 2.4, -5.2)], 4)), '#C8664F', lw=0.9,
                 shapes=[(T(ctx, ellipse(c - 0.6, -6.5, 0.5, 0.4, 6)), '#FFFFFF')])
         ctx.fig('bottom', T(ctx, cr([(c - 1.0, -5.2, 'c'), (c + 1.0, -5.2, 'c'), (c + 0.8, -3.6, 'c'), (c - 0.8, -3.6, 'c')], 2)),
-                '#FFF1D6', lw=0.8)
+                '#F4E6CC', lw=0.8)
 
 
 def b_slime_pants(ctx):
-    g = '#86DC6C'
+    g = '#B9D9A4'
     gl = light(g, 1.0)
     waist(ctx, g, loops=False, belt=shade(g, 0.6))
     for k in ('F', 'N'):
@@ -258,7 +258,7 @@ def b_slime_pants(ctx):
 
 BOTTOMS = {
     'denim-wide': b_denim_wide, 'skirt-check': b_skirt_check, 'cargo-black': b_cargo_black,
-    'cargo-beige': b_cargo_beige, 'pants-navy': b_pants('#36437E'), 'pants-black': b_pants('#2F2C36'),
+    'cargo-beige': b_cargo_beige, 'pants-navy': b_pants('#3B4767'), 'pants-black': b_pants('#2F2E33'),
     'skirt-pink': b_skirt_pink, 'shorts-brown': b_shorts_brown, 'jeans-blue': b_jeans_blue,
     'mushroom-shorts': b_mushroom_shorts, 'slime-pants': b_slime_pants,
 }

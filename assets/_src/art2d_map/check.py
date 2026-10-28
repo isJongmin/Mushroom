@@ -24,6 +24,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, HERE)
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
 MAP = os.path.join(ROOT, 'assets', 'map')
+STYLE = 'v1'
 
 from platforms import PLATFORMS, SPAWNS, SPAWN, WORLD_W, WORLD_H, GROUND_Y, DENSITY, MOB_IDS  # noqa: E402
 
@@ -47,7 +48,7 @@ def check_manifest():
     if len(m.get('spawns', [])) != len(SPAWNS):
         err('manifest spawns')
     for l in m['layers']:
-        if not os.path.exists(os.path.join(ROOT, l['src'])):
+        if not os.path.exists(os.path.join(MAP, os.path.basename(l['src']))):
             err('missing ' + l['src'])
     g = [l for l in m['layers'] if l['parallax'] == 1.0 and not l.get('repeatX') and not l.get('stretchX')]
     if len(g) != 1 or abs(g[0]['w'] - WORLD_W) > 0.01 or g[0]['y'] != 0:
@@ -96,7 +97,8 @@ def check_platforms():
 
 
 def check_art():
-    import layers as L
+    import importlib
+    L = importlib.import_module('layers2' if STYLE == 'v2' else 'layers')
     from vec import Scene, render
     g = np.asarray(Image.open(os.path.join(MAP, 'ground.webp')).convert('RGBA'))
     if g.shape[:2] != (int(WORLD_H * DENSITY), int(WORLD_W * DENSITY)):
@@ -194,7 +196,13 @@ def md5s():
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--determinism', action='store_true')
+    ap.add_argument('--style', default='v1', choices=['v1', 'v2'])
+    ap.add_argument('--map', default=None, help='검사할 맵 폴더 (기본 assets/map)')
     a = ap.parse_args()
+    global MAP, STYLE
+    STYLE = a.style
+    if a.map:
+        MAP = os.path.abspath(a.map)
     check_manifest()
     check_platforms()
     check_spawns()
@@ -202,7 +210,7 @@ def main():
     check_size()
     if a.determinism:
         h1 = md5s()
-        subprocess.run([sys.executable, os.path.join(HERE, 'build.py')], check=True, stdout=subprocess.DEVNULL)
+        subprocess.run([sys.executable, os.path.join(HERE, 'build.py'), '--style', STYLE, '--out', MAP], check=True, stdout=subprocess.DEVNULL)
         h2 = md5s()
         if h1 != h2:
             err('not deterministic: ' + str([f for f in h1 if h1[f] != h2.get(f)]))

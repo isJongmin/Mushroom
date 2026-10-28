@@ -64,6 +64,11 @@ def main(av_dir=None, out=None):
     grid(av_dir, files, [av for lb, av in DROP_SETS], ['front', 'side', 'back', 'walk0', 'jump', 'prone', 'attack1'], z=2).save(os.path.join(out, 'drops.png'))
     grid(av_dir, files, pres[:4], ['front', 'side'], z=4, crop=(16, 20, 128, 186)).save(os.path.join(out, 'closeup.png'))
     icons(av_dir, m).save(os.path.join(out, 'icons.png'))
+    fr = ['front', 'walk0', 'walk1', 'walk2', 'walk3', 'attack0', 'attack1']
+    grid(av_dir, files, pres, fr, z=1, crop=(0, 0, 144, 192)).save(os.path.join(out, 'game_1x.png'))
+    grid(av_dir, files, pres, fr, z=2, crop=(14, 4, 130, 186)).save(os.path.join(out, 'game_2x.png'))
+    grid(av_dir, files, [av for lb, av in DROP_SETS], ['front', 'walk0', 'attack1', 'back'], z=2,
+         crop=(14, 4, 130, 186)).save(os.path.join(out, 'drops_2x.png'))
     print('preview ->', out)
 
 

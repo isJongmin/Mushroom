@@ -17,7 +17,9 @@ sys.path.insert(0, HERE)
 ROOT = os.path.abspath(os.path.join(HERE, '..', '..', '..'))
 OUT = os.path.join(ROOT, 'assets', 'map')
 
-import layers as L  # noqa: E402
+import layers as L1  # noqa: E402
+import layers2 as L2  # noqa: E402
+L = L1
 from vec import render, to_rgba8, hexc  # noqa: E402
 from platforms import PLATFORMS, SPAWNS, SPAWN, WORLD_W, WORLD_H, GROUND_Y, DENSITY  # noqa: E402
 
@@ -45,7 +47,7 @@ def haze_post(rgba, t, to='#CDEBFA'):
     return (o + 0.5).astype(np.uint8)
 
 
-def build_layer(name, jobs):
+def build_layer(name, jobs, out=OUT):
     spec = L.LAYERS[name]
     t = time.time()
     sc = getattr(L, 'build_' + name)()
@@ -54,7 +56,7 @@ def build_layer(name, jobs):
     rgba = haze_post(rgba, spec['haze'])
     # 완전 투명 픽셀 색은 0 으로 (용량, 결정성)
     rgba[rgba[..., 3] == 0] = 0
-    path = os.path.join(OUT, name + '.webp')
+    path = os.path.join(out, name + '.webp')
     Image.fromarray(rgba, 'RGBA').save(path, **WEBP)
     print(f'{name}: {rgba.shape[1]}x{rgba.shape[0]} ops={len(sc.ops)} {time.time() - t:.1f}s {os.path.getsize(path) / 1024:.0f} KB')
     return rgba
@@ -79,16 +81,16 @@ def manifest():
     }
 
 
-def write_manifest():
+def write_manifest(out=OUT):
     m = manifest()
-    with open(os.path.join(OUT, 'manifest.json'), 'w', encoding='utf-8') as f:
+    with open(os.path.join(out, 'manifest.json'), 'w', encoding='utf-8') as f:
         json.dump(m, f, ensure_ascii=False, indent=2)
         f.write('\n')
     # manifest 에 없는 옛 파일 정리
     keep = {os.path.basename(l['src']) for l in m['layers']} | {'manifest.json'}
-    for fn in os.listdir(OUT):
+    for fn in os.listdir(out):
         if fn not in keep:
-            os.remove(os.path.join(OUT, fn))
+            os.remove(os.path.join(out, fn))
             print('removed', fn)
 
 
@@ -96,16 +98,21 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument('--only', default='')
     ap.add_argument('--jobs', type=int, default=2)
+    ap.add_argument('--style', default='v1', choices=['v1', 'v2'])
+    ap.add_argument('--out', default=OUT, help='출력 폴더 (미리보기용. 기본 assets/map)')
     a = ap.parse_args()
+    global L
+    L = L2 if a.style == 'v2' else L1
+    out = os.path.abspath(a.out)
     names = [n for n in a.only.split(',') if n] or ['sky', 'clouds', 'far', 'mid', 'ground']
-    os.makedirs(OUT, exist_ok=True)
+    os.makedirs(out, exist_ok=True)
     for n in names:
         if n == 'sky':
-            sky_png(os.path.join(OUT, 'sky.png'))
+            sky_png(os.path.join(out, 'sky.png'))
         else:
-            build_layer(n, a.jobs)
-    write_manifest()
-    total = sum(os.path.getsize(os.path.join(OUT, f)) for f in os.listdir(OUT))
+            build_layer(n, a.jobs, out)
+    write_manifest(out)
+    total = sum(os.path.getsize(os.path.join(out, f)) for f in os.listdir(out))
     print(f'total {total / 1024 / 1024:.2f} MB')
 
 

@@ -19,7 +19,7 @@
     "back",
     "jump",
     "fall",
-    "crouch"
+    "prone"
   ],
   "animations": {
     "idle_front": {
@@ -56,7 +56,7 @@
       ],
       "ms": 200
     },
-    "crouch": {
+    "prone": {
       "frames": [
         10
       ],
@@ -82,6 +82,11 @@
     {
       "layer": "face",
       "part": "face",
+      "blend": "source-over"
+    },
+    {
+      "layer": "shoes_under",
+      "part": "shoes",
       "blend": "source-over"
     },
     {
@@ -434,8 +439,14 @@
   ],
   "files": {
     "hair_back": [
+      "ash-twoblock",
       "black-seethrough",
+      "black-short",
       "black-twintail",
+      "black-wolfcut",
+      "blonde-spiky",
+      "brown-short",
+      "pink-bridge-ponytail",
       "pink-long",
       "tan-ponytail"
     ],
@@ -461,6 +472,11 @@
       "sleepy",
       "smile",
       "wink"
+    ],
+    "shoes_under": [
+      "hightop-black",
+      "loafer-socks",
+      "maryjane-red"
     ],
     "bottom": [
       "cargo-beige",

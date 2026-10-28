@@ -1,6 +1,7 @@
 """사이클 10 fx 규격(순수 데이터). fx/build.py와 art2d_mob/build.py가 함께 쓴다."""
 
-BUFFS = ['range', 'multi', 'element', 'power', 'speed']   # 순서 고정(구슬 시트 프레임 순서)
+BUFFS = ['range', 'multi', 'element', 'power', 'speed']   # 버프 5종(HUD 표시)
+ITEMS = BUFFS + ['heal']   # 드롭 종류. 순서 고정(구슬 시트 프레임 순서, 아이콘 목록). heal은 버프 아님(즉시 HP +30)
 
 ICON = 64           # 아이콘 64x64
 ORB = 48            # 구슬 프레임 48x48
@@ -24,13 +25,13 @@ def _slash_entry(name, el):
 FX_MANIFEST = {
     'buffOrb': {
         'sheet': 'assets/fx/buff_orb.png', 'frame': {'w': ORB, 'h': ORB}, 'anchor': {'x': ORB // 2, 'y': ORB // 2},
-        'frames': len(BUFFS), 'order': BUFFS,
+        'frames': len(ITEMS), 'order': ITEMS,
         'note': '정적 시트, 프레임 i = order[i]. 기준점 = 구슬 중심. 구슬 지름 약 28px(월드 약 19), 바깥은 글로우. 위아래 흔들림은 프런트가 처리. 좌우 반전하지 않는다.',
     },
     'buffIcons': {
         'dir': 'assets/fx/buff', 'pattern': 'assets/fx/buff/{id}.png', 'size': {'w': ICON, 'h': ICON},
-        'ids': BUFFS,
-        'note': '64x64 투명 배경 원형 배지(지름 약 62). HUD에서 32~40px로 축소 표시해도 읽히게 그렸다.',
+        'ids': ITEMS,
+        'note': '64x64 투명 배경 원형 배지(지름 약 62). HUD에서 32~40px로 축소 표시해도 읽히게 그렸다. heal은 HUD 버프가 아니라 드롭/줍기 표시용.',
     },
     'slashFire': _slash_entry('slash_fire', 1),
     'slashIce': _slash_entry('slash_ice', 2),

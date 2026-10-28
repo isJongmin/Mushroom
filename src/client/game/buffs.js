@@ -1,42 +1,58 @@
-// (사이클 10) 공격 강화 버프. ARCHITECTURE "사이클 10 계약". DOM 없이 동작(Node 단위 시험 가능), 그리기 함수는 canvas만 받는다.
-//   range   사거리: 판정 가로 +35/스택 (기본 70)
-//   multi   공격 횟수: 타수 +1/스택 (기본 1)
-//   element 속성: 피해 +20%/스택, 베기 색 (1 불 주황, 2 얼음 하늘, 3 번개 노랑)
-//   power   공격력: 피해 +4/스택 (기본 8~14)
-//   speed   공격 속도: 쿨다운 x0.8/스택 (기본 0.45초, 최소 0.25초). attack 애니메이션 ms도 같은 비율
-//   지속 60초, 다시 주우면 스택 +1(최대 3)·시간 60초 갱신, 사망하면 모두 사라짐.
-// atk payload { w, hits, dmin, dmax, el }은 공격자가 자기 버프로 계산하고, 받는 쪽은 clampAttack으로 상한을 자른다.
+// (사이클 10) 공격 강화 버프. ARCHITECTURE "사이클 10 계약" + "변경(2026-10-29 사용자): 최대 10스택 + HP 회복 아이템".
+// DOM 없이 동작(Node 단위 시험 가능), 그리기 함수는 canvas만 받는다.
+//   range   사거리: 판정 가로 70 + 15/스택 (최대 220)
+//   multi   공격 횟수: 타수 1 + floor(스택/2) (최대 6)
+//   element 속성: 피해 +10%/스택 (최대 +100%), 베기 색 1~3 불, 4~6 얼음, 7~10 번개 (atk el 1/2/3)
+//   power   공격력: 피해 +2/스택 (기본 8~14, 최대 +20)
+//   speed   공격 속도: 쿨다운 0.45 x 0.93^스택 (최소 0.22초). attack 애니메이션 ms도 같은 비율
+//   지속 60초, 다시 주우면 스택 +1(최대 10)·시간 60초 갱신, 사망하면 모두 사라짐.
+//   heal    HP 회복 아이템(버프 아님): 드롭마다 25%. 주우면 즉시 HP +30(최대 초과 불가), HUD 표시 없음.
+// atk payload { w, hits, dmin, dmax, el }은 공격자가 자기 버프로 계산한다. el은 색 단계(0~3)뿐이라
+// 속성 피해 배율은 dmin/dmax에 이미 넣어 보낸다(최대 34 x 2 = 68 ≤ 상한 80). 받는 쪽은 clampAttack으로 상한을 자른다.
 
 export const BUFF_IDS = Object.freeze(['range', 'multi', 'element', 'power', 'speed']);
 const BUFF_SET = new Set(BUFF_IDS);
 export const isBuff = (v) => typeof v === 'string' && BUFF_SET.has(v);
+// 드롭 종류 = 버프 5종 + heal (구슬 시트 기본 순서)
+export const HEAL = 'heal';
+export const DROP_KINDS = Object.freeze([...BUFF_IDS, HEAL]);
+export const isDropKind = (v) => isBuff(v) || v === HEAL;
+export const HEAL_AMOUNT = 30;
+export const HEAL_CHANCE = 0.25;
+/** 드롭 하나의 종류: 25% heal, 나머지 75%는 버프 5종 균등 */
+export function rollDropKind(rnd = Math.random) {
+  return rnd() < HEAL_CHANCE ? HEAL : BUFF_IDS[Math.floor(rnd() * BUFF_IDS.length) % BUFF_IDS.length];
+}
 export const BUFF = Object.freeze({
   durationMs: 60000,
-  maxStacks: 3,
+  maxStacks: 10,
   baseW: 70,
-  wPerStack: 35,
+  wPerStack: 15,
+  maxW: 220,
   baseHits: 1,
+  maxHits: 6,
   dmgMin: 8,
   dmgMax: 14,
-  powerPerStack: 4,
-  elementPerStack: 0.2,
+  powerPerStack: 2,
+  elementPerStack: 0.1,
   cooldown: 0.45,
-  cooldownMul: 0.8,
-  cooldownMin: 0.25,
+  cooldownMul: 0.93,
+  cooldownMin: 0.22,
   animMs: 240,
   hitGapMs: 80, // multi: 피해 숫자 간격
 });
 // 받는 쪽 상한 (계약)
-export const ATK_CAP = Object.freeze({ w: 175, hits: 4, dmax: 60, el: 3 });
-export const BUFF_LABEL = Object.freeze({ range: '사거리', multi: '연속 공격', element: '속성', power: '공격력', speed: '공격 속도' });
+export const ATK_CAP = Object.freeze({ w: 220, hits: 6, dmax: 80, el: 3 });
+export const BUFF_LABEL = Object.freeze({ range: '사거리', multi: '연속 공격', element: '속성', power: '공격력', speed: '공격 속도', heal: 'HP 회복' });
 export const BUFF_COLOR = Object.freeze({
   range: ['#9CC8FF', '#4D7CFE', '#232A5E'],
   multi: ['#FFC8DC', '#F58AB4', '#6A2348'],
   element: ['#FFE0A0', '#F08A2E', '#6A2A0E'],
   power: ['#FF8E7A', '#E8483E', '#5E1420'],
   speed: ['#BFF0DC', '#3E9A86', '#163A30'],
+  heal: ['#D8FFC0', '#3EB65A', '#14461E'],
 });
-// 속성 스택별 베기 색 [안쪽, 바깥, 테두리] — 0 = 기본(흰·하늘)
+// 속성 단계(el)별 베기 색 — 0 = 기본(흰·하늘), 1 불(스택 1~3), 2 얼음(4~6), 3 번개(7~10)
 export const ELEMENT_TINT = Object.freeze([
   null,
   { name: 'fire', inner: '255, 226, 140', outer: '255, 138, 46', line: '168, 52, 20' },
@@ -46,17 +62,21 @@ export const ELEMENT_TINT = Object.freeze([
 
 const clampN = (v, lo, hi, d) => (typeof v === 'number' && Number.isFinite(v) ? Math.min(hi, Math.max(lo, v)) : d);
 
-/** 버프 스택 → 공격 값 { w, hits, dmin, dmax, el, cooldown(초), animMs } */
+/** 속성 스택 → 색 단계 el (0, 1~3 → 1, 4~6 → 2, 7~10 → 3) */
+export const elementTier = (n) => (n <= 0 ? 0 : n <= 3 ? 1 : n <= 6 ? 2 : 3);
+
+/** 버프 스택 → 공격 값 { w, hits, dmin, dmax, el, cooldown(초), animMs, elementStacks } */
 export function attackStats(st = {}) {
   const s = (id) => Math.max(0, Math.min(BUFF.maxStacks, st[id] | 0));
   const cooldown = Math.max(BUFF.cooldownMin, BUFF.cooldown * BUFF.cooldownMul ** s('speed'));
+  const mul = 1 + BUFF.elementPerStack * s('element'); // 속성 피해 배율 (dmin/dmax에 넣는다)
   return {
-    w: BUFF.baseW + BUFF.wPerStack * s('range'),
-    hits: BUFF.baseHits + s('multi'),
-    dmin: BUFF.dmgMin + BUFF.powerPerStack * s('power'),
-    dmax: BUFF.dmgMax + BUFF.powerPerStack * s('power'),
-    el: s('element'),
-    cooldown,
+    w: Math.min(BUFF.maxW, BUFF.baseW + BUFF.wPerStack * s('range')),
+    hits: Math.min(BUFF.maxHits, BUFF.baseHits + Math.floor(s('multi') / 2)),
+    dmin: Math.round((BUFF.dmgMin + BUFF.powerPerStack * s('power')) * mul),
+    dmax: Math.round((BUFF.dmgMax + BUFF.powerPerStack * s('power')) * mul),
+    el: elementTier(s('element')),
+    cooldown: Math.round(cooldown * 1000) / 1000,
     animMs: Math.round(BUFF.animMs * (cooldown / BUFF.cooldown)),
   };
 }
@@ -71,13 +91,10 @@ export function clampAttack(p) {
   return { w, hits, dmin, dmax, el };
 }
 
-/** 한 번의 atk가 주는 타별 피해 목록 (속성 +20%/스택) */
+/** 한 번의 atk가 주는 타별 피해 목록 (속성 배율은 이미 dmin/dmax에 들어 있다) */
 export function rollHits(a, rnd = Math.random) {
   const out = [];
-  for (let i = 0; i < a.hits; i++) {
-    const base = a.dmin + Math.floor(rnd() * (a.dmax - a.dmin + 1));
-    out.push(Math.max(1, Math.round(base * (1 + BUFF.elementPerStack * a.el))));
-  }
+  for (let i = 0; i < a.hits; i++) out.push(Math.max(1, a.dmin + Math.floor(rnd() * (a.dmax - a.dmin + 1))));
   return out;
 }
 
@@ -141,6 +158,9 @@ export function drawBuffGlyph(ctx, id, cx, cy, r) {
       break;
     case 'speed': // 번개
       poly([[2, -7], [-4.5, 1], [-0.5, 1], [-2, 7], [4.5, -1.5], [0.5, -1.5]]);
+      break;
+    case 'heal': // 십자
+      poly([[-2.5, -7], [2.5, -7], [2.5, -2.5], [7, -2.5], [7, 2.5], [2.5, 2.5], [2.5, 7], [-2.5, 7], [-2.5, 2.5], [-7, 2.5], [-7, -2.5], [-2.5, -2.5]]);
       break;
     default:
       break;

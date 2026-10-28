@@ -46,7 +46,7 @@ def main(argv):
         print('slash 재현 최대 차이:', int(np.abs(a - b).max()))
         return
     os.makedirs(os.path.join(FX_DIR, 'buff'), exist_ok=True)
-    for bid in spec.BUFFS:
+    for bid in spec.ITEMS:
         fx.icon(bid).save(os.path.join(FX_DIR, 'buff', f'{bid}.png'), optimize=True)
     print('icons ok')
     fx.orb_sheet().save(os.path.join(FX_DIR, 'buff_orb.png'), optimize=True)

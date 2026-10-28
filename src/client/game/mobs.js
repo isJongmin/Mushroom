@@ -10,7 +10,7 @@
 //   z = 스폰 구역 번호(정수, 같은 맵 manifest라 모두 같다): 호스트가 바뀌면 새 호스트가 순찰 범위와 리스폰을 이어 간다.
 // - 다른 클라이언트는 createMobView로 받은 기록을 220ms 늦게 재생(두 기록 사이 직선 보간)한다.
 import { loadImage, warnOnce } from '../assets.js';
-import { BUFF_IDS } from './buffs.js';
+import { rollDropKind } from './buffs.js';
 
 const REPO_ROOT = new URL('../../../', import.meta.url);
 const SRC_RE = /^assets\/[a-z0-9_\-/]+\.(png|webp)$/i;
@@ -121,7 +121,7 @@ export function normalizeMobManifest(raw) {
     // manifest fx에 적힌 것만 받는다(없는 파일을 짐작해 요청하지 않음 → 404 없음). 없으면 절차적 그림.
     slashEl: [null, fxSpec(raw, ['slash_fire', 'slashFire'], density), fxSpec(raw, ['slash_ice', 'slashIce'], density), fxSpec(raw, ['slash_bolt', 'slashBolt'], density)],
     buffOrb: fxSpec(raw, ['buff_orb', 'buffOrb'], density),
-    buffIcons: Object.fromEntries(BUFF_IDS.map((id) => [id, buffIconSpec(raw, id, density)])),
+    buffIcons: Object.fromEntries(['range', 'multi', 'element', 'power', 'speed'].map((id) => [id, buffIconSpec(raw, id, density)])),
     dropBag: raw.dropBag ? spriteSpec(raw.dropBag, null, density) : null,
   };
 }
@@ -324,7 +324,8 @@ export function createMobSim(o) {
       best.s = 'die';
       best.dieT = DIE_MS / 1000;
       stats.killed++;
-      if (rnd() < spec.buffDrop) for (let i = 0; i < spec.buffDropCount; i++) buffs.push(BUFF_IDS[Math.floor(rnd() * BUFF_IDS.length)]);
+      // 드롭 하나마다 25% heal, 나머지 버프 5종 균등 (사이클 10 변경)
+      if (rnd() < spec.buffDrop) for (let i = 0; i < spec.buffDropCount; i++) buffs.push(rollDropKind(rnd));
     } else {
       best.s = 'hit';
       best.hitT = HIT_MS / 1000;

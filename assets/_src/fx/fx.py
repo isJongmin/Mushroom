@@ -26,6 +26,7 @@ BUFF_COL = {
     'element': dict(base='#9C66E8', light='#D8BCFF', dark='#4A2A8C'),
     'power':   dict(base='#EE4A48', light='#FFB2A2', dark='#8E1E30'),
     'speed':   dict(base='#FFB01E', light='#FFE89A', dark='#A0500E'),
+    'heal':    dict(base='#2FD0B0', light='#B4F7E4', dark='#11705E'),   # 민트(range 초록보다 푸른 쪽)
 }
 EL_FIRE, EL_WATER, EL_BOLT = '#FF7A26', '#3CB8FF', '#FFD430'
 
@@ -176,7 +177,21 @@ def g_speed():
     return [('w', lines), ('w', bolt)]
 
 
-GLYPH = {'range': g_range, 'multi': g_multi, 'element': g_element, 'power': g_power, 'speed': g_speed}
+def _heart(cx, cy, s):
+    p = path((0.0, 9.0), [((-4.0, 5.5), (-10.0, 1.5), (-10.0, -3.5)),
+                          ((-10.0, -8.5), (-3.5, -10.5), (0.0, -5.0)),
+                          ((3.5, -10.5), (10.0, -8.5), (10.0, -3.5)),
+                          ((10.0, 1.5), (4.0, 5.5), (0.0, 9.0))], n=16)
+    return xform(p * s, cx, cy)
+
+
+def g_heal():
+    a, b = 6.0, 19.0   # 십자 팔 반폭, 팔 길이
+    cross = rrect(-a, -b, a, b, 2.6) , rrect(-b, -a, b, a, 2.6)
+    return [('w', list(cross)), ('h', _heart(9.5, 9.0, 0.95))]
+
+
+GLYPH = {'range': g_range, 'multi': g_multi, 'element': g_element, 'power': g_power, 'speed': g_speed, 'heal': g_heal}
 
 
 def draw_glyph(c, bid, s, ow, shadow=(1.0, 1.6), shadow_a=0.26):
@@ -204,6 +219,9 @@ def draw_glyph(c, bid, s, ow, shadow=(1.0, 1.6), shadow_a=0.26):
         kind, p = it[0], it[1]
         if kind == 'w':
             shape(c, p, WHITE, ink, ow, sub=soft, sub_off=(-0.0, -1.6))
+        elif kind == 'h':   # 분홍 하트(십자 위)
+            shape(c, p, hx('#FF6F96'), ink, ow, sub=hx('#E84A78'), sub_off=(0.0, -2.0))
+            c.fill(ellipse(5.8 , 4.5, 2.4, 1.6, rot=-0.6), WHITE, 0.85)
         elif kind == 'y':
             shape(c, p, hx('#FFE45C'), ink, ow, sub=hx('#FFB82E'), sub_off=(0.0, -2.0))
         else:   # 속성 조각: 흰 테 + 고유색 + 안쪽 밝은 조각
@@ -266,8 +284,8 @@ def orb(c, bid):
 def orb_sheet():
     from PIL import Image
     n = spec.ORB
-    out = Image.new('RGBA', (n * len(spec.BUFFS), n), (0, 0, 0, 0))
-    for i, bid in enumerate(spec.BUFFS):
+    out = Image.new('RGBA', (n * len(spec.ITEMS), n), (0, 0, 0, 0))
+    for i, bid in enumerate(spec.ITEMS):
         c = px_canvas(n, n, n / 2, n / 2)
         orb(c, bid)
         out.paste(c.image(), (i * n, 0))

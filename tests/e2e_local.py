@@ -866,7 +866,8 @@ def t10(browser, col):
                        state(a)["room"]["id"] == rid and a.get_by_test_id("modal-dim").count() == 0))
         checks.append(("재입장 후 방 이름/잠금 표시 복구", state(a)["room"]["name"] == "잠금재입장" and state(a)["room"]["locked"] is True))
         ss = a.evaluate("(k) => sessionStorage.getItem(k)", SS_ROOM)
-        checks.append(("sessionStorage mushroom:room = {roomId, nickname} 두 키", json.loads(ss) == {"roomId": rid, "nickname": "QaReA"}))
+        # 사이클 8 계약: { roomId, nickname, owner } (owner는 방장 여부, 방장 삭제 기능에 쓴다)
+        checks.append(("sessionStorage mushroom:room = {roomId, nickname, owner} (owner = 방장 여부)", json.loads(ss) == {"roomId": rid, "nickname": "QaReA", "owner": True}))
         leave_room(a)
         checks.append(("나가기 -> 로비, sessionStorage 삭제", a.evaluate("(k) => sessionStorage.getItem(k)", SS_ROOM) is None))
         row_locator(a, rid).get_by_test_id("room-enter").click()
@@ -1397,9 +1398,23 @@ HIDE_ROOM_JS = """() => {
 # 사이클 5 계약 상수 (ARCHITECTURE "복셀 아트 계약", art-20261015-voxel-final.md 10절)
 REQUIRED_LAYERS = ["skin", "face", "hair_front", "top", "bottom", "shoes", "hat"]  # 프런트 constants.js와 같음
 AVATAR_FILES = MANIFEST.get("files") or {}
-GROUND_Y = 440
-WORLD_W = 2400
-WORLD_BOTTOM = 540
+# (사이클 10) 맵 상수는 전부 맵 manifest에서 읽는다. 고정 숫자 금지 (지면 440, 폭 2400, 레이어 5 등은 맵 교체 때 깨진다).
+MAP_MANIFEST = json.loads((ROOT / "assets/map/manifest.json").read_text(encoding="utf-8"))
+GROUND_Y = MAP_MANIFEST["groundY"]
+WORLD_W = MAP_MANIFEST["width"]
+WORLD_H = MAP_MANIFEST["height"]
+WORLD_BOTTOM = WORLD_H  # 세로 카메라 기준은 맵 높이(프런트 world.height). 발 위치는 아래 camY로 환산한다
+MAP_LAYER_COUNT = len(MAP_MANIFEST["layers"])
+MAP_SPAWN = MAP_MANIFEST.get("spawn") or {}
+MOB_MANIFEST = json.loads((ROOT / "assets/mob/manifest.json").read_text(encoding="utf-8"))
+FX_MANIFEST = MOB_MANIFEST.get("fx") or {}
+# (사이클 10) 아바타 시트 프레임 수는 manifest에서 읽는다 (11 = 사이클 8 시트, 13 = 사이클 10 시트 + attack)
+AVATAR_FRAMES = MANIFEST.get("frames") or []
+AVATAR_FRAME_W = MANIFEST["frame"]["w"]
+AVATAR_FRAME_H = MANIFEST["frame"]["h"]
+AVATAR_SHEET_W = AVATAR_FRAME_W * len(AVATAR_FRAMES)
+ANIM = MANIFEST.get("animations") or {}
+# 프런트 기준 발 위치(지면선 y)는 camY로 환산한다. camY는 getState().world.camY (카메라가 맵 세로에 맞춰 움직임)
 CONFIGS_ROOM = [
     ("데스크톱 1280x800 dpr1 (P2)", 1280, 800, 1, False, 2),
     ("큰 데스크톱 1920x1080 dpr1 (P3)", 1920, 1080, 1, False, 3),
@@ -1703,8 +1718,8 @@ def t23(browser, col):
         checks.append((f"이 조합의 필요 레이어 {len(need)}장 전부 200 (누락 {sorted(need - ok_png)[:3]})", need <= ok_png))
         checks.append((f"아바타 로드: source=manifest, images = imageTotal ({a.get('images')}/{a.get('imageTotal')})",
                        a.get("source") == "manifest" and a.get("images") == a.get("imageTotal") and a.get("images", 0) > 0))
-        checks.append((f"맵 로드: mapLayers=5, background=True (실제 {a.get('mapLayers')}, {a.get('background')})",
-                       a.get("mapLayers") == 5 and a.get("background") is True))
+        checks.append((f"맵 로드: mapLayers = manifest layers {MAP_LAYER_COUNT}, background=True (실제 {a.get('mapLayers')}, {a.get('background')})",
+                       a.get("mapLayers") == MAP_LAYER_COUNT and a.get("background") is True))
         checks.append((f"콘솔 경고 0건 (실제 {len(ev['warn'])}: {ev['warn'][:2]})", not ev["warn"]))
     finally:
         ctx.close()
@@ -2109,7 +2124,11 @@ def t33(browser, col):
         P, dpr = lay["P"], dsf
         k = (P / 2) * dpr  # 장치 px / 월드
         s = k / 1.5  # 장치 px / 시트 px (밀도 1.5)
-        fy_dev = round((GROUND_Y - (WORLD_BOTTOM - lay["viewH"])) * k)  # 프런트 render(): 지면선 장치 y
+        # 지면선 장치 y = (지면 월드 y - camY) x k (camY = 프런트 카메라 위 끝, getState().world.camY). 맵 세로 크기와 무관하다.
+        cam_y = st["world"]["camY"]
+        if cam_y is None:
+            raise AssertionError("world.camY가 없음 (카메라 미계산)")
+        fy_dev = round((GROUND_Y - cam_y) * k)  # 프런트 render(): 지면선 장치 y
         anchor_dev = sp["dy"] + 180 * s  # 프레임 기준점(시트 y 180)의 장치 y
         A = np.asarray(Image.open(io.BytesIO(png)).convert("RGB")).astype(int)
         H, W, _ = A.shape

@@ -1,7 +1,7 @@
 // (사이클 10) 버프 드롭: 목록(30초 소멸, 마지막 5초 깜빡임), 떨어짐·둥실·빛. ARCHITECTURE "사이클 10 계약".
 // 그림: manifest fx 버프 구슬 시트(가로 5프레임 range,multi,element,power,speed)가 있으면 그것, 없으면 절차적 구슬(buffs.drawBuffOrb).
 // 몬스터 manifest dropBag(받침)이 있으면 아래에 깐다.
-import { BUFF_IDS, drawBuffOrb } from './buffs.js';
+import { DROP_KINDS, drawBuffOrb } from './buffs.js';
 
 export const DROP_TTL_MS = 30000;
 export const PICK_RANGE = Object.freeze({ x: 44, y: 60 }); // Z 줍기 범위 (발 기준)
@@ -64,7 +64,8 @@ export function createDrops() {
           const sc = k / bag.density;
           ctx.drawImage(bag.img, f * bag.frameW, 0, bag.frameW, bag.frameH, cx - bag.anchorX * sc, (y - camY + bob) * k - bag.anchorY * sc, bag.frameW * sc, bag.frameH * sc);
         }
-        const fi = (orb && orb.order ? orb.order : BUFF_IDS).indexOf(d.buff);
+        // 시트 순서는 manifest order(없으면 range..speed, heal). 시트에 그 종류 프레임이 없으면(heal 추가 전) 절차적 구슬
+        const fi = (orb && orb.order ? orb.order : DROP_KINDS).indexOf(d.buff);
         if (orb && fi >= 0 && orb.img.naturalWidth >= (fi + 1) * orb.frameW) {
           const sc = k / orb.density; // 시트 px → 장치 px, 기준점 = 구슬 중심
           ctx.drawImage(orb.img, fi * orb.frameW, 0, orb.frameW, orb.frameH, cx - orb.anchorX * sc, cy - orb.anchorY * sc, orb.frameW * sc, orb.frameH * sc);

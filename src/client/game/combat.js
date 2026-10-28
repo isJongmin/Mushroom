@@ -58,7 +58,7 @@ const NUM_FONT = '900 22px system-ui, -apple-system, "Apple SD Gothic Neo", "Mal
 const NUM_STYLE = {
   hit: { top: '#FFF2A8', bottom: '#F08A2E', line: '#5E2A10' },
   hurt: { top: '#FFC8DC', bottom: '#B04A78', line: '#3A1430' },
-  heal: { top: '#D8FFC0', bottom: '#3E8A2E', line: '#163A10' },
+  heal: { top: '#D8FFC0', bottom: '#3E8A2E', line: '#163A10', plus: true }, // 회복: 녹색 +n
 };
 
 export function createDamageNumbers() {
@@ -71,7 +71,7 @@ export function createDamageNumbers() {
       // 같은 자리에 겹쳐 쌓이면 조금씩 위로
       let stack = 0;
       for (const n of list) if (Math.abs(n.x - x) < 24 && Math.abs(at - n.at) < 300) stack++;
-      list.push({ text: String(v), x, y: y - stack * 10, kind, at });
+      list.push({ text: (NUM_STYLE[kind] && NUM_STYLE[kind].plus ? '+' : '') + String(v), x, y: y - stack * 10, kind, at });
       if (list.length > NUM_MAX) list.splice(0, list.length - NUM_MAX);
     },
     update(now) {

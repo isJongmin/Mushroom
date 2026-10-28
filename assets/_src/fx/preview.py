@@ -44,12 +44,13 @@ def col(rows, bg=(128, 128, 128, 255)):
 
 def main(out):
     os.makedirs(out, exist_ok=True)
-    icons = [Image.open(os.path.join(FX, 'buff', f'{b}.png')).convert('RGBA') for b in spec.BUFFS]
+    icons = [Image.open(os.path.join(FX, 'buff', f'{b}.png')).convert('RGBA') for b in spec.ITEMS]
     small = [i.resize((36, 36), Image.LANCZOS) for i in icons]
     col([row([on(LIGHT, i, 1) for i in icons] + [on(LIGHT, s, 1) for s in small]),
          row([on(DARK, i, 1) for i in icons] + [on(DARK, s, 1) for s in small]),
-         row([on(LIGHT, i, 3) for i in icons[:3]]), row([on(LIGHT, i, 3) for i in icons[3:]] + [on(DARK, icons[0], 3)]),
-         row([on(DARK, i, 3) for i in icons[1:4]]), row([on(DARK, icons[4], 3)])]).save(os.path.join(out, 'icons.png'))
+         row([on(LIGHT, i, 3) for i in icons[:3]]), row([on(LIGHT, i, 3) for i in icons[3:]]),
+         row([on(DARK, i, 3) for i in icons[:3]]), row([on(DARK, i, 3) for i in icons[3:]])]).save(
+        os.path.join(out, 'icons.png'))
     orb = Image.open(os.path.join(FX, 'buff_orb.png')).convert('RGBA')
     col([row([on(LIGHT, orb, 1), on(DARK, orb, 1)]), row([on(LIGHT, orb, 3)]), row([on(DARK, orb, 3)])]).save(
         os.path.join(out, 'orbs.png'))

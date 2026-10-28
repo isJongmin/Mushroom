@@ -50,12 +50,16 @@ def norm(v):
 
 
 class Box:
-    __slots__ = ('c', 'h', 'R', 'col', 'layer', 'bevel', 'decal', 'noise', 'tag', 'emit')
+    __slots__ = ('c', 'h', 'R', 'col', 'layer', 'bevel', 'decal', 'noise', 'tag', 'emit', 'org', 'cube')
 
-    def __init__(self, c, h, R, col, layer, bevel=BEVEL, decal=False, noise=0.04, tag='', emit=0.0):
+    def __init__(self, c, h, R, col, layer, bevel=BEVEL, decal=False, noise=0.04, tag='', emit=0.0, org=None, cube=0.0):
         self.c = np.asarray(c, float); self.h = np.asarray(h, float); self.R = np.asarray(R, float)
         self.col = hex2lin(col) if isinstance(col, str) else np.asarray(col, float)
         self.layer, self.bevel, self.decal, self.noise, self.tag, self.emit = layer, bevel, decal, noise, tag, emit
+        # 사이클 10: 큐브 질감 (배경 그림처럼 큐브 한 칸마다 명도 지터 + 윗변 하이라이트 + 아랫변 어두움).
+        # org = 뼈 원점(월드): 칸 격자를 뼈에 붙여 프레임 사이에 질감이 미끄러지지 않게 한다. cube = 세기 (0 = 없음)
+        self.org = np.zeros(3) if org is None else np.asarray(org, float)
+        self.cube = 0.0 if decal else cube
 
 
 # ---------------------------------------------------------------- 조명 (뷰 공간: x 오른쪽, y 위, z 카메라 쪽)
@@ -216,6 +220,8 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
         nbv[sel] = nt @ Mv.T
         hsh = _hash3(cellid[0] + i * 31, cellid[1] + axis * 7, cellid[2])
         alb[sel] = b.col[None, :] * (1 + b.noise * (hsh[:, None] - 0.5) * 2)
+        if b.cube > 0:
+            alb[sel] *= cube_tex(P[sel], b, Mv, V, axis)[:, None]
         emi[sel] = b.emit
     out['P'], out['ys'], out['xs'] = P, ys, xs
     if not lighting:
@@ -289,6 +295,35 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
     lum = np.zeros((Hb, Wb), np.float32); lum[ys, xs] = irr @ np.array([0.3, 0.59, 0.11])
     out.update(irr=lum, img=img, a=a)
     return out
+
+
+CUBE = 3.0 * UNIT      # 큐브 질감 한 칸 (모델 단위): 시트 약 5.5px (배경 그림 큐브 6~8px 보다 조금 작게)
+CUBE_JIT = 0.075       # 칸마다 명도 편차 (세기 1 기준)
+CUBE_EDGE = 0.16       # 칸 경계 폭 (칸 비율)
+
+
+def cube_tex(P, b, Mv, V, axis):
+    """큐브 질감 배율 (N,). 뼈 원점 기준 뼈 축 좌표를 CUBE 칸으로 나눈다. 축 1 = 위."""
+    q = (P - V @ b.org) @ Mv / CUBE
+    cell = np.floor(q)
+    f = q - cell
+    h = _hash3(cell[:, 0] + 911, cell[:, 1] + 37, cell[:, 2] + 5)
+    k = b.cube
+    t = 1 + k * CUBE_JIT * (h - 0.5) * 2
+    e = CUBE_EDGE
+    side = axis != 1
+    fy = f[:, 1]
+    # 옆면: 아랫변 어두움, 윗변 하이라이트, 세로 이음 살짝 어둡게
+    fh = np.where(axis == 0, f[:, 2], f[:, 0])
+    sm = lambda x: np.clip(x, 0, 1) ** 2
+    bot = sm(1 - fy / e); top = sm(1 - (1 - fy) / e)
+    seam = sm(1 - np.minimum(fh, 1 - fh) / (e * 0.6))
+    t_side = t * (1 - 0.20 * k * bot) * (1 + 0.10 * k * top) * (1 - 0.07 * k * seam)
+    # 윗면: 칸 가장자리 이음만 살짝, 가운데 밝게
+    fa = f[:, 0]; fb = f[:, 2]
+    seam2 = sm(1 - np.minimum(np.minimum(fa, 1 - fa), np.minimum(fb, 1 - fb)) / (e * 0.6))
+    t_top = t * (1 + 0.06 * k) * (1 - 0.10 * k * seam2)
+    return np.where(side, t_side, t_top)
 
 
 def tonemap(c):

@@ -11,6 +11,7 @@ torso 뼈 상자의 y 는 발바닥 기준 절대 높이(서 있을 때). 머리
 파츠 함수는 dict 목록(bone, c, h, col, ...)을 돌려주고 assemble()이 포즈를 적용해 Box 목록을 만든다.
 dict 의 rot=(rx, ry, rz) 는 뼈 안에서 상자를 더 돌린다(도, 회전 순서 z @ y @ x).
 """
+import functools
 import numpy as np
 from vox import Box, rot_x, rot_y, rot_z, UNIT
 import legacy_v5 as V5
@@ -1530,6 +1531,29 @@ def _local_rot(r):
     return rot_z(rz) @ rot_y(ry) @ rot_x(rx)
 
 
+CUBE_K = {'skin': 0.35, 'hair': 0.55, 'hat': 0.9, 'proxy': 0.0}     # 사이클 10: 파츠별 큐브 질감 세기 (기본 1.0)
+
+
+@functools.lru_cache(maxsize=None)
+def grade(col):
+    """(사이클 10) 배경 그림 팔레트로 색 보정: 채도를 조금 낮추고 따뜻하게, 순백은 크림, 순흑은 차콜로."""
+    if not isinstance(col, str):
+        return col
+    c = np.array([int(col[i:i + 2], 16) for i in (1, 3, 5)], float) / 255
+    lum = c @ np.array([0.299, 0.587, 0.114])
+    c = lum + (c - lum) * GRADE_SAT                               # 채도
+    c = c * np.array(GRADE_WARM)                                  # 따뜻하게
+    c = GRADE_LO + c * (GRADE_HI - GRADE_LO)                      # 순흑 -> 차콜, 순백 -> 크림
+    c = np.clip(np.round(c * 255), 0, 255).astype(int)
+    return '#%02X%02X%02X' % tuple(c)
+
+
+GRADE_SAT = 0.84
+GRADE_WARM = (1.0, 0.975, 0.93)
+GRADE_LO = np.array([0.13, 0.11, 0.10])
+GRADE_HI = np.array([0.975, 0.955, 0.92])
+
+
 def make_boxes(defs, xf, layer, tag, back_view=False):
     """(사이클 10) 형상 정의는 사이클 8 좌표(0.5 = 새 복셀 1칸)로 적고, 여기서 UNIT 배 해 렌더 단위로 바꾼다."""
     out = []
@@ -1539,8 +1563,9 @@ def make_boxes(defs, xf, layer, tag, back_view=False):
         if 'bevel' in d:
             kw['bevel'] = d['bevel'] * UNIT * BEVK
         Rb = R @ _local_rot(d['rot']) if d.get('rot') else R
-        out.append(Box(UNIT * _xf_point(R, t, d['c']), UNIT * np.asarray(d['h'], float), Rb, d['col'],
-                       layer + '_under' if d.get('under') else layer, tag=tag, **kw))
+        out.append(Box(UNIT * _xf_point(R, t, d['c']), UNIT * np.asarray(d['h'], float), Rb, grade(d['col']),
+                       layer + '_under' if d.get('under') else layer, tag=tag, org=UNIT * np.asarray(t, float),
+                       cube=d.get('cube', CUBE_K.get(tag, 1.0)), **kw))
     return out
 
 

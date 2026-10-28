@@ -18,7 +18,7 @@ import {
 } from '../constants.js';
 import { ROOM_MESSAGES as M, LOBBY_MESSAGES as LM, AppError, toAppError } from '../errors.js';
 import { createAvatarRenderer, smooth } from '../avatar.js';
-import { drawMap, drawFootShadow, cameraFor, camYTarget, drawPlatformDebug, worldFromMap } from '../game/world.js';
+import { drawMap, drawFootShadow, cameraFor, camYTarget, drawPlatformDebug, drawRopeDebug, worldFromMap } from '../game/world.js';
 import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overlay.js';
 import { createMoveInput, KEY_DIR, KEY_ACTION, KEY_TAP, KEY_ATTACK, KEY_PICK } from '../game/input.js';
 import { PHYS, createBody, stepBody, surfaceBelow, normState, isFx, knockBody } from '../game/physics.js';
@@ -70,6 +70,8 @@ export function mount(root, app, opts = {}) {
   const profile = app.profile;
   const isOwner = opts.owner === true; // (사이클 8) 방장: 로비 mine / createRoom 결과 / 새로고침 때 list_rooms mine 또는 sessionStorage
   let platforms = Object.freeze([]); // 맵 manifest platforms (없으면 지면만)
+  let ropes = Object.freeze([]); // (사이클 10) 맵 manifest ropes [{ id, x, y1, y2 }]
+  let lastCamX = null;
   let world = worldFromMap(null); // (사이클 9) 맵 manifest에서 (없으면 2400 / 540 / 440)
   const clampX = (x) => Math.min(world.maxX, Math.max(world.minX, x));
   let debug = false; // (사이클 9) ?debug: 호스트·판정 상자 표시
@@ -950,6 +952,8 @@ export function mount(root, app, opts = {}) {
         inp = {
           dir: input.direction(), prone: input.proning(), jump: input.wantsJump(now, PHYS.jumpBufferMs),
           superKind: sup ? sup.kind : null, superAge: sup ? sup.age : 0,
+          // (사이클 10) 로프: ↑/↓ 누르고 있음, 점프 새로 누름(뛰어내리기). 유령도 로프를 탈 수 있다(이동 허용)
+          up: input.upHeld(), down: input.proning(), jumpTap: input.jumpTapped(now, PHYS.jumpBufferMs),
         };
       }
       const b = me.body;
@@ -957,6 +961,8 @@ export function mount(root, app, opts = {}) {
       const y0 = b.y;
       const r = stepBody(b, inp, dt, BODY_OPT);
       if (r.jumped) input.consumeJump();
+      if (r.unclimbed === 'top') input.suppressJumpHold(); // 위끝에 올라선 직후 누르고 있는 ↑로 바로 뛰지 않게
+      if (r.grabbed) stats.ropeGrabs = (stats.ropeGrabs || 0) + 1;
       if (r.fx) {
         if (r.fx === 'dash-left') me.dir = -1;
         else if (r.fx === 'dash-right') me.dir = 1;
@@ -964,12 +970,14 @@ export function mount(root, app, opts = {}) {
         pendingFx = r.fx;
         stats.superJumps++;
       }
-      if (inp.dir !== 0 && !b.prone && b.dashT <= 0 && b.kbT <= 0) me.dir = inp.dir;
+      if (inp.dir !== 0 && !b.prone && b.dashT <= 0 && b.kbT <= 0 && !b.rope) me.dir = inp.dir;
+      me.climbMoving = !!b.rope && b.climbV !== 0;
       me.x = b.x;
       me.y = b.y;
       // (사이클 9) 공격: 쿨다운 0.45초, 누르고 있으면 계속. 유령은 공격·줍기 불가
       if (connection === 'connected' && !me.dead) {
-        if (input.wantsAttack(now) && now - me.lastAtkAt >= atk.cooldown * 1000) { input.consumeAttack(); doAttack(now); }
+        if (b.rope) input.consumeAttack(); // (사이클 10) 매달린 동안 공격 불가 (누름도 쌓지 않음)
+        else if (input.wantsAttack(now) && now - me.lastAtkAt >= atk.cooldown * 1000) { input.consumeAttack(); doAttack(now); }
         if (input.takePick(now)) tryPick(PICK_RANGE, false);
         tryPick(TOUCH_RANGE, true); // (사이클 10) 닿으면 자동 줍기
       }
@@ -1027,7 +1035,11 @@ export function mount(root, app, opts = {}) {
       }
       p.moving = now - p.lastMovedAt < WALK_HOLD_MS;
       // 세로: 받은 y 기록을 120ms 늦게 재생 (두 기록 사이 직선 보간, 물리 재계산 없음). 모든 기록 값을 정확히 지나간다.
+      const py = p.y;
       p.y = sampleY(p.yBuf, now - Y_INTERP_DELAY_MS, p.yTo);
+      // (사이클 10) 원격 로프: 세로로 움직이는 중이면 흔들림 표현 (멈춘 뒤 200ms 유지)
+      if (Math.abs(p.y - py) > 0.05) p.climbAt = now;
+      p.climbMoving = p.s === 'climb' && now - (p.climbAt || 0) < WALK_HOLD_MS;
       if (p.bubble && now - p.bubble.at >= BUBBLE.showMs) p.bubble = null;
     }
     if (me && me.bubble && now - me.bubble.at >= BUBBLE.showMs) me.bubble = null;
@@ -1099,6 +1111,7 @@ export function mount(root, app, opts = {}) {
   function animOf(p) {
     const now = performance.now();
     if (p.dead || p.s === 'ghost') return 'ghost';
+    if (p.s === 'climb') return 'climb'; // (사이클 10) 로프: jump 포즈, 오르내리는 동안 0.25초마다 좌우 반전
     if (now < p.attackUntil) return 'attack';
     if (p.isSelf) return p.s === 'walk' || p.s === 'jump' || p.s === 'fall' || p.s === 'prone' ? p.s : 'idle';
     if (p.s === 'jump' || p.s === 'fall' || p.s === 'prone') return p.s;
@@ -1106,6 +1119,7 @@ export function mount(root, app, opts = {}) {
   }
 
   function frameOf(p, now) {
+    if (p.anim === 'climb') return avatarR.frameAt('jump', 0);
     // (사이클 10) speed 버프: attack 애니메이션 ms를 쿨다운과 같은 비율로 줄인다 (240ms 기준)
     if (p.anim === 'attack' && p.atkAnimMs && p.atkAnimMs < COMBAT.attackAnimMs) return avatarR.frameAt('attack', (now - p.animSince) * (COMBAT.attackAnimMs / p.atkAnimMs));
     return avatarR.frameAt(p.anim, now - p.animSince);
@@ -1121,10 +1135,12 @@ export function mount(root, app, opts = {}) {
     if (camY === null) camY = camYTarget(camRef, viewH, 0, world.bottomY);
     const cam = cameraFor(me.x, viewW, viewH, k, camY, world);
     const { camX } = cam;
+    lastCamX = camX;
     const cy = cam.camY;
     const ctx = canvas.getContext('2d');
     drawMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     if (debugPlatforms && platforms.length) drawPlatformDebug(ctx, platforms, camX, cy, k);
+    if (debug && ropes.length) drawRopeDebug(ctx, ropes, camX, cy, k); // (사이클 10) 로프 선 (그림은 아트 ground 레이어)
 
     const order = [];
     for (const p of players.values()) if (!p.isSelf) order.push(p);
@@ -1168,7 +1184,8 @@ export function mount(root, app, opts = {}) {
       if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); continue; }
       const a = blinkAlpha(now, p.invulnUntil);
       if (a < 1) ctx.globalAlpha = a;
-      avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), p.dir < 0);
+      const left = p.anim === 'climb' && p.climbMoving ? Math.floor(now / 250) % 2 === 1 : p.dir < 0;
+      avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), left);
       ctx.globalAlpha = 1;
     }
     slashes.draw(ctx, camX, cy, k, now);
@@ -1532,7 +1549,7 @@ export function mount(root, app, opts = {}) {
     s: p.s, // 나: 물리 상태, 원격: 마지막으로 받은 s (없으면 null, 옛 crouch는 prone)
     hp: p.hp, max: p.max, dead: p.dead, invuln: performance.now() < p.invulnUntil, // (사이클 9)
     ...(p.isSelf && p.body ? {
-      grounded: p.body.grounded, on: p.body.on ? p.body.on.id : null, airCharge: p.body.airCharge,
+      grounded: p.body.grounded, on: p.body.on ? p.body.on.id : null, airCharge: p.body.airCharge, rope: p.body.rope ? p.body.rope.id : null,
       cool: Math.round(p.body.cool * 1000) / 1000, dashing: p.body.dashT > 0,
     } : {}),
   });
@@ -1545,7 +1562,10 @@ export function mount(root, app, opts = {}) {
   };
   app.providers.room = () => ({
     room: { id: roomId, name: roomName, locked, members: players.size, nickname: myNick, owner: isOwner },
-    world: { platforms: platforms.map((p) => ({ ...p })), camY: camY === null ? null : Math.round(camY * 10) / 10 },
+    world: {
+      platforms: platforms.map((p) => ({ ...p })), ropes: ropes.map((r) => ({ ...r })), camY: camY === null ? null : Math.round(camY * 10) / 10,
+      camX: lastCamX === null ? null : Math.round(lastCamX * 10) / 10, // (사이클 10) 카메라 경계 확인용
+    },
     fx: { ...fx.counts, ...stats },
     chatLog: chatLog.snapshot(50),
     log: chatLog.ui(),
@@ -1625,6 +1645,8 @@ export function mount(root, app, opts = {}) {
     map = await app.mapAssets.catch(() => null);
     if (!alive) return;
     platforms = map && Array.isArray(map.platforms) ? map.platforms : Object.freeze([]);
+    ropes = map && Array.isArray(map.ropes) ? map.ropes : Object.freeze([]); // (사이클 10)
+    BODY_OPT.ropes = ropes;
     world = worldFromMap(map); // (사이클 9) 크기·지면·스폰은 맵 manifest에서
     camRef = world.groundY;
     BODY_OPT.platforms = platforms;

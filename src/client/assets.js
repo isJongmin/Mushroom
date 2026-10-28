@@ -10,7 +10,7 @@ import {
   AVATAR, PART_KEYS, PART_ID_RE, DEFAULT_LAYER_ORDER, LAYER_BLENDS, REQUIRED_LAYERS, DEFAULT_AVATAR, HAT_NONE, WORLD,
 } from './constants.js';
 import { normalizeAvatar } from './avatar-data.js';
-import { normalizePlatforms } from './game/physics.js';
+import { normalizePlatforms, normalizeRopes } from './game/physics.js';
 
 const REPO_ROOT = new URL('../../', import.meta.url);
 const ASSET_ROOT = new URL('assets/', REPO_ROOT);
@@ -295,6 +295,7 @@ export async function loadMapAssets() {
       source: 'fallback', layers: [], ground: null, groundY: num(raw && raw.groundY, WORLD.groundY), width: num(raw && raw.width, WORLD.width),
       height: raw && raw.height, spawn: raw && raw.spawn, spawns: raw && Array.isArray(raw.spawns) ? raw.spawns : null, density: 1.5, layerCount: 0,
       platforms: normalizePlatforms(raw && raw.platforms, { width: num(raw && raw.width, WORLD.width), groundY: num(raw && raw.groundY, WORLD.groundY) }),
+      ropes: normalizeRopes(raw && raw.ropes, { width: num(raw && raw.width, WORLD.width), groundY: num(raw && raw.groundY, WORLD.groundY) }),
     });
   }
   const density = posNum(raw.density, 1.5);
@@ -335,6 +336,7 @@ export async function loadMapAssets() {
     layerCount: layers.length,
     // (사이클 8) 발판 [{ id, x1, x2, y }] (한 방향 통과). 없으면 [] → 지면만.
     platforms: normalizePlatforms(raw.platforms, { width, groundY }),
+    ropes: normalizeRopes(raw.ropes, { width, groundY }), // (사이클 10) 로프 [{ id, x, y1, y2 }]
     // (사이클 9) 큰 맵: height, spawn {x, y}, 몬스터 스폰 구역 spawns (정리는 화면/game/mobs.js)
     height: raw.height,
     spawn: raw.spawn,

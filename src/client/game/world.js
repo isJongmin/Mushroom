@@ -99,7 +99,8 @@ export function drawFootShadow(ctx, x, y, k, h = 0) {
  * 카메라 (월드 단위): 플레이어를 가로 가운데. 세로는 camY(없으면 화면 아래 끝 = 월드 bottomY(540)). k로 장치 px 정수에 맞춘다.
  */
 export function cameraFor(playerX, viewW, viewH, k, camYIn, world = WORLD) {
-  let camX = Math.min(Math.max(playerX - viewW / 2, 0), Math.max(0, world.width - viewW));
+  // (사이클 10) 맵이 시야보다 좁으면 가운데 정렬(양옆은 바탕색), 넓으면 0 ~ width - viewW로 자른다
+  let camX = world.width <= viewW ? (world.width - viewW) / 2 : Math.min(Math.max(playerX - viewW / 2, 0), world.width - viewW);
   let camY = typeof camYIn === 'number' && Number.isFinite(camYIn) ? camYIn : world.bottomY - viewH;
   if (k > 0) { camX = R(camX * k) / k; camY = R(camY * k) / k; }
   return { camX, camY };
@@ -156,4 +157,21 @@ export function worldFromMap(map) {
   return Object.freeze({
     width, height, groundY, bottomY: height, minX, maxX, speed: WORLD.speed, maxDt: WORLD.maxDt, minViewH: WORLD.minViewH, spawn,
   });
+}
+
+/** (사이클 10) ?debug 로프 선 (그림은 아트 ground 레이어에 같은 좌표로 있다) */
+export function drawRopeDebug(ctx, ropes, camX, camY, k) {
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+  ctx.lineCap = 'round';
+  for (const r of ropes) {
+    const x = R((r.x - camX) * k);
+    ctx.strokeStyle = 'rgba(232, 72, 62, 0.9)';
+    ctx.lineWidth = Math.max(2, R(3 * k));
+    ctx.beginPath(); ctx.moveTo(x, R((r.y1 - camY) * k)); ctx.lineTo(x, R((r.y2 - camY) * k)); ctx.stroke();
+    ctx.strokeStyle = 'rgba(232, 72, 62, 0.35)'; // 잡는 범위 ±12
+    ctx.lineWidth = 1;
+    ctx.strokeRect(R((r.x - 12 - camX) * k), R((r.y1 - camY) * k), R(24 * k), R((r.y2 - r.y1) * k));
+  }
+  ctx.restore();
 }

@@ -2,18 +2,20 @@
 
 python3 assets/_src/voxel/check.py              # 전체 (결정적 빌드 검사 포함: 임시 폴더에 다시 빌드해 해시 비교)
 python3 assets/_src/voxel/check.py --fast       # 결정성 재빌드 생략
+python3 assets/_src/voxel/check.py --av DIR --src-out DIR   # (사이클 10) 설치 전 다른 폴더의 빌드 결과 검사
 
 검사 항목
  1. manifest 형식 (frame/anchor/density/frames/animations/layerOrder{layer,part,blend}/parts/presets)
     (사이클 7) 파츠 개수 hair 12 / top 10 / bottom 9 / shoes 7 / hat 8(none 포함), 사이클 5 id 전부 유지
  2. manifest <-> 파일 일치: 모든 PNG가 layerOrder 의 레이어 + 해당 part 의 id 이고, 필수 레이어 파일이 있다
     + manifest.files: 모든 레이어 키, 정렬된 id, 실제 파일과 정확히 일치, 필수 레이어는 모든 id(hat 은 none 제외) 포함
- 3. 시트 크기 = (144*11) x 192 RGBA
+ 3. 시트 크기 = (144*13) x 192 RGBA
  4. 기준점이 프레임 안
  5. 프리셋 6종 합성(+파츠 전 변형 무작위 조합) 결과가 프레임 안 (가장자리 1px 여백), 발이 기준점 근처
     (사이클 6) jump/fall: 발이 기준선 위로 떠도 되지만 기준선 아래로 넘지 않고, 몸 중심 높이가 side 와 비슷
     (사이클 8) prone: 몸 최하단이 기준선, 키(기준선~위끝)가 side 의 35~45% (모자 포함 조합은 50% 이하), 몸 가로 중심이 기준점 x 근처
     (사이클 8) layerOrder: shoes_under 가 bottom 바로 앞
+    (사이클 10) 13프레임 1872x192, 11 attack0 / 12 attack1, animations attack [11,12] 120ms, 공격 프레임도 발이 기준선
  6. 레이어 합성 vs 전체 렌더 차이 <= 허용치 (build_report.json, truth/)
  7. 결정적 빌드: 다시 빌드한 결과의 파일 해시가 같다
 """
@@ -51,18 +53,25 @@ def hashes(d):
 
 
 def main():
+    global AV
     fast = '--fast' in sys.argv
+    a = sys.argv[1:]
+    if '--av' in a:
+        AV = os.path.abspath(a[a.index('--av') + 1])
+    src = os.path.abspath(a[a.index('--src-out') + 1]) if '--src-out' in a else os.path.join(HERE, 'out')
     m = json.load(open(os.path.join(AV, 'manifest.json'), encoding='utf-8'))
     print('[1] manifest')
     ok(m.get('frame') == {'w': 144, 'h': 192}, 'frame 144x192')
     ok(m.get('anchor') == {'x': 72, 'y': 180}, 'anchor (72,180)')
     ok(m.get('density') == 1.5, 'density 1.5')
-    ok(m.get('frames') == B.FRAMES and len(B.FRAMES) == 11 and B.FRAMES[8:] == ['jump', 'fall', 'prone'], 'frames 11개 순서 (8 jump, 9 fall, 10 prone)')
+    ok(m.get('frames') == B.FRAMES and len(B.FRAMES) == 13 and B.FRAMES[8:] == ['jump', 'fall', 'prone', 'attack0', 'attack1'],
+       'frames 13개 순서 (8 jump, 9 fall, 10 prone, 11 attack0, 12 attack1)')
     an = m.get('animations', {})
     ok(an.get('idle_front', {}).get('frames') == [0, 1] and an.get('idle', {}).get('frames') == [2]
        and an.get('walk', {}).get('frames') == [3, 4, 5, 6], 'animations idle_front/idle/walk')
     ok(an.get('jump') == {'frames': [8], 'ms': 200} and an.get('fall') == {'frames': [9], 'ms': 200}
        and an.get('prone') == {'frames': [10], 'ms': 200} and 'crouch' not in an, 'animations jump [8] / fall [9] / prone [10] 200ms (crouch 없음)')
+    ok(an.get('attack') == {'frames': [11, 12], 'ms': 120}, 'animations attack [11,12] 120ms (사이클 10)')
     lo = m.get('layerOrder', [])
     ok(all(set(e) == {'layer', 'part', 'blend'} and e['blend'] in ('source-over', 'source-atop') for e in lo), 'layerOrder {layer,part,blend}')
     ok(all(e['blend'] == ('source-atop' if e['layer'].startswith('shade_') else 'source-over') for e in lo), 'shade_* = source-atop')
@@ -123,7 +132,7 @@ def main():
         if im.size != (144 * NF, 192) or im.mode != 'RGBA':
             bad.append((L, i, im.size, im.mode))
         sheets[(L, i)] = np.array(im.convert('RGBA'))
-    ok(not bad, '%d장 모두 %dx192 RGBA %s' % (len(files), 144 * NF, bad[:3]))
+    ok(not bad and NF == 13, '%d장 모두 %dx192 RGBA (13프레임 1872x192) %s' % (len(files), 144 * NF, bad[:3]))
 
     print('[4] 기준점')
     ok(0 <= m['anchor']['x'] < 144 and 0 <= m['anchor']['y'] < 192, '기준점 프레임 안')
@@ -149,7 +158,7 @@ def main():
             ys, xs = np.nonzero(a > 8)
             bb[f] = (ys.min(), ys.max(), float((ys * a[ys, xs]).sum() / a[ys, xs].sum()))
             worst = [min(worst[0], xs.min()), min(worst[1], ys.min()), max(worst[2], xs.max()), max(worst[3], ys.max())]
-            if f in (2, 3, 4, 5, 6, fi['prone']):
+            if f in (2, 3, 4, 5, 6, fi['prone'], fi['attack0'], fi['attack1']):
                 foot_err = max(foot_err, abs(int(ys.max()) - 180))
         for n in ('jump', 'fall'):
             air[n] = [min(air[n][0], bb[fi[n]][1]), max(air[n][1], bb[fi[n]][1])]
@@ -162,8 +171,8 @@ def main():
             ratio_hat = [min(ratio_hat[0], r), max(ratio_hat[1], r)]
         a = c[:, fi['prone'] * 144:(fi['prone'] + 1) * 144, 3].astype(float)
         pcx.append(float((a.sum(0) * np.arange(144)).sum() / a.sum()))
-    ok(worst[0] >= 1 and worst[1] >= 1 and worst[2] <= 142 and worst[3] <= 190, '불투명(a>8) 범위 x %d..%d, y %d..%d (프리셋 6 + 무작위 40, 11프레임)' % (worst[0], worst[2], worst[1], worst[3]))
-    ok(foot_err <= 10, '측면/걷기/숙이기 발 끝이 기준선 y=180 근처 (최대 차 %dpx)' % foot_err)
+    ok(worst[0] >= 1 and worst[1] >= 1 and worst[2] <= 142 and worst[3] <= 190, '불투명(a>8) 범위 x %d..%d, y %d..%d (프리셋 6 + 무작위 40, 13프레임)' % (worst[0], worst[2], worst[1], worst[3]))
+    ok(foot_err <= 10, '측면/걷기/엎드리기/공격 발 끝이 기준선 y=180 근처 (최대 차 %dpx)' % foot_err)
     ok(all(160 <= air[n][0] and air[n][1] <= 190 for n in air), 'jump/fall 발 끝 y: jump %d..%d, fall %d..%d (기준선 위로 뜰 수 있음, 아래로 190 이하)'
        % (air['jump'][0], air['jump'][1], air['fall'][0], air['fall'][1]))
     ok(max(center) <= 8, 'jump/fall 몸 중심(알파 가중 평균 y)이 side 와 비슷 (최대 차 %.1fpx <= 8)' % max(center))
@@ -172,9 +181,9 @@ def main():
     ok(max(abs(x - 72) for x in pcx) <= 10, 'prone 몸 가로 중심 x = %.1f..%.1f (72 +-10)' % (min(pcx), max(pcx)))
 
     print('[6] 레이어 합성 vs 전체 렌더')
-    rep = json.load(open(os.path.join(HERE, 'out', 'build_report.json')))['layer_vs_full']
+    rep = json.load(open(os.path.join(src, 'build_report.json')))['layer_vs_full']
     for i, (lab, av) in enumerate(B.PRESETS):
-        tp = os.path.join(HERE, 'out', 'truth', 'preset%d.png' % (i + 1))
+        tp = os.path.join(src, 'truth', 'preset%d.png' % (i + 1))
         tr = np.array(Image.open(tp).convert('RGBA'))
         st = B.diff_stats(B.composite(sheets, av), tr)
         ok(st['mean_abs_rgb'] <= B.TOL_MEAN and st['alpha_mae'] <= B.TOL_ALPHA,

@@ -77,76 +77,111 @@ def make_walk(d, sheets):
     im.save(os.path.join(d, 'walk_frames.png'))
 
 
-CANVA = ('c1_hoodie_bucket.png', 'c2_cardigan_skirt.png', 'c3_varsity_cap.png', 'c4_puffer_ponytail.png')
+REF = os.environ.get('MUSHROOM_REF', '')       # (사이클 10) 배경 화풍 6인 시안 (chars_bgstyle_orig.png, 1680x944, 6명 등간격)
+BG_ORIG = os.path.join(B.ROOT, 'assets', '_src', 'map_canva', 'orig', 'center.png')
 
 
-def make_compare(d, sheets, canva_dir=None):
-    """(사이클 7) 위: Canva 시안 4종, 아래: 프리셋 1~4 front (레이어 합성). 시안 폴더가 없으면 아래 줄만."""
-    canva_dir = canva_dir or os.environ.get('MUSHROOM_CANVA_DIR', '')
+def make_compare(d, sheets, ref=None):
+    """(사이클 10) 위: 시안 6인 (같은 높이로), 아래: 프리셋 1~6 front 레이어 합성 (2.5배)."""
+    ref = ref or REF
     k = 2.5
     cw, ch = int(W * k), int(H * k)
-    im = Image.new('RGBA', (4 * (cw + 10) + 10, 2 * ch + 40), BG)
+    im = Image.new('RGBA', (6 * (cw + 8) + 8, 2 * ch + 44), (244, 238, 230, 255))
     dr = ImageDraw.Draw(im)
-    for j in range(4):
-        p = os.path.join(canva_dir, CANVA[j])
-        if canva_dir and os.path.exists(p):
-            r = Image.open(p).convert('RGBA')
-            r = r.resize((int(ch * r.width / r.height), ch), Image.LANCZOS)
-            im.alpha_composite(r, (10 + j * (cw + 10) + (cw - r.width) // 2, 10))
+    if ref and os.path.exists(ref):
+        r = Image.open(ref).convert('RGBA')
+        sw = r.width / 6
+        for j in range(6):
+            c = r.crop((int(j * sw), int(r.height * 0.17), int((j + 1) * sw), int(r.height * 0.90)))
+            c = c.resize((int(ch * c.width / c.height), ch), Image.LANCZOS)
+            im.alpha_composite(c, (8 + j * (cw + 8) + (cw - c.width) // 2, 8))
+    for j in range(6):
         v = views(sheets, PRESETS[j][1], ('front',))[0]
-        im.alpha_composite(v.resize((cw, ch), Image.LANCZOS), (10 + j * (cw + 10), ch + 30))
-        dr.text((14 + j * (cw + 10), ch + 14), 'preset %d front (composite)' % (j + 1), fill=INK)
+        im.alpha_composite(v.resize((cw, ch), Image.LANCZOS), (8 + j * (cw + 8), ch + 36))
+        dr.text((12 + j * (cw + 8), ch + 18), 'preset %d front (layer composite)' % (j + 1), fill=INK)
     im.save(os.path.join(d, 'compare.png'))
 
 
-def map_strip(P):
-    """현재 assets/map 을 표시 배율 P 의 화면으로 합성 (월드 x 0..900 구간)."""
+def make_presets_c10(d, sheets, names=('front', 'side', 'walk1', 'attack0', 'attack1')):
+    """(사이클 10) presets_1x.png / presets_2x.png: 6종 x 정면, 옆, 걷기 1, 공격 2. 1배는 최근접(실제 픽셀), 2배는 최근접 확대."""
+    for k in (1, 2):
+        cw, ch = W * k, H * k
+        im = Image.new('RGBA', (len(names) * cw + 16, len(PRESETS) * (ch + 14) + 20), BG)
+        dr = ImageDraw.Draw(im)
+        for j, n in enumerate(names):
+            dr.text((8 + j * cw + 4, 4), n, fill=INK)
+        for i, (lab, av) in enumerate(PRESETS):
+            y0 = 18 + i * (ch + 14)
+            for j, v in enumerate(views(sheets, av, names)):
+                im.alpha_composite(up(v, k), (8 + j * cw, y0))
+        im.save(os.path.join(d, 'presets_%dx.png' % k))
+
+
+def _ground_strip(P):
+    """현재 assets/map (Canva 원본 배경, 한 장) 을 표시 배율 P 로."""
     mm = json.load(open(os.path.join(B.ROOT, 'assets', 'map', 'manifest.json')))
-    spx = P / 2                                    # 화면 px / 월드 단위
-    if 'density' in mm:
-        img_scale = spx / mm['density']; yk = spx; gy = mm['groundY']
-    else:                                          # 이전 계약 (아트 1px = 월드 2)
-        img_scale = spx * 2; yk = spx * 2; gy = mm['groundY'] * 2
-    wx = 900
-    sw, sh = int(wx * spx), int(540 * spx)
-    im = Image.new('RGBA', (sw, sh), (120, 180, 230, 255))
-    for L in mm['layers']:
-        src = Image.open(os.path.join(B.ROOT, L['src'])).convert('RGBA')
-        s = src.resize((max(1, round(src.width * img_scale)), max(1, round(src.height * img_scale))), Image.NEAREST)
-        x = 0
-        while x < sw:
-            im.alpha_composite(s, (x, int(L['y'] * yk)))
-            if not L.get('repeatX'):
-                break
-            x += s.width
-    return im, gy * spx, spx
+    spx = P / 2
+    L = [l for l in mm['layers'] if l.get('parallax', 0) == 1.0][0]
+    src = Image.open(os.path.join(B.ROOT, L['src'])).convert('RGBA')
+    k = spx / mm['density']
+    return src.resize((round(src.width * k), round(src.height * k)), Image.LANCZOS), mm['groundY'] * spx, spx
 
 
 def make_ingame(d, sheets):
+    """(사이클 10) ingame.png: 실제 배경 위 실제 게임 배율 (P=2: 2/3 축소, P=3: 1:1) 크롭, 프리셋 6종 (front/side/attack1)."""
     panels = []
     for P in (2, 3):
-        im, gy, spx = map_strip(P)
+        bg, gy, spx = _ground_strip(P)
         k = spx / B.DENSITY
-        dr = ImageDraw.Draw(im)
+        wx0 = 560
+        crop = bg.crop((int(wx0 * spx), int(gy - 300 * spx / 1.5), int(wx0 * spx) + 960, int(gy - 300 * spx / 1.5) + int(360 * spx / 1.5)))
+        gy2 = gy - int(gy - 300 * spx / 1.5)
         for i, (_, av) in enumerate(PRESETS):
             c = B.composite(sheets, av)
-            fr = frame(c, B.FRAMES.index('side' if i % 2 == 0 else 'front'))
-            s = fr.resize((round(W * k), round(H * k)), Image.LANCZOS)
-            wx = 120 + i * 120
-            im.alpha_composite(s, (int(wx * spx - B.ANCHOR[0] * k), int(gy - B.ANCHOR[1] * k)))
-        # 이전 블록 캐릭터 키(월드 86) 표시
-        x = int(40 * spx)
-        dr.line([(x, gy), (x, gy - 86 * spx)], fill=(255, 60, 60, 255), width=2)
-        dr.text((x + 4, gy - 86 * spx), 'old 86', fill=(255, 60, 60, 255))
-        dr.text((8, 8), 'P=%d (screen px per world unit = %.1f), sheet scaled x%.3f smooth' % (P, spx, k), fill=(0, 0, 0, 255))
-        panels.append(im)
-    w = max(p.width for p in panels)
-    out = Image.new('RGBA', (w, sum(p.height for p in panels)), BG)
+            fr = frame(c, B.FRAMES.index(('side', 'front', 'attack1')[i % 3]))
+            s = fr if k == 1 else fr.resize((round(W * k), round(H * k)), Image.LANCZOS)
+            x = int(90 * spx + i * 125 * spx * 0.75)
+            crop.alpha_composite(s, (int(x - B.ANCHOR[0] * k), int(gy2 - B.ANCHOR[1] * k)))
+        ImageDraw.Draw(crop).text((6, 6), 'P=%d  sheet x%.3f' % (P, k), fill=(40, 30, 20, 255))
+        panels.append(crop)
+    out = Image.new('RGBA', (max(p.width for p in panels), sum(p.height for p in panels)), BG)
     y = 0
     for p in panels:
         out.alpha_composite(p, (0, y)); y += p.height
-    out.save(os.path.join(d, 'ingame_scale.png'))
     out.save(os.path.join(d, 'ingame.png'))
+
+
+def make_on_bg(d, sheets):
+    """(사이클 10) on_bg.png: center.png x1.25 (= 에셋 1:1, P=3 화면) 를 1280x720 으로 크롭, 지면선 원본 y 790,
+    프리셋 6종을 실제 게임 배율(시트 1:1)로 세운다. on_bg_zoom.png 는 2배 확대."""
+    if not os.path.exists(BG_ORIG):
+        return
+    bg = Image.open(BG_ORIG).convert('RGBA')
+    bg = bg.resize((round(bg.width * 1.25), round(bg.height * 1.25)), Image.LANCZOS)
+    gy = 790 * 1.25
+    x0, y0 = 250, int(gy - 600)
+    bg = bg.crop((x0, y0, x0 + 1280, y0 + 720))
+    names = ('front', 'side', 'front', 'attack0', 'front', 'side')
+    for i, (_, av) in enumerate(PRESETS):
+        c = B.composite(sheets, av)
+        f = frame(c, B.FRAMES.index(names[i]))
+        cx = 300 + i * 140
+        bg.alpha_composite(f, (int(cx - B.ANCHOR[0]), int(gy - y0 - B.ANCHOR[1])))
+    bg.save(os.path.join(d, 'on_bg.png'))
+    z = bg.crop((200, 360, 1180, 660))
+    z.resize((z.width * 2, z.height * 2), Image.LANCZOS).save(os.path.join(d, 'on_bg_zoom.png'))
+
+
+def make_attack(d, sheets):
+    """(사이클 10) attack.gif: side -> attack0 -> attack1 -> side (120ms)."""
+    comps = [B.composite(sheets, av) for _, av in PRESETS]
+    frames = []
+    for n in ('side', 'attack0', 'attack1', 'attack1', 'side', 'side'):
+        im = Image.new('RGBA', (W * 6, H), BG)
+        for i, c in enumerate(comps):
+            im.alpha_composite(frame(c, B.FRAMES.index(n)), (i * W, 0))
+        frames.append(im.convert('RGB').convert('P', palette=Image.ADAPTIVE, colors=255))
+    frames[0].save(os.path.join(d, 'attack.gif'), save_all=True, append_images=frames[1:], duration=120, loop=0)
 
 
 def make_poses(d, sheets, k=2):
@@ -234,10 +269,13 @@ def make_socks(d, sheets, k=2):
 def make_all(d, sheets, jobs=2):
     os.makedirs(d, exist_ok=True)
     make_presets(d, sheets)
+    make_presets_c10(d, sheets)
     make_parts(d, sheets)
     make_walk(d, sheets)
     make_compare(d, sheets)
     make_ingame(d, sheets)
+    make_on_bg(d, sheets)
+    make_attack(d, sheets)
     make_poses(d, sheets)
     make_jump(d, sheets)
     make_prone(d, sheets)
@@ -247,6 +285,8 @@ def make_all(d, sheets, jobs=2):
 if __name__ == '__main__':
     import sys
     sh = B.load_sheets(os.path.join(B.ROOT, 'assets', 'avatar'))
+    if '--av' in sys.argv:                        # (사이클 10) 설치 전 빌드 폴더로 미리보기
+        sh = B.load_sheets(sys.argv[sys.argv.index('--av') + 1])
     if '--poses' in sys.argv:                     # poses.png + jump.gif 만
         os.makedirs(sys.argv[1], exist_ok=True)
         make_poses(sys.argv[1], sh)

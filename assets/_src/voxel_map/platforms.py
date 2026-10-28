@@ -233,7 +233,7 @@ def bridge(p, seed=0, z0=-22.0):
             xx = xa + (xb - xa) * t
             yy = top - 9.0 * (1 - (2 * t - 1) ** 2)
             bx.append(B(xx, yy, pz, 1.9, 0.9, 0.9, ROPE, noise=0.03, bevel=0.2))
-            if k % 6 == 3:
+            if k % 6 == 3 and pz < zc:
                 hh = yy - Yt
                 bx.append(B(xx, Yt + hh / 2, pz, 0.6, hh, 0.6, ROPE, noise=0.0, bevel=0.1))
     return bx

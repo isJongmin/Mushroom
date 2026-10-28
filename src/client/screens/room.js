@@ -29,8 +29,8 @@ import { cleanChatText } from '../backend/common.js';
 const REMOTE_SNAP_DIST = 400; // 이보다 멀면 순간 이동
 const REMOTE_CATCHUP = 32; // 뒤처진 거리(월드 단위)마다 속도를 1배씩 더한다
 const WALK_HOLD_MS = 200; // 원격 아바타: 마지막으로 움직인 뒤 200ms 안이면 walk (패킷 간격 100ms 흡수)
-const Y_LERP_MIN_MS = 60; // 원격 세로 보간: 받은 y까지 (패킷 간격, 60~160ms) 동안 직선으로 따라간다
-const Y_LERP_MAX_MS = 160;
+const Y_INTERP_DELAY_MS = 120; // 원격 세로 보간: 받은 (도착 시각, y) 기록을 120ms 늦게 재생하며 두 기록 사이를 직선 보간
+const Y_BUF_MAX = 8;
 const Y_SNAP_DIST = 320; // 원격 세로 차이가 이보다 크면 순간 이동
 const DASH_CHASE_MS = 350; // 원격 대시 fx를 받은 뒤 이 시간 동안 x 추적 속도 하한을 대시 속도로
 const CAM_SMOOTH_S = 0.12; // 세로 카메라 따라가기 시간 상수
@@ -297,8 +297,8 @@ export function mount(root, app, opts = {}) {
       bubble: null, lastChat: null, isSelf,
       s: 'idle', // 이동 상태 idle | walk | jump | fall | prone (원격은 받은 값, 없으면 null → 추정)
       body: isSelf ? createBody(x) : null, // 내 캐릭터 물리
-      // 원격 세로: 받은 y로 직선 보간 (yFrom → yTo, yT0부터 yDur ms)
-      yFrom: WORLD.groundY, yTo: WORLD.groundY, yT0: 0, yDur: 1, lastRecvAt: -Infinity,
+      // 원격 세로: 받은 y 기록 [{ t(도착 performance.now), y }] → Y_INTERP_DELAY_MS 늦게 직선 보간 (물리 재계산 없음)
+      yBuf: [], yTo: WORLD.groundY,
       fastUntil: 0, // 원격 대시: x 추적 속도 하한을 높이는 시각
     };
   }
@@ -332,13 +332,16 @@ export function mount(root, app, opts = {}) {
     if (p.dir === 'left' || p.dir === -1) pl.dir = -1;
     else if (p.dir === 'right' || p.dir === 1) pl.dir = 1;
     const y = isNum(p.y) ? Math.min(WORLD.groundY, Math.max(PHYS.ceilY, p.y)) : WORLD.groundY;
-    const gap = now - pl.lastRecvAt;
-    pl.lastRecvAt = now;
-    if (Math.abs(y - pl.y) > Y_SNAP_DIST) { pl.y = y; pl.yFrom = y; }
-    else pl.yFrom = pl.y;
+    const buf = pl.yBuf;
+    // 오래 소식이 없었으면(정지 후 다시 움직임) 지금 보이는 높이를 기점으로 다시 시작한다
+    const last = buf[buf.length - 1];
+    if (!last || now - last.t > Y_INTERP_DELAY_MS * 3 || Math.abs(y - pl.y) > Y_SNAP_DIST) {
+      buf.length = 0;
+      buf.push({ t: now - Y_INTERP_DELAY_MS, y: Math.abs(y - pl.y) > Y_SNAP_DIST ? y : pl.y });
+    }
+    buf.push({ t: now, y });
+    if (buf.length > Y_BUF_MAX) buf.splice(0, buf.length - Y_BUF_MAX);
     pl.yTo = y;
-    pl.yT0 = now;
-    pl.yDur = Math.min(Y_LERP_MAX_MS, Math.max(Y_LERP_MIN_MS, Number.isFinite(gap) ? gap : Y_LERP_MAX_MS));
     pl.s = normState(p.s);
     pl.lastMoveAt = now;
     if (isFx(p.fx)) playFx(pl, p.fx, pl.x, pl.y, now);
@@ -373,7 +376,7 @@ export function mount(root, app, opts = {}) {
             const pl = makePlayer(s.user_id, nickname, avatar, x, false);
             players.set(s.user_id, pl);
             const early = earlyMoves.get(s.user_id);
-            if (early) { applyMove(pl, { ...early, fx: null }); pl.x = pl.targetX; pl.y = pl.yTo; } // 늦은 fx는 재생하지 않는다
+            if (early) { applyMove(pl, { ...early, fx: null }); pl.x = pl.targetX; pl.y = pl.yTo; pl.yBuf.length = 0; } // 늦은 fx는 재생하지 않는다
           }
         }
         earlyMoves.clear();
@@ -579,9 +582,8 @@ export function mount(root, app, opts = {}) {
         if (step > 0.01) p.lastMovedAt = now;
       }
       p.moving = now - p.lastMovedAt < WALK_HOLD_MS;
-      // 세로: 받은 y를 그대로 직선 보간 (물리 재계산 없음)
-      const t = Math.min(1, Math.max(0, (now - p.yT0) / p.yDur));
-      p.y = p.yFrom + (p.yTo - p.yFrom) * t;
+      // 세로: 받은 y 기록을 120ms 늦게 재생 (두 기록 사이 직선 보간, 물리 재계산 없음). 모든 기록 값을 정확히 지나간다.
+      p.y = sampleY(p.yBuf, now - Y_INTERP_DELAY_MS, p.yTo);
       if (p.bubble && now - p.bubble.at >= BUBBLE.showMs) p.bubble = null;
     }
     if (me && me.bubble && now - me.bubble.at >= BUBBLE.showMs) me.bubble = null;
@@ -590,6 +592,19 @@ export function mount(root, app, opts = {}) {
       if (next !== p.anim) { p.anim = next; p.animSince = now; } // 상태가 바뀌면 첫 프레임부터
     }
     fx.update(dt, (p) => frameOf(p, now));
+  }
+
+  function sampleY(buf, t, fallback) {
+    if (!buf.length) return fallback;
+    if (t <= buf[0].t) return buf[0].y;
+    for (let i = 1; i < buf.length; i++) {
+      const b = buf[i];
+      if (t <= b.t) {
+        const a = buf[i - 1];
+        return a.y + (b.y - a.y) * ((t - a.t) / Math.max(1, b.t - a.t));
+      }
+    }
+    return buf[buf.length - 1].y;
   }
 
   /**

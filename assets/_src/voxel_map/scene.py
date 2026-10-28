@@ -129,7 +129,8 @@ def ground_props():
     add = lambda boxes, x, z, yaw=0.0, s=1.0, y=0.0: L.extend(placed(boxes, x, y, z, yaw, s))
     pinfo = PLAT_INFO
     # ---- 왼쪽 끝
-    add(P.oak(31, h=30, r=30), 20, -72, 0)
+    add(P.cherry(31, h=34, r=36), 22, -74)
+    add(P.petals(30, 70, 30, 30), 30, -40)
     add(P.bush(32, 22, 10), 52, -46)
     add(P.flowers(33, 18, 8, 7), 46, -28)
     add(P.lantern_post(), 50, -22)
@@ -165,6 +166,7 @@ def ground_props():
     add(P.rocks(50, 3, 6), 640, -34)
     add(P.tuft(51), 650, -20)
     add(P.lantern_post(), 742, -22)
+    add(P.cherry(62, h=20, r=22), 700, -88)
     # 파란 집 왼쪽: 벚꽃
     add(P.cherry(52, h=22, r=24), 772, -78)
     add(P.petals(53, 50, 24, 20), 770, -40)

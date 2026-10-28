@@ -298,7 +298,7 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
     return out
 
 
-CUBE = 3.0 * UNIT      # 큐브 질감 한 칸 (모델 단위): 시트 약 5.5px (배경 그림 큐브 6~8px 보다 조금 작게)
+CUBE = 2.0 * UNIT      # 큐브 질감 한 칸 (모델 단위): 시트 약 3.6px (배경 큐브 6~8px 보다 작게, 시안 캐릭터 결 크기)
 CUBE_JIT = 0.075       # 칸마다 명도 편차 (세기 1 기준)
 CUBE_EDGE = 0.16       # 칸 경계 폭 (칸 비율)
 

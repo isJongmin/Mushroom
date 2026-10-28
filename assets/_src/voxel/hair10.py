@@ -111,6 +111,12 @@ class HairV:
         """목/어깨 자리 (턱 아래, 몸 앞쪽) 파내기."""
         self.cut(rbox(self.g, (0, y - 20, z1 + 15), (hx, 20, 15), 2.0))
 
+    def band(self, y, hy, a, c, p, zc=-0.6, lab=2, out=1.025):
+        """크라운 둘레 띠 (초타원 단면)."""
+        g = self.g
+        s = ((np.abs(g.X) / a) ** p + (np.abs(g.Z - zc) / c) ** p) ** (1 / p)
+        self.add(np.maximum(np.abs(g.Y - y) - hy, (s - out) * a), lab)
+
     # ---------------------------------------------------------------- 앞머리
     def bangs(self, strands, top=26.0, ra=2.3, rb=0.5, sz=0.5, dz=1.0, labs=(0, 1, 0, 2)):
         """strands: [(x 위, x 끝, 끝 y), ...] 납작한 뾰족 캡슐 가닥. 머리 앞면을 따라 dz 만큼 띄운다."""
@@ -198,8 +204,8 @@ def hair_pink_bridge_ponytail():
     for sg in (1, -1):
         k.lock([(sg * 13.6, 21.0, 12.4), (sg * 14.2, 10.0, 12.6), (sg * 13.4, 2.0, 11.6)], [1.5, 1.2, 0.4], 1, sz=0.8)   # 잔머리
         k.lock([(sg * 16.2, 22.0, 8.0), (sg * 16.6, 12.0, 8.6), (sg * 16.0, 5.0, 8.0)], [1.4, 1.2, 0.5], 5)            # 핑크 브릿지
-    pts = [(0, 30.0, -12.5), (0.5, 33.6, -17.6), (1.5, 33.0, -22.6), (3.0, 28.6, -26.0), (4.6, 22.0, -27.0),
-           (6.0, 15.0, -26.4), (7.0, 8.5, -25.0), (7.6, 2.5, -23.4), (8.0, -2.5, -21.6)]
+    pts = [(0, 31.0, -11.0), (0.5, 34.0, -15.6), (1.5, 32.4, -20.6), (3.0, 27.6, -23.4), (4.6, 21.0, -24.4),
+           (6.0, 14.0, -24.0), (7.0, 8.0, -23.0), (7.6, 2.5, -21.6), (8.0, -2.5, -20.0)]
     rad = [4.2, 5.0, 5.4, 5.3, 5.0, 4.5, 3.8, 2.6, 0.7]
     k.lock(pts, rad, 0, k=1.0)
     for sg in (1, -1):                                                           # 꼬리 핑크 결
@@ -273,7 +279,7 @@ def hair_sky_bob():
     """하늘색 단발: 턱선 길이, 안으로 말린 둥근 실루엣, 일자 앞머리."""
     k = HairV('#8FCBF0', 55)
     k.helmet(side=2.0, rear=1.0, puff=1.6, py=12.0, tip=1.2, jit=0.5)
-    k.add(rbox(k.g, (0, 2.0, -3.0), (17.6, 1.8, 15.0), 1.8), 2, k=1.0)            # 아래 안쪽 말림
+    k.band(2.2, 1.8, 17.6, 15.6, 2.4, zc=-1.8, lab=2, out=1.0)                      # 아래 안쪽 말림
     k.face_window(hx=12.8)
     k.neck_cut(y=1.0, hx=11.0)
     _fringe(k, 9, -12.6, 12.6, 14.8, amp=0.4, ra=2.2, rb=0.9)
@@ -354,16 +360,19 @@ class HatV(HairV):
     def boxes(self, noise=0.03):
         return super().boxes(noise)
 
-    def crown(self, c, h, r, lab=0):
-        self.add(rbox(self.g, c, h, r), lab)
+    def crown(self, c, h, r, lab=0, p=2.3):
+        """둥근 크라운: 아래끝 c[1]-h[1] 에서 위로 초타원 돔 (반폭 h[0], 높이 2h[1], 깊이 h[2])."""
+        y0 = c[1] - h[1]
+        d = sdf.dome(self.g, (c[0], y0 + 3.0, c[2]), h[0], 2 * h[1] - 3.0, h[2], p)
+        self.add(np.maximum(d, y0 - self.g.Y), lab)
 
-    def brim(self, y, rin, rout, droop, th=0.7, zc=-0.6, lab=0, front=None):
-        """챙: 반지름 rin..rout, 바깥으로 갈수록 droop 만큼 내려감 (얇은 원뿔 판)."""
+    def brim(self, y, rin, rout, droop, th=0.7, zc=-0.6, lab=0, front=None, a=18.6, c=18.4, p=2.8):
+        """챙: 크라운 단면(초타원 a x c, 지수 p) 비율 rin..rout (1 = 크라운 둘레), 바깥으로 갈수록 droop 만큼 내려감."""
         g = self.g
-        rad = np.sqrt(g.X ** 2 + (g.Z - zc) ** 2)
-        t = np.clip((rad - rin) / (rout - rin), 0, 1)
+        s = ((np.abs(g.X) / a) ** p + (np.abs(g.Z - zc) / c) ** p) ** (1 / p)
+        t = np.clip((s - rin) / (rout - rin), 0, 1)
         yy = y - droop * t ** 1.3
-        d = np.maximum(np.abs(g.Y - yy) - th, np.maximum(rad - rout, rin - 1.5 - rad))
+        d = np.maximum(np.abs(g.Y - yy) - th, np.maximum((s - rout) * a, (rin - 0.08 - s) * a))
         self.add(d, lab)
 
 
@@ -376,9 +385,9 @@ def _surface_mask(k, d, center, r):
 def hat_bucket_white():
     """흰 버킷햇: 둥근 크라운, 아래로 기운 챙, 띠, 라벤더 하트 자수."""
     k = HatV('#F8F6F2', accents=('#BCA8EC', '#D4C6F4'))
-    k.crown((0, 27.8, -0.6), (18.6, 7.6, 18.4), 7.0)
-    k.add(rbox(k.g, (0, 21.0, -0.6), (18.9, 1.0, 18.7), 2.0), 2)                     # 띠
-    k.brim(20.4, 16.0, 23.8, 4.0, th=0.8, zc=-0.6, lab=1)
+    k.crown((0, 27.4, -0.6), (18.6, 7.4, 18.4), 7.0, p=2.8)
+    k.band(21.0, 1.0, 18.6, 18.4, 2.8)                                              # 띠
+    k.brim(20.6, 0.92, 1.28, 3.8, th=0.9, zc=-0.6, lab=1)
     cx, cy, cz = -7.0, 26.0, 18.2                                                  # 하트 (앞 왼쪽)
     g = k.g
     hx, hy = (g.X - cx) / 1.9, (g.Y - cy) / 1.9
@@ -390,24 +399,27 @@ def hat_bucket_white():
 def hat_cap_black():
     """검정 캡: 둥근 크라운, 긴 챙, 단추, 앞 크림 자수 (글자 없는 둥근 마크)."""
     k = HatV('#34303D', accents=('#EDE3CF',))
-    k.crown((0, 27.0, -0.8), (18.8, 8.4, 18.6), 8.5)
+    k.crown((0, 27.0, -0.8), (18.9, 8.6, 18.7), 8.5, p=2.0)
     g = k.g
     bill = np.maximum(np.abs(g.Y - (20.4 - 0.18 * np.clip(g.Z - 14, 0, None))) - 0.7,
                       ellipsoid(g, (0, 20.4, 18.0), (14.5, 30.0, 10.0)))
     bill = np.maximum(bill, 12.0 - g.Z)
     k.add(bill, 2)
     k.blob((0, 35.4, -0.8), (1.4, 0.8, 1.4), 1)                                     # 단추
-    seam = (np.abs(g.X) < 0.3) & (g.Z > 0)
+    seam = (np.abs(g.X) < 0.3) & (g.Z > 0) & (g.Y > 29.5)
     k.lab = np.where(seam & (k.d <= 0) & (g.Y > 22), 3, k.lab)
-    mark = (np.sqrt((g.X + 6.0) ** 2 + (g.Y - 26.0) ** 2) < 1.8) & (g.Z > 10)
-    k.lab = np.where(mark & (k.d <= 0), 5, k.lab)
+    # 앞 가운데 크림 버섯 아이콘 (상표 대신): 반원 갓 + 기둥
+    gx, gy = g.X - 0.0, g.Y - 26.4
+    capm = ((gx / 3.0) ** 2 + (gy / 2.4) ** 2 < 1) & (gy > -0.3)
+    stem = (np.abs(gx) < 1.0) & (gy <= -0.3) & (gy > -2.6)
+    k.lab = np.where((capm | stem) & (g.Z > 10) & (k.d <= 0), 5, k.lab)
     return k.boxes()
 
 
 def hat_cap_white():
     """흰 야구모자: 둥근 크라운, 챙, 빨간 단추와 빨간 둥근 앞 마크."""
     k = HatV('#F6F3EE', accents=('#E8483E', '#FFFFFF'))
-    k.crown((0, 27.2, -0.6), (18.6, 8.2, 18.4), 8.5)
+    k.crown((0, 27.2, -0.6), (18.7, 8.4, 18.5), 8.5, p=2.0)
     g = k.g
     bill = np.maximum(np.abs(g.Y - (20.6 - 0.15 * np.clip(g.Z - 14, 0, None))) - 0.7,
                       ellipsoid(g, (0, 20.6, 18.0), (14.0, 30.0, 9.5)))
@@ -426,7 +438,7 @@ def hat_mushroom_red():
     cap = ellipsoid(g, (0, 22.0, -0.6), (22.0, 15.0, 21.6))
     cap = np.maximum(cap, 19.6 - g.Y)
     k.add(cap, 0)
-    k.add(rbox(g, (0, 19.8, -0.6), (18.6, 0.9, 18.4), 0.8), 6)                      # 갓 아래 주름 테
+    k.band(19.8, 0.9, 18.6, 18.4, 2.0, lab=6, out=1.0)                               # 갓 아래 주름 테
     dots = [(0, 1, 0.1, 4.2), (-0.55, 0.62, 0.55, 3.2), (0.6, 0.6, -0.55, 3.0), (0.75, 0.45, 0.48, 2.8),
             (-0.72, 0.48, -0.5, 3.0), (-0.95, 0.15, 0.25, 2.6), (0.95, 0.18, -0.1, 2.6), (0.1, 0.35, 0.94, 3.0),
             (-0.2, 0.38, -0.92, 2.8), (0.45, 0.85, 0.3, 2.2)]
@@ -445,8 +457,8 @@ def hat_explorer_brown():
     k.crown((0, 27.4, -0.6), (17.8, 7.2, 17.6), 6.0)
     g = k.g
     k.cut(ellipsoid(g, (0, 35.6, -0.6), (3.0, 2.0, 12.0)))                          # 크라운 홈
-    k.add(rbox(g, (0, 22.0, -0.6), (18.1, 1.4, 17.9), 1.2), 5)                       # 띠
-    k.brim(20.6, 16.0, 24.4, 2.0, th=0.75, zc=-0.6, lab=2)
+    k.band(22.0, 1.4, 17.8, 17.6, 2.3, lab=5, out=1.04)                              # 띠
+    k.brim(20.6, 0.92, 1.36, 2.0, th=0.75, zc=-0.6, lab=2, a=17.8, c=17.6, p=2.3)
     return k.boxes()
 
 
@@ -455,10 +467,10 @@ def hat_beanie_yellow():
     y = '#F7C948'
     k = HatV(y, accents=('#FFF6E4',))
     g = k.g
-    k.crown((0, 26.0, -0.8), (18.4, 9.0, 18.2), 8.0)
+    k.crown((0, 26.0, -0.8), (18.5, 9.4, 18.3), 8.0, p=2.1)
     rib = (np.floor((np.arctan2(g.X, g.Z + 0.8) / (2 * np.pi) + 0.5) * 36) % 2 == 0)
     k.lab = np.where((k.d <= 0) & rib, 2, k.lab)
-    k.add(rbox(g, (0, 19.6, -0.8), (18.9, 2.2, 18.7), 1.8), np.where(rib, 3, 2))       # 접은 단
+    k.band(19.6, 2.2, 18.5, 18.3, 2.1, zc=-0.8, lab=np.where(rib, 3, 2), out=1.03)    # 접은 단
     k.blob((0, 36.0, -0.8), (3.2, 2.8, 3.2), 5)
     return k.boxes()
 

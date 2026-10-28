@@ -34,7 +34,7 @@ ANCHOR = (72, 180)
 DENSITY = 1.5
 SCALE = 1.82 / UNIT     # 시트 px / 복셀 1칸 (사이클 7: 2.75 -> 1.82, 사이클 10: 0.91)
 PITCH = 15
-FRAMES = ['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back', 'jump', 'fall', 'prone']
+FRAMES = ['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back', 'jump', 'fall', 'prone', 'attack0', 'attack1']
 YAW = {'front': -25, 'front_b': -25, 'back': 160}   # 사이클 7: 정면은 시안처럼 캐릭터 왼쪽에서 (25 -> -25)
 SIDE_YAW = 62
 LAYER_ORDER = [
@@ -213,7 +213,8 @@ def manifest(files):
         'animations': {'idle_front': {'frames': [0, 1], 'ms': 600}, 'idle': {'frames': [2], 'ms': 600},
                        'walk': {'frames': [3, 4, 5, 6], 'ms': 150},
                        'jump': {'frames': [8], 'ms': 200}, 'fall': {'frames': [9], 'ms': 200},
-                       'prone': {'frames': [10], 'ms': 200}},
+                       'prone': {'frames': [10], 'ms': 200},
+                       'attack': {'frames': [11, 12], 'ms': 120}},
         'layerOrder': [{'layer': l, 'part': p, 'blend': b} for l, p, b in LAYER_ORDER],
         'parts': {k: [{'id': i, 'label': lab} for i, lab in LABELS[k]] for k in CATS},
         'presets': [{'label': lab, 'avatar': av} for lab, av in PRESETS],

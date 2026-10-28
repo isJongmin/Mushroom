@@ -20,8 +20,9 @@ import legacy_v5 as V5
 HK = 1.28                         # 사이클 5 머리 -> 사이클 7 머리 배율
 HEAD_PIVOT = (0, 42.0, 0)
 HEAD_H = (14.0, 12.8, 12.8)       # 머리 28 x 25.6 x 25.6, 머리 로컬 y 0..25.6
-SHOULDER = (9.1, 38.2, 0)
-HIP = (3.9, 24.5, 0)
+GIRTH = (1.14, 1.10)              # 사이클 10: 몸/팔다리 가로, 깊이 배율 (시안의 통통한 몸)
+SHOULDER = (9.1 * GIRTH[0], 38.2, 0)
+HIP = (3.9 * GIRTH[0], 24.5, 0)
 KNEE = (0, -14.0, 0)              # 허벅지 뼈 기준 무릎
 LEGX = 3.0                        # 사이클 7: 허벅지를 늘린 만큼 몸통 뼈 전체를 올림 (몸통 로컬 y 는 그대로)
 TORSO_SY = 1.17                   # 사이클 7: 몸통 뼈 상자를 엉덩이 높이 기준으로 세로 1.17배 (어깨/목/머리도 같이 올라감)
@@ -126,6 +127,24 @@ def _rng(seed):
 
 
 DEC = dict(decal=True, bevel=0, noise=0.0)
+
+
+def pix(bone, x0, y0, z, rows, col, cell=0.5, **kw):
+    """(사이클 10) 픽셀 그림 데칼: rows = 위에서부터 문자열 ('#' = 칠함). (x0, y0) = 왼쪽 위 칸 중심 (정면에서 본 화면 기준,
+    화면 오른쪽 = +x). 행마다 이어진 칸을 상자 하나로."""
+    out = []
+    for j, row in enumerate(rows):
+        i = 0
+        while i < len(row):
+            if row[i] != '#':
+                i += 1; continue
+            i1 = i
+            while i1 < len(row) and row[i1] == '#':
+                i1 += 1
+            xa, xb = x0 + i * cell - cell / 2, x0 + (i1 - 1) * cell + cell / 2
+            out.append(decal(bone, ((xa + xb) / 2, y0 - j * cell, z), ((xb - xa) / 2, cell / 2, 0.03), col, **kw))
+            i = i1
+    return out
 
 
 def decal(bone, c, h, col, **kw):
@@ -802,13 +821,14 @@ def top_hoodie_lavender():
         out += [P('torso', (sg * 5.8, 41.2, -0.4), (2.2, 1.5, 4.9), col, bevel=SOFT),                 # 후드 앞 둘레
                 decal('torso', (sg * 1.9, 37.2, hz + 0.03), (0.4, 2.8, 0.03), '#FFFFFF', emit=0.05),   # 끈
                 P('torso', (sg * 1.9, 34.2, hz + 0.1), (0.55, 0.7, 0.25), '#F4F1F6', bevel=0.15, noise=0)]
-    out += [decal('torso', (-5.4, 36.0, hz + 0.03), (1.2, 1.2, 0.03), '#DCD0F6')]                    # 무지 네모 패치
+    out += pix('torso', 3.6, 37.0, hz + 0.03, ['.#.#.', '#####', '.###.', '#####', '.#.#.'], '#F4EEF8')   # 작은 꽃 자수
+    out += [decal('torso', (4.6, 36.0, hz + 0.06), (0.3, 0.3, 0.03), '#E8B4C8')]
     return out + _over_sleeves(col, rib, hx=3.4)
 
 
 def top_cardigan_cream():
     """시안 2: 크림 니트 가디건(열림) + 흰 티(분홍 리본 프린트) + 검정 미니 숄더백."""
-    cr = '#EFE2C8'; wt = '#FFFFFF'; bag = '#2A2630'
+    cr = '#DCC6A0'; wt = '#FFFFFF'; bag = '#7A4A30'
     hz = 5.0
     out = R('torso', (0, 33.4, 0), (8.4, 7.0, hz), cr, 0.9)                   # 26.4..40.4
     out += R('torso', (0, 24.6, 0), (8.3, 2.6, hz - 0.1), cr, 0.7)
@@ -817,13 +837,17 @@ def top_cardigan_cream():
             P('torso', (0, 40.3, 0), (4.0, 0.5, 4.0), wt, bevel=0.3, noise=0.01)]
     for sg in (1, -1):
         out += [P('torso', (sg * 3.3, 30.6, hz + 0.15), (0.55, 9.0, 0.2), tint(cr, -0.04), bevel=0.15),   # 여밈 단
-                decal('torso', (sg * 3.3, 35.0, hz + 0.38), (0.22, 0.22, 0.03), '#C9B48E'),
-                decal('torso', (sg * 3.3, 30.4, hz + 0.38), (0.22, 0.22, 0.03), '#C9B48E')]
+                P('torso', (sg * 3.3, 35.0, hz + 0.4), (0.4, 0.4, 0.12), '#8A6248', bevel=0.1, noise=0),
+                P('torso', (sg * 3.3, 30.4, hz + 0.4), (0.4, 0.4, 0.12), '#8A6248', bevel=0.1, noise=0),
+                P('torso', (sg * 3.3, 25.8, hz + 0.3), (0.4, 0.4, 0.12), '#8A6248', bevel=0.1, noise=0)]
         for x in (5.2, 7.0):
             out.append(decal('torso', (sg * x, 31.0, hz + 0.03), (0.16, 8.6, 0.03), tint(cr, -0.06)))      # 니트 골
-    out += [decal('torso', (-0.8, 36.4, hz + 0.23), (0.65, 0.55, 0.03), '#F48FB1'),                       # 티 리본 프린트
-            decal('torso', (0.8, 36.4, hz + 0.23), (0.65, 0.55, 0.03), '#F48FB1'),
-            decal('torso', (0, 36.4, hz + 0.26), (0.32, 0.32, 0.03), '#D9628A')]
+    tie = '#6A4A3A'                                                                                       # 넥타이 + 셔츠 깃
+    out += [P('torso', (0, 39.4, hz + 0.3), (0.75, 0.6, 0.25), tie, bevel=0.2, noise=0.01),
+            P('torso', (0, 35.6, hz + 0.25), (0.6, 3.4, 0.2), tie, bevel=0.15, noise=0.01),
+            P('torso', (0, 32.1, hz + 0.25), (0.35, 0.4, 0.2), tie, bevel=0.1, noise=0.01)]
+    for sg in (1, -1):
+        out.append(P('torso', (sg * 1.5, 40.0, hz + 0.1), (1.4, 0.6, 0.4), wt, bevel=0.25, noise=0.01, rot=(0, 0, sg * -20)))
     # 숄더백 (캐릭터 왼쪽 엉덩이 앞) + 끈
     out += [P('torso', (6.0, 23.2, hz + 0.5), (2.3, 2.1, 1.2), bag, bevel=0.5, noise=0.02),
             P('torso', (6.0, 24.4, hz + 1.72), (2.2, 0.85, 0.05), tint(bag, 0.1), bevel=0.0, noise=0.0),
@@ -850,9 +874,10 @@ def top_varsity_navy():
     for y in (37.0, 33.4, 29.8, 26.2):
         out.append(P('torso', (-2.85, y, hz + 0.38), (0.42, 0.42, 0.1), cr, bevel=0.1, noise=0, emit=0.05))
     # 글자 없는 둥근 패치 (가슴 오른쪽): 크림 원 + 빨간 점
-    out += [decal('torso', (-5.6, 35.0, hz + 0.03), (1.6, 1.25, 0.03), cr),
-            decal('torso', (-5.6, 35.0, hz + 0.03), (1.25, 1.6, 0.03), cr),
-            decal('torso', (-5.6, 35.0, hz + 0.06), (0.7, 0.7, 0.03), '#C9424A')]
+    # 가슴 R 패치 (크림 글자 + 갈색 테두리 그림자)
+    R_ROWS = ['####.', '#...#', '#...#', '####.', '#.#..', '#..#.', '#...#']
+    out += pix('torso', 3.9, 37.4, hz + 0.06, R_ROWS, cr, cell=0.6)
+    out += pix('torso', 4.05, 37.25, hz + 0.03, R_ROWS, '#8A6A50', cell=0.6)
     for sg in (1, -1):
         out.append(P('torso', (sg * 5.8, 26.2, hz - 0.05), (1.5, 0.2, 0.15), cr, bevel=0.05, noise=0))   # 주머니 입구 테
     out += _over_sleeves(cr, tint(nv, -0.1), hx=3.0)
@@ -919,17 +944,20 @@ def top_blouse():
 
 
 def top_overalls():
-    tee = '#FFF6E4'; g = '#4FAE4A'
+    tee = '#FFF6E4'; g = '#7F9A5E'
     hz = 4.7
     out = _body(tee, hx=7.9, hz=hz)
     out += R('torso', (0, 23.4, 0), (8.2, 2.2, hz + 0.3), g, 0.5)
     out += [P('torso', (0, 29.6, hz + 0.2), (5.0, 4.6, 0.4), g, bevel=0.5),
-            decal('torso', (0, 30.0, hz + 0.63), (2.2, 1.5, 0.03), tint(g, -0.12))]
+            decal('torso', (0, 30.0, hz + 0.63), (2.6, 2.0, 0.03), tint(g, -0.10))]           # 가슴 주머니
+    out += pix('torso', -1.5, 31.4, hz + 0.66, ['.###.', '#####', '#.#.#', '..#..', '..#..'], '#C8503E')   # 버섯 패치
+    out += pix('torso', -1.5, 31.4, hz + 0.69, ['.....', '.....', '.#.#.', '.....', '.....'], '#FFF6E4')
+    out += pix('torso', -1.5, 31.4, hz + 0.69, ['.....', '.....', '.....', '..#..', '..#..'], '#FFF6E4')
     for sg in (1, -1):
         out += [P('torso', (sg * 3.6, 37.2, hz + 0.15), (1.0, 3.4, 0.3), g, bevel=0.3),
                 P('torso', (sg * 3.6, 40.5, 0), (1.0, 0.3, hz + 0.3), g, bevel=0.2),
                 P('torso', (sg * 3.0, 33.0, -hz - 0.2), (1.0, 7.6, 0.3), g, bevel=0.3),
-                P('torso', (sg * 3.6, 34.0, hz + 0.55), (0.65, 0.65, 0.2), '#F7C948', bevel=0.2, noise=0, emit=0.1)]
+                P('torso', (sg * 3.6, 34.0, hz + 0.55), (0.65, 0.65, 0.2), '#D9B26A', bevel=0.2, noise=0, emit=0.1)]
     return out + _short_sleeves(tee, tint(tee, -0.06))
 
 
@@ -1065,10 +1093,20 @@ def bottom_cargo_beige():
 
 
 def bottom_skirt_pink():
-    pink = '#F58AB4'
-    out = R('torso', (0, 25.4, 0), (7.3, 1.8, 4.4), pink, 0.5)
-    out += R('torso', (0, 21.4, 0), (8.6, 2.6, 5.6), tint(pink, 0.05), 0.6, sway='skirt')
-    out += R('torso', (0, 18.8, 0), (8.9, 0.4, 5.9), '#FFF6E4', 0.3, sway='skirt')
+    """분홍 플리츠 스커트: 허리 밴드 + 아래로 퍼지는 2단 + 세로 주름 골 (앞/뒤/옆)."""
+    pink = '#E99AB2'
+    dk = tint(pink, -0.16)
+    sk = dict(sway='skirt')
+    out = R('torso', (0, 25.4, 0), (7.3, 1.8, 4.4), tint(pink, -0.05), 0.5)
+    out += R('torso', (0, 22.0, 0), (8.4, 2.2, 5.4), pink, 0.5, **sk)
+    out += R('torso', (0, 18.9, 0), (9.1, 1.2, 6.0), tint(pink, 0.04), 0.5, **sk)
+    for (hz, hx, y, hy) in ((5.4, 8.4, 22.0, 2.2), (6.0, 9.1, 18.9, 1.2)):
+        for zs in (1, -1):
+            for x in np.arange(-hx + 1.0, hx - 0.6, 1.5):
+                out.append(decal('torso', (x, y, zs * (hz + 0.03)), (0.22, hy - 0.05, 0.03), dk, **sk))
+        for xs in (1, -1):
+            for z in np.arange(-hz + 1.0, hz - 0.6, 1.5):
+                out.append(decal('torso', (xs * (hx + 0.03), y, z), (0.03, hy - 0.05, 0.22), dk, **sk))
     return out
 
 
@@ -1271,7 +1309,7 @@ PROXIES = {'body': proxy_body, 'legs': proxy_legs, 'hairshell': proxy_hairshell}
 #   squash       : (sy, sxz) 몸통 뼈 상자를 엉덩이 높이 기준으로 세로 sy, 가로/깊이 sxz 배
 #   skirt_lift   : 치마 단(sway='skirt')을 수평으로 되돌리고 위로 올림 (숙이기: 치마가 지면을 뚫지 않게)
 HANG_CUTS = (7.7, -3.8)
-NEW_FRAMES = ('jump', 'fall', 'prone')
+NEW_FRAMES = ('jump', 'fall', 'prone', 'attack0', 'attack1')
 
 
 def pose_frame(name):
@@ -1308,6 +1346,13 @@ def pose_frame(name):
                       asplay={1: 50.0, -1: 50.0}, legsplay=5.0, lean=88.0, head=-92.0, pivot='hip', fit=True, head_sy=0.9,
                       head_drop=(0, -4.0, 10.0),
                       hang=(84.0, 94.0), hang_cuts=(2.0, -6.0), cape=88.0, fit_dx=-4.0),
+        # 사이클 10: 공격 (무기 없이 팔을 크게 휘두름). attack0 = 휘두르기 준비 (몸을 뒤로 젖히고 팔을 머리 위 뒤로),
+        # attack1 = 앞으로 베기 (앞발 내딛고 몸을 숙이며 팔을 앞 아래로 뻗음).
+        # 옆 뷰에서 카메라 쪽 팔은 -1 (오른팔).
+        'attack0': dict(leg={1: -14.0, -1: 16.0}, shin={1: -16.0, -1: -8.0}, arm={1: 28.0, -1: -112.0},
+                        asplay={1: 10.0, -1: 22.0}, lean=-8.0, head=-3.0, pivot='hip', hang=-6.0, cape=-4.0),
+        'attack1': dict(leg={1: -24.0, -1: 34.0}, shin={1: -12.0, -1: -26.0}, arm={1: -40.0, -1: 92.0},
+                        asplay={1: 10.0, -1: 4.0}, lean=12.0, head=-6.0, pivot='hip', hang=18.0, cape=24.0),
     }
     if name in POSES6:
         p.update(POSES6[name])
@@ -1383,7 +1428,7 @@ def _skin_pts(xf, pose):
     """마네킹(skin) 상자 꼭짓점 (월드)."""
     pts = []
     sgn = np.array([[i, j, k] for i in (-1, 1) for j in (-1, 1) for k in (-1, 1)], float)
-    for d in squash_defs(head_squash(skin('light'), pose), pose):
+    for d in map(girth, squash_defs(head_squash(skin('light'), pose), pose)):
         R, t = xf[d['bone']]
         pts.append(t + (np.asarray(d['c'], float) + sgn * np.asarray(d['h'], float)) @ R.T)
     return np.concatenate(pts)
@@ -1531,6 +1576,19 @@ def _local_rot(r):
     return rot_z(rz) @ rot_y(ry) @ rot_x(rx)
 
 
+def girth(d):
+    """(사이클 10) 머리가 아닌 뼈의 상자를 뼈 축 기준 가로 GIRTH[0], 깊이 GIRTH[1] 배 (통통하게)."""
+    if d['bone'].startswith(('head', 'hang')):
+        return d
+    (cx, cy, cz), (hx, hy, hz) = d['c'], d['h']
+    gx, gz = GIRTH
+    if d.get('decal'):                           # 데칼 두께는 그대로
+        hx = hx * gx if hx > 0.1 else hx
+        hz = hz * gz if hz > 0.1 else hz
+        return dict(d, c=(cx * gx, cy, cz * gz), h=(hx, hy, hz))
+    return dict(d, c=(cx * gx, cy, cz * gz), h=(hx * gx, hy, hz * gz))
+
+
 CUBE_K = {'skin': 0.35, 'hair': 0.55, 'hat': 0.9, 'proxy': 0.0}     # 사이클 10: 파츠별 큐브 질감 세기 (기본 1.0)
 
 
@@ -1558,7 +1616,7 @@ GRADE_HI = np.array([0.975, 0.955, 0.92])
 def make_boxes(defs, xf, layer, tag, back_view=False):
     """(사이클 10) 형상 정의는 사이클 8 좌표(0.5 = 새 복셀 1칸)로 적고, 여기서 UNIT 배 해 렌더 단위로 바꾼다."""
     out = []
-    for d in defs:
+    for d in map(girth, defs):
         R, t = xf[d['bone']]
         kw = {k: d[k] for k in ('decal', 'noise', 'emit') if k in d}
         if 'bevel' in d:

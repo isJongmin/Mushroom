@@ -270,7 +270,9 @@ export function mount(root, app, opts = {}) {
       chatLog.setMobile(mobile);
       // LOCAL MODE 칩: 데스크톱은 HUD 첫 줄, 모바일은 2줄째 (room.md 3.1, 4.1)
       app.placeModeBadge(mobile ? modeSlot2 : modeSlot);
-      (mobile ? row2 : hudL).appendChild(buffBar); // (사이클 10) 버프 바 자리
+      // (사이클 10) 버프 바 자리: 데스크톱 HUD 1줄째 끝, 모바일은 2줄째 아래 왼쪽(캔버스 위, 펼친 로그 아래 층)
+      (mobile ? stage : hudL).appendChild(buffBar);
+      buffBar.classList.toggle('buff-bar--float', mobile);
     }
     if (connection === 'joining' || connection === 'fatal') paintLetterbox();
     else render(performance.now());
@@ -886,7 +888,7 @@ export function mount(root, app, opts = {}) {
     if (buffBar.hidden === showBar) buffBar.hidden = !showBar;
     const seen = new Set();
     const dpr = layout.dpr || 1;
-    const S = 32;
+    const S = 36; // 아이콘 28 + 바깥 원형 게이지 (아트: 게이지는 배지 반지름 바깥)
     for (const b of list) {
       seen.add(b.id);
       let e = buffEls.get(b.id);
@@ -909,7 +911,7 @@ export function mount(root, app, opts = {}) {
       c.fillStyle = 'rgba(26, 22, 38, 0.75)';
       c.beginPath(); c.arc(S / 2, S / 2, S / 2, 0, Math.PI * 2); c.fill();
       const icon = buffIconSprites[b.id];
-      if (icon) c.drawImage(icon.img, 0, 0, icon.frameW, icon.frameH, 5, 5, S - 10, S - 10);
+      if (icon) c.drawImage(icon.img, 0, 0, icon.frameW, icon.frameH, 4, 4, S - 8, S - 8);
       else drawBuffOrb(c, b.id, S / 2, S / 2, S / 2 - 5);
       // 남은 시간 원형 게이지 (12시부터 시계 방향으로 줄어듦)
       c.lineWidth = 3;
@@ -1564,7 +1566,7 @@ export function mount(root, app, opts = {}) {
       host: hostId, isHost: isHost(), simulating: !!sim,
       mobs: mobView ? [...mobView.list].map((v) => ({ id: v.id, kind: v.kind, x: Math.round(v.x), y: Math.round(v.y), hp: v.hp, max: v.max, s: v.s, z: v.z })) : [],
       mobKinds: mobDefs ? [...mobDefs.kinds.keys()] : [], zones: zones.length,
-      drops: drops.list().map((d) => ({ id: d.id, item: d.item, x: Math.round(d.x), y: Math.round(d.y) })),
+      drops: drops.list().map((d) => ({ id: d.id, buff: d.buff, x: Math.round(d.x), y: Math.round(d.y), leftMs: Math.max(0, Math.round(d.expires - performance.now())) })),
       tombstones: stones.snapshot(),
       // (사이클 10) 버프 [{ id, stacks, leftMs, frac }]와 지금 공격 값 { w, hits, dmin, dmax, el, cooldown, animMs }
       buffs: buffs.list(performance.now()),

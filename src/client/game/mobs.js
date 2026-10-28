@@ -40,6 +40,9 @@ function buffIconSpec(raw, id, density) {
   const fx = raw && raw.fx && typeof raw.fx === 'object' ? raw.fx : null;
   if (!fx) return null;
   const b = fx.buff || fx.buffs || fx.buffIcons;
+  if (b && typeof b === 'object' && typeof b.pattern === 'string' && (!Array.isArray(b.ids) || b.ids.includes(id))) {
+    return spriteSpec(b.pattern.replace('{id}', id), null, density); // 아트: { pattern: 'assets/fx/buff/{id}.png', ids }
+  }
   if (b && typeof b === 'object' && b[id]) return spriteSpec(b[id], null, density);
   if (fx[`buff_${id}`]) return spriteSpec(fx[`buff_${id}`], null, density);
   return null;
@@ -66,6 +69,7 @@ function spriteSpec(raw, defaultSrc, density) {
     anchorY: fin(o.anchor && o.anchor.y) ? o.anchor.y : null,
     fps: clampN(o.fps, 1, 30, 6),
     density: clampN(o.density, 0.25, 8, density),
+    order: Array.isArray(o.order) ? o.order.filter((v) => typeof v === 'string').slice(0, 16) : null, // 구슬 시트 프레임 순서
   };
 }
 
@@ -144,7 +148,7 @@ export async function loadSprite(spec) {
   const fh = spec.frameH || img.naturalHeight;
   return {
     img, density: spec.density, fps: spec.fps, frameW: fw, frameH: fh,
-    anchorX: spec.anchorX ?? fw / 2, anchorY: spec.anchorY ?? fh,
+    anchorX: spec.anchorX ?? fw / 2, anchorY: spec.anchorY ?? fh, order: spec.order || null,
   };
 }
 

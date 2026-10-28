@@ -8,7 +8,8 @@ export const PICK_RANGE = Object.freeze({ x: 44, y: 60 }); // Z 줍기 범위 (�
 export const TOUCH_RANGE = Object.freeze({ x: 26, y: 56 }); // 닿으면 자동 줍기
 const DROP_MAX = 40;
 const FALL_MS = 380;
-const ORB_WORLD = 26; // 지름 (월드)
+const ORB_WORLD = 22; // 절차적 구슬 지름 (월드)
+const ORB_LIFT = 16; // 구슬 중심 = 지면 위 16 (아트 권장 14~18), 흔들림 ±3
 
 export function createDrops() {
   const map = new Map(); // id -> { id, buff, x, y, fromY, at, expires, fresh }
@@ -50,7 +51,7 @@ export function createDrops() {
         if (d.expires - now < 5000 && Math.floor(now / 150) % 2) continue; // 사라지기 5초 전 깜빡임
         const bob = Math.sin(now / 320 + d.x) * 3;
         const cx = (d.x - camX) * k;
-        const cy = (y - camY - ORB_WORLD / 2 - 8 + bob) * k;
+        const cy = (y - camY - ORB_LIFT + bob) * k;
         ctx.globalAlpha = 0.25;
         ctx.fillStyle = '#1A1626';
         ctx.beginPath();
@@ -63,10 +64,10 @@ export function createDrops() {
           const sc = k / bag.density;
           ctx.drawImage(bag.img, f * bag.frameW, 0, bag.frameW, bag.frameH, cx - bag.anchorX * sc, (y - camY + bob) * k - bag.anchorY * sc, bag.frameW * sc, bag.frameH * sc);
         }
-        const fi = BUFF_IDS.indexOf(d.buff);
+        const fi = (orb && orb.order ? orb.order : BUFF_IDS).indexOf(d.buff);
         if (orb && fi >= 0 && orb.img.naturalWidth >= (fi + 1) * orb.frameW) {
-          const s = ORB_WORLD * k * 1.2;
-          ctx.drawImage(orb.img, fi * orb.frameW, 0, orb.frameW, orb.frameH, cx - s / 2, cy - s / 2, s, s);
+          const sc = k / orb.density; // 시트 px → 장치 px, 기준점 = 구슬 중심
+          ctx.drawImage(orb.img, fi * orb.frameW, 0, orb.frameW, orb.frameH, cx - orb.anchorX * sc, cy - orb.anchorY * sc, orb.frameW * sc, orb.frameH * sc);
         } else {
           drawBuffOrb(ctx, d.buff, cx, cy, (ORB_WORLD / 2) * k, 0.6 + 0.4 * Math.sin(now / 200));
         }

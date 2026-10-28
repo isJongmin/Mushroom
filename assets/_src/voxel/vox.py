@@ -188,8 +188,11 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
     P[:, 0] = ((xs + 0.5) - axp) / S
     P[:, 1] = (ayp - (ys + 0.5)) / S
     P[:, 2] = Z0 - t
-    for i in np.unique(ids):
-        sel = ids == i
+    order = np.argsort(ids, kind='stable')
+    uids, starts = np.unique(ids[order], return_index=True)
+    ends = np.append(starts[1:], len(order))
+    for i, s0, s1 in zip(uids, starts, ends):
+        sel = order[s0:s1]                     # 사이클 10: 상자 수가 많아 불리언 마스크 대신 정렬 구간
         b = boxes[i]
         x0, y0, x1, y1, Mv, cv = cache[i]
         pl = (P[sel] - cv) @ Mv                 # 로컬 좌표

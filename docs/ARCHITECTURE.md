@@ -94,6 +94,8 @@ docs/            문서
   - 지속 60초. 같은 버프를 다시 주우면 스택 +1(최대 3)이고 시간은 60초로 갱신. 사망하면 모두 사라진다. HUD 좌상단에 아이콘 + 스택 수 + 남은 시간 원형 게이지.
   - 드롭 확률: 몬스터 manifest `buffDrop`(0~1, 버프 종류는 균등 무작위). snail 0.35, bat 0.4, mushroom 0.45, slime 0.5, golem 1.0(2개). 호스트가 `drop { id, buff, x, y }`를 보낸다. 줍기는 **닿으면 자동**(Z도 동작) → `pick { drop_id, user_id }` → 호스트 `picked { drop_id, user_id, buff }`. 드롭 30초 뒤 사라짐.
   - `atk` payload 확장: `{ user_id, x, y, dir, seq, w, hits, dmin, dmax, el }`(공격자가 자기 버프로 계산). 받는 쪽(PvP 피격자, 몬스터 호스트)은 상한으로 자른다: w≤175, hits≤4, dmax≤60, el 0~3. 없으면 기본값.
+- **배경 변경(2026-10-28 사용자 원본 첨부)**: 복셀 재구축 대신 Canva 원본 그림을 그대로 쓴다(`assets/_src/map_canva/`, 패널 표 `panels.py`가 정본). 원본 1px = 에셋 1.25px. 레이어는 `sky.png`(stretchX) + `ground.webp`(1.0) 두 장이고 clouds/far/mid는 없다. width/height/groundY/platforms/spawns/spawn은 그림에 맞춰 아트가 정한다(중앙 패널 1장: 1480x888, groundY 800, 발판 11). 좌우 패널이 오면 약 4240 폭으로 늘어난다. 위의 "좌표 고정"과 사이클 8 발판 검사 기준(층 간격 85~95, 개수)은 이 맵에 적용하지 않는다.
+- **로프(메이플식)**: 맵 manifest `ropes: [{ "id", "x", "y1", "y2" }]`(월드, y1 위끝 < y2 아래끝). 아트가 ground 레이어에 같은 좌표로 그린다. 로프 가로 ±12 안에서 ↑(또는 아래끝 근처에서 ↓)를 누르면 매달린다. 매달린 동안 중력 없음, ↑/↓로 초속 160 오르내림, ←/→ 무시. 점프 키 + ←/→로 옆으로 뛰어내림(초속 650의 0.6배 위로). 위끝에 닿으면 그 높이의 발판에 올라선다. 공격 불가. move `s`에 `'climb'` 추가(프레임은 jump 포즈를 쓰고, 오르는 동안 좌우 반전을 0.25초마다 번갈아 흔들림 표현). 일반 점프 + 로프로 모든 발판에 닿아야 한다(슈퍼 점프는 지름길).
 - **에셋**: `assets/fx/buff/<id>.png` 아이콘 64x64(5종), 드롭 구슬 `assets/fx/buff_orb.png`(종류별 색, 가로 5프레임 시트 각 48x48, 순서 range,multi,element,power,speed), 베기 이펙트 속성색 3종 `assets/fx/slash_fire.png`, `slash_ice.png`, `slash_bolt.png`(slash.png와 같은 규격). 없으면 프런트는 절차적 대체 그림.
 - **폐기**: 인벤토리(가방 버튼, `mushroom:inventory`), 프로필 자물쇠, manifest `drop` 파츠, 몬스터 manifest `drops`. localStorage 기존 키는 무시만 한다.
 

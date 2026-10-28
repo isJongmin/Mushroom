@@ -175,12 +175,15 @@ body[data-screen="room"] { background: var(--letterbox); }
 }
 
 /* ---------- 사이클 10: 버프 바 (HUD 좌상단: 데스크톱 1줄째 끝, 모바일 2줄째) ----------
-   아이콘 32px 원 + 남은 시간 원형 게이지(캔버스) + 스택 수. 디자인 정본 반영 요청(handoff). */
-.buff-bar { display: inline-flex; align-items: center; gap: var(--sp-1); margin-left: var(--sp-2); pointer-events: auto; }
-.buff-bar .buff { position: relative; width: 32px; height: 32px; flex: none; }
-.buff-bar .buff canvas { width: 32px; height: 32px; display: block; image-rendering: auto; }
+   아이콘 28px + 바깥 원형 게이지(36px) + 남은 시간 원형 게이지(캔버스) + 스택 수. 디자인 정본 반영 요청(handoff). */
+.buff-bar { display: inline-flex; align-items: center; gap: 6px; margin-left: var(--sp-2); pointer-events: auto; }
+.buff-bar .buff { position: relative; width: 36px; height: 36px; flex: none; }
+.buff-bar .buff canvas { width: 36px; height: 36px; display: block; image-rendering: auto; }
 .buff-bar .buff-n { position: absolute; right: -4px; bottom: -4px; font: 900 11px/1 system-ui, sans-serif; color: var(--pal-white);
   text-shadow: 1px 0 var(--pal-ink), -1px 0 var(--pal-ink), 0 1px var(--pal-ink), 0 -1px var(--pal-ink); }
 .buff-bar .buff.is-ending { animation: buff-blink 500ms steps(2, end) infinite; }
 @keyframes buff-blink { 50% { opacity: 0.45; } }
 @media (prefers-reduced-motion: reduce) { .buff-bar .buff.is-ending { animation: none; } }
+/* 버프가 있으면 조작 힌트(HUD 오른쪽)를 숨겨 버프 바와 겹치지 않게 */
+.hud:has(.buff-bar:not([hidden])) .hint-desktop { display: none; }
+.buff-bar--float { position: absolute; z-index: 1; left: 18px; top: 88px; margin-left: 0; flex-wrap: wrap; max-width: calc(100% - 36px); }

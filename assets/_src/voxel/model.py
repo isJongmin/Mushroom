@@ -98,6 +98,21 @@ def arc(r, n=None, step=0.5):
                  for a in np.radians(np.linspace(0, 90, n + 1)))
 
 
+def soften(defs, frac=0.55, cap=1.6, lo=0.45):
+    """(사이클 10) 각진 상자 정의를 둥근 상자(R 과 같은 팔분원 7상자)로 바꾼다. 반경 = min(반폭) x frac (최대 cap).
+    데칼과 아주 얇은 상자(min 반폭 < lo)는 그대로."""
+    out = []
+    for d in defs:
+        h = np.asarray(d['h'], float)
+        if d.get('decal') or h.min() < lo or d.get('hard'):
+            out.append(d); continue
+        r = min(cap, h.min() * frac)
+        dirs = OCT if r >= 0.5 else OCT[:3]
+        for a, b, g in dirs:
+            out.append(dict(d, h=(h[0] - r + r * a, h[1] - r + r * b, h[2] - r + r * g)))
+    return out
+
+
 def tint(hexcol, k):
     c = np.array([int(hexcol[i:i + 2], 16) for i in (1, 3, 5)], float)
     c = c * (1 + k) if k < 0 else c + (255 - c) * k * 0.6
@@ -369,21 +384,28 @@ class Hair:
     DOME = ((27.0, 0.0), (29.0, 0.8), (30.6, 2.0), (31.9, 3.8), (32.9, 6.2), (33.5, 9.4))     # (단 윗면 y, 안쪽 들임)
 
     def dome(self, hx=16.6, hz=16.0, base=19.0, lift=0.0, k=0.0):
-        """계단식 둥근 돔 (머리 윗부분). 단마다 둥근 직사각 단면."""
+        """계단식 둥근 돔 (머리 윗부분). 단마다 둥근 직사각 단면.
+        사이클 10: DOME 단을 윗면 높이 0.4칸 간격으로 보간해 계단을 잘게, 단면 상자 5개(세로 모서리 반경 5.5)."""
         self.dome_hx, self.dome_hz, self.lift = hx, hz, lift
-        for i, (yt, ins) in enumerate(self.DOME):
-            ax, az = hx - ins, hz - ins
-            r = min(4.5, 0.8 * min(ax, az))
+        ys = np.array([d[0] for d in self.DOME]); ins = np.array([d[1] for d in self.DOME])
+        n = int(np.ceil((ys[-1] - ys[0]) / 0.4))
+        offs = [(1 - np.cos(a), 1 - np.sin(a)) for a in np.radians(np.linspace(0, 90, 5))]
+        self.rings = []
+        for i, yt in enumerate(np.linspace(ys[0], ys[-1], n + 1)):
+            dn = float(np.interp(yt, ys, ins))
+            ax, az = hx - dn, hz - dn
+            r = min(5.5, 0.8 * min(ax, az))
             yc, yh = (base + yt + lift) / 2, (yt + lift - base) / 2
-            for dx, dz in ((0, r), (r, 0), (r * 0.42, r * 0.42)):
-                self.box((0, yc, self.DOME_Z), (ax - dx, yh, az - dz), k + 0.015 * i)
+            self.rings.append((yt + lift, ax, az, r))
+            for dx, dz in offs:
+                self.box((0, yc, self.DOME_Z), (ax - dx * r, yh, az - dz * r), k + 0.012 * i * 6 / n, hard=True)
 
     def surf(self, x, z):
         """돔 윗면 높이 (단 단면 안이면 그 단 높이)."""
         y = None
-        for yt, ins in self.DOME:
-            if abs(x) <= self.dome_hx - ins - 0.6 and abs(z - self.DOME_Z) <= self.dome_hz - ins - 0.6:
-                y = yt + self.lift
+        for yt, ax, az, r in self.rings:
+            if abs(x) <= ax - 0.6 and abs(z - self.DOME_Z) <= az - 0.6:
+                y = yt
         return y
 
     def shell(self, sb=8.0, bb=4.0, sf=4.0, top=27.2, side=16.0, back=-15.6, lift=0.0):
@@ -1194,6 +1216,10 @@ def _lifted(defs, dy):
 for _tid, _fn in V5.HATS.items():
     HATS[_tid] = (lambda f=_fn, t=_tid: _lifted(scaled(f(), HAT_K), HAT_UP.get(t, 0.0)))
 
+import hair10  # noqa: E402  (사이클 10: 머리카락/모자는 SDF 복셀)
+HAIRS = dict(hair10.HAIRS)
+HATS = dict(hair10.HATS)
+
 PARTS = {
     'skin': {k: (lambda k=k: skin(k)) for k in SKINS},
     'face': {k: (lambda k=k: face(k)) for k in ('basic', 'smile', 'wink', 'sleepy')},
@@ -1518,6 +1544,9 @@ def make_boxes(defs, xf, layer, tag, back_view=False):
     return out
 
 
+SOFTEN = {}   # 사이클 10: 각진 상자 -> 둥근 상자 (파츠 키 -> soften 인자). 머리카락/모자는 hair10 SDF 복셀이라 비움
+
+
 def assemble(outfit, frame):
     """outfit: {cat: id}. 반환: Box 목록 (tag = 파츠 키)."""
     pose = pose_frame(frame)
@@ -1527,7 +1556,10 @@ def assemble(outfit, frame):
         pid = outfit.get(cat)
         if not pid or pid == 'none':
             continue
-        boxes += make_boxes(sway_defs(PARTS[cat][pid](), cat, pose, xf), xf, cat, cat)
+        defs = PARTS[cat][pid]()
+        if cat in SOFTEN:
+            defs = soften(defs, **SOFTEN[cat])
+        boxes += make_boxes(sway_defs(defs, cat, pose, xf), xf, cat, cat)
     return boxes
 
 

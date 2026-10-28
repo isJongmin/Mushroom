@@ -27,6 +27,7 @@ BUFF_COL = {
     'power':   dict(base='#EE4A48', light='#FFB2A2', dark='#8E1E30'),
     'speed':   dict(base='#FFB01E', light='#FFE89A', dark='#A0500E'),
     'heal':    dict(base='#2FD0B0', light='#B4F7E4', dark='#11705E'),   # 민트(range 초록보다 푸른 쪽)
+    'vital':   dict(base='#E2528F', light='#FFB8D6', dark='#86184A'),   # 로즈(power 빨강보다 자홍 쪽)
 }
 EL_FIRE, EL_WATER, EL_BOLT = '#FF7A26', '#3CB8FF', '#FFD430'
 
@@ -191,7 +192,14 @@ def g_heal():
     return [('w', list(cross)), ('h', _heart(9.5, 9.0, 0.95))]
 
 
-GLYPH = {'range': g_range, 'multi': g_multi, 'element': g_element, 'power': g_power, 'speed': g_speed, 'heal': g_heal}
+def g_vital():
+    heart = _heart(-2.0, 3.0, 1.95)
+    arrow = np.array([(12.5, -22.0), (21.5, -12.0), (16.5, -12.0), (16.5, -2.0), (8.5, -2.0), (8.5, -12.0),
+                      (3.5, -12.0)], np.float32)
+    return [('w', heart), ('y', arrow)]
+
+
+GLYPH = {'range': g_range, 'multi': g_multi, 'element': g_element, 'power': g_power, 'speed': g_speed, 'heal': g_heal, 'vital': g_vital}
 
 
 def draw_glyph(c, bid, s, ow, shadow=(1.0, 1.6), shadow_a=0.26):

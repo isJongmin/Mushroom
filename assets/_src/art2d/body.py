@@ -55,7 +55,7 @@ def leg_layer(ctx, k, base):
 
 def hand_pos(ctx, k):
     a = ctx.arms[k]
-    return a['wr'] + a['d2'] * 1.6
+    return a['wr'] + a['d2'] * 2.2
 
 
 def draw_hand(ctx, k, col, sh, ln, layer):

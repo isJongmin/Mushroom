@@ -215,6 +215,14 @@ def tail(ctx, S, root, d, length, w0, w1, layer, tie=None, curl=0.0, tipn=3, str
     shapes = [(s, S.dk, 0.8) for s in sh] + [(h, S.hl, 0.9) for h in hl]
     if streak:
         shapes.append((taper(sub(c, 0.05, 0.98, 14) + nv * (w0 * 0.12), w0 * 0.26, 0.1, 0.25), streak, 1.0))
+    for kk, (ang, lf, wf) in enumerate(((-14, 0.82, 0.55), (12, 0.9, 0.5))):
+        a2 = math.radians(d + ang)
+        dv2 = np.array([math.sin(a2), math.cos(a2)])
+        q1 = root + dv2 * length * 0.45 * lf + nv * (curl * 0.4) + np.array([-sw * 0.4, 0])
+        q2 = root + dv2 * length * lf + nv * curl * 0.8 + np.array([-sw, 0])
+        c2 = quad(root, q1, q2, 14)
+        S.F(ctx, layer, ribbon(c2, lambda t: w(t) * wf * 1.6 if t > 0.3 else w(t) * 0.5, cap0=True, cap1=False),
+            shapes=[(taper(sub(c2, 0.3, 0.9, 8), 0.9, 0.2, 0.3), S.dk, 0.7)])
     S.F(ctx, layer, poly, shapes=shapes)
     if tie:
         tp = root + dv * 2.6
@@ -287,18 +295,19 @@ def h_pink_bridge_ponytail(ctx):
     if ctx.view == 'front':
         tail(ctx, S, (22, -50), -22 + ctx.sway * 4, 40, 14, 6, 'hair_back', curl=-6, streak=pink)
     elif ctx.q:
-        tail(ctx, S, (-26, -50), -38 + ctx.sway * 10, 42, 14, 6, 'hair_back', curl=10, streak=pink)
+        tail(ctx, S, (-26, -50), -22 + ctx.sway * 10, 44, 15, 8, 'hair_back', curl=8, streak=pink)
     base_short(ctx, S, front_xs=[24, 14, 4, -6, -16, -24],
                front_tip=lambda x: -30 + abs(x) * 0.08, q_xs=[29, 20, 11, 2, -6], q_tip=lambda x: -30,
                lockF=(-2, 4.0), lockQ=-4, nape=-14, vol=(34.5, 33.5, -29.0))
     H = ctx.Th
-    # 분홍 브릿지 가닥 (앞 옆머리)
+    # 분홍 브릿지 가닥 (앞 옆머리: 머리색 가닥 안에 분홍 줄)
     sides = [1] if ctx.q else [-1, 1]
     for sx in sides:
         x = 27.5 * sx if not ctx.q else 28.5
-        c = quad((x - sx * 4, -40), (x + sx * 1.5, -22), (x - sx * 0.5, -3), 14)
-        S.F(ctx, 'hair_front', taper(c, 3.6, a=0.05, b=0.3, wmin=0.6), col=pink, sh=shade(pink), line=line_of(pink),
-            shapes=[(taper(sub(c, 0.1, 0.8) + (sx * 0.8, 0), 1.6, 0.3, 0.3), light(pink), 0.9)])
+        c = quad((x - sx * 4, -40), (x + sx * 1.5, -22), (x - sx * 0.5, -4), 14)
+        S.F(ctx, 'hair_front', taper(c, 6.0, a=0.05, b=0.3, wmin=0.6),
+            shapes=[(taper(sub(c, 0.08, 0.92) + (-sx * 0.6, 0), 2.6, 0.2, 0.3), pink, 1.0),
+                    (taper(sub(c, 0.1, 0.5) + (-sx * 1.0, 0), 0.9, 0.3, 0.3), light(pink), 0.9)])
     if ctx.view == 'back':
         tail(ctx, S, (0, -52), 0 + ctx.sway * 5, 44, 15, 7, 'hair_front', tie='#F48CBB', streak=pink)
     elif ctx.q:
@@ -370,7 +379,7 @@ def h_tan_ponytail(ctx):
     if ctx.view == 'front':
         tail(ctx, S, (17, -22), -30 + ctx.sway * 4, 30, 12, 6, 'hair_back', curl=-3)
     elif ctx.q:
-        tail(ctx, S, (-25, -24), -20 + ctx.sway * 8, 32, 12, 6, 'hair_back', curl=5)
+        tail(ctx, S, (-25, -24), -12 + ctx.sway * 8, 32, 13, 7, 'hair_back', curl=4)
     base_short(ctx, S, front_xs=[24, 14, 4, -6, -16, -24],
                front_tip=lambda x: -31 + abs(x) * 0.06, q_xs=[29, 20, 11, 2, -6], q_tip=lambda x: -31,
                lockF=(-12, 4), lockQ=-14, nape=-16, vol=(34.0, 33.0, -29.0))
@@ -386,9 +395,9 @@ def h_black_twintail(ctx):
     tie = '#E8483E'
     if ctx.view == 'front':
         for sx in (-1, 1):
-            tail(ctx, S, (sx * 28, -38), sx * -18 + ctx.sway * 4, 40, 13, 6, 'hair_back', curl=sx * -4)
+            tail(ctx, S, (sx * 30, -38), sx * 16 + ctx.sway * 4, 40, 13, 7, 'hair_back', curl=sx * 4)
     elif ctx.q:
-        tail(ctx, S, (24, -40), 4 + ctx.sway * 6, 38, 12, 6, 'hair_back', curl=-3)
+        tail(ctx, S, (27, -40), 14 + ctx.sway * 6, 38, 12, 6, 'hair_back', curl=-3)
     base_short(ctx, S, front_xs=[24, 15, 5, -5, -15, -24],
                front_tip=lambda x: -32 + abs(x) * 0.05, q_xs=[29, 20, 11, 2, -6], q_tip=lambda x: -32,
                lockF=(-14, 4), lockQ=-15, nape=-14, vol=(34.0, 33.0, -29.0))
@@ -408,7 +417,7 @@ def h_mint_curly(ctx):
     # 뒤로 풍성한 곱슬 볼륨
     if ctx.view != 'back':
         H = ctx.Th
-        pts = wavy_arc(0 if ctx.front else -4, -24, 36, 30, 120, 420, 11, 2.6, seed=11)
+        pts = wavy_arc(0 if ctx.front else -4, -29, 36, 27, 140, 400, 11, 2.6, seed=11)
         S.F(ctx, 'hair_back', cr(pts, 5), shapes=[(c, S.dk, 0.7) for c in
                                                      [taper(quad((x, -4), (x * 1.1, -14), (x, -24), 8), 1.1, 0.3, 0.3)
                                                       for x in (-30, -20, 20, 30)]])

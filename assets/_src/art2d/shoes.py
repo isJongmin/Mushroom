@@ -6,6 +6,7 @@ from body import leg_line, leg_layer
 from rig import ANK
 
 G = ANK
+SHOE_K = 1.28
 
 
 def foot_xf(ctx, k):
@@ -14,8 +15,8 @@ def foot_xf(ctx, k):
         sa = g['sa']
         k_ = 0.35 if ctx.p['ground'] else 1.0
         r = -sa * k_ + g['f']
-        return Xf.T(*g['ank']) @ Xf.R(r)
-    return Xf.T(*g['ank'])
+        return Xf.T(*g['ank']) @ Xf.R(r) @ Xf.T(0, G) @ Xf.S(SHOE_K) @ Xf.T(0, -G)
+    return Xf.T(*g['ank']) @ Xf.T(0, G) @ Xf.S(SHOE_K) @ Xf.T(0, -G)
 
 
 def socks(ctx, col, t0=0.35, band=None, w=6.6, frill=None):

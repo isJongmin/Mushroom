@@ -80,7 +80,7 @@ def hoodie(ctx, col, cord='#FFFFFF', patch=None, hem=5.5, sleeve_col=None):
         if patch:
             patch(ctx)
     for k in ('F', 'N'):
-        sleeve(ctx, k, sleeve_col or col, w0=9.2, w1=8.2, t1=0.93, cuff=sleeve_col or col, cuff_len=0.18)
+        sleeve(ctx, k, sleeve_col or col, w0=9.2, w1=8.2, t1=0.87, cuff=sleeve_col or col, cuff_len=0.18)
 
 
 def patch_smile(ctx):
@@ -150,7 +150,7 @@ def t_cardigan_cream(ctx):
                     cr_, lw=1.4, shapes=_ribs(ctx, min(x_in, x_out) + 0.6, max(x_in, x_out) - 0.6, hem - 2.6, hem - 0.4,
                                               5, cr_))
     for k in ('F', 'N'):
-        sleeve(ctx, k, cr_, w0=8.2, w1=7.4, t1=0.94, cuff=cr_, cuff_len=0.2)
+        sleeve(ctx, k, cr_, w0=8.2, w1=7.4, t1=0.88, cuff=cr_, cuff_len=0.2)
     shoulder_bag(ctx, '#2C2834', strap_from='N')
 
 
@@ -245,13 +245,7 @@ def t_varsity_navy(ctx):
     ctx.fig('top', T(ctx, col), nv, lw=1.4)
     for k in ('F', 'N'):
         sh_ = []
-        sleeve(ctx, k, crm, w0=8.8, w1=7.8, t1=0.93, cuff=nv, cuff_len=0.18)
-        # 소매 패치
-        cl = arm_line(ctx, k, 20)
-        if not (ctx.q and k == 'F'):
-            p = cl[6]
-            ctx.fig(arm_layer(ctx, k, 'top'), ctx.root_unit(ellipse(p[0], p[1], 1.5, 1.5, 12)) if False else
-                    ellipse(p[0], p[1], 1.5, 1.5, 12), '#C9424A', lw=0.9)
+        sleeve(ctx, k, crm, w0=8.8, w1=7.8, t1=0.87, cuff=nv, cuff_len=0.18)
 
 
 # ------------------------------------------------------------------ 민트 크롭 패딩 + 크로스백
@@ -285,7 +279,7 @@ def t_puffer_mint(ctx):
         ctx.fig('top', T(ctx, cr([(c + 5, -18.2, 'c'), (c + 7.5, -18.2, 'c'), (c + 7.5, -16.6, 'c'), (c + 5, -16.6, 'c')], 2)),
                 pink, lw=0.8)
     for k in ('F', 'N'):
-        cl = sleeve(ctx, k, mt, w0=10.0, w1=9.0, t1=0.92, puff=1.2, folds=False, cuff=mt, cuff_len=0.14)
+        cl = sleeve(ctx, k, mt, w0=10.0, w1=9.0, t1=0.86, puff=1.2, folds=False, cuff=mt, cuff_len=0.14)
         # 소매 퀼팅 고리
         lay = arm_layer(ctx, k, 'top')
         for t in (0.3, 0.55, 0.78):
@@ -436,7 +430,7 @@ def t_cape_blue(ctx):
         sh.append((T(ctx, cr([(c - 1.6, -5.4, 'c'), (c + 1.6, -5.4, 'c'), (c + 1.6, -1.8, 'c'), (c - 1.6, -1.8, 'c')], 2)), yl, 1.0))
     ctx.fig('top', T(ctx, body_poly(ctx, hem=hem)), shirt, shapes=sh)
     for k in ('F', 'N'):
-        sleeve(ctx, k, shirt, w0=8.0, w1=7.0, t1=0.94, cuff=shirt, cuff_len=0.16)
+        sleeve(ctx, k, shirt, w0=8.0, w1=7.0, t1=0.88, cuff=shirt, cuff_len=0.16)
     if ctx.back:
         cape('top_near')
     else:
@@ -573,7 +567,7 @@ def t_bat_cape(ctx):
         for s in (-1, 1):
             bat_wing(ctx, s, 'top_near', flap=flap)
     for k in ('F', 'N'):
-        sleeve(ctx, k, vest, w0=8.0, w1=7.0, t1=0.94, cuff='#3A2C58', cuff_len=0.2)
+        sleeve(ctx, k, vest, w0=8.0, w1=7.0, t1=0.88, cuff='#3A2C58', cuff_len=0.2)
 
 
 # ------------------------------------------------------------------ 드롭: 골렘 돌갑옷
@@ -617,7 +611,7 @@ def t_golem_armor(ctx):
         ctx.fig('top', T(ctx, ellipse(c, -6.0, 2.2, 2.2, 6)), '#6BD4E8', line='#2A6C82',
                 shapes=[(T(ctx, ellipse(c - 0.6, -6.6, 0.7, 0.7, 6)), '#E8FCFF')])
     for k in ('F', 'N'):
-        cl = sleeve(ctx, k, under, w0=7.8, w1=7.0, t1=0.94, folds=True)
+        cl = sleeve(ctx, k, under, w0=7.8, w1=7.0, t1=0.88, folds=True)
         lay = arm_layer(ctx, k, 'top')
         # 팔뚝 돌 보호대
         fc = sub(arm_line(ctx, k, 20), 0.62, 0.95, 8)

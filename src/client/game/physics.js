@@ -26,7 +26,12 @@ export const PHYS = Object.freeze({
   ceilY: 0, // 발이 이보다 위로는 못 간다 (맵 위 끝)
 });
 // (사이클 9) 'attack'(공격 중), 'ghost'(사망 후 유령)를 더한다.
-export const MOVE_STATES = Object.freeze(['idle', 'walk', 'jump', 'fall', 'prone', 'attack', 'ghost']);
+// (사이클 10) 'climb'(로프에 매달림)
+export const MOVE_STATES = Object.freeze(['idle', 'walk', 'jump', 'fall', 'prone', 'attack', 'ghost', 'climb']);
+// (사이클 10) 로프 (ARCHITECTURE 사이클 10 "로프"): 가로 ±12 안에서 ↑로 잡음(위끝 발판에서는 ↓로 잡고 내려감).
+// 매달린 동안 중력 없음, ↑/↓ 초속 160, ←/→ 무시. 점프(새로 누름) + ←/→ = 옆으로 뛰어내림(위로 650 x 0.6).
+// 위끝에 닿으면 그 높이 발판에 올라섬, 아래끝에 닿으면 바로 아래 면(24 이내)에 내려서거나 떨어짐. 놓은 뒤 0.3초는 다시 잡지 않음.
+export const ROPE = Object.freeze({ grab: 12, speed: 160, jumpOffV: 650 * 0.6, topSnap: 16, bottomSnap: 24, regrab: 0.3, below: 20 });
 export const KNOCK = Object.freeze({ vx: 300, vy: 250, t: 0.3 }); // (사이클 9) 넉백
 export const MAX_WORLD_Y = 5000; // 수신 y 상한 (화면이 맵 groundY로 다시 자른다)
 const STATE_SET = new Set(MOVE_STATES);
@@ -70,11 +75,27 @@ export function surfaceBelow(platforms, x, y, groundY = PHYS.groundY) {
   return best;
 }
 
+/** (사이클 10) manifest ropes 정리: [{ id, x, y1, y2 }] (y1 위끝 < y2 아래끝, 0~groundY). 최대 32개 */
+export function normalizeRopes(raw, { width = 2400, groundY = PHYS.groundY } = {}) {
+  if (!Array.isArray(raw)) return Object.freeze([]);
+  const out = [];
+  const fin = (v) => typeof v === 'number' && Number.isFinite(v);
+  for (const r of raw.slice(0, 32)) {
+    if (!r || typeof r !== 'object' || !fin(r.x) || !fin(r.y1) || !fin(r.y2)) continue;
+    const y1 = Math.max(0, Math.min(r.y1, r.y2));
+    const y2 = Math.min(groundY, Math.max(r.y1, r.y2));
+    if (y2 - y1 < 8 || r.x < 0 || r.x > width) continue;
+    out.push(Object.freeze({ id: typeof r.id === 'string' && r.id.length <= 32 ? r.id : `r${out.length}`, x: r.x, y1, y2 }));
+  }
+  return Object.freeze(out);
+}
+
 /** 몸 상태 초기값 */
 export function createBody(x, y = PHYS.groundY, groundY = PHYS.groundY) {
   return {
     x, y, vy: 0, grounded: y >= groundY,
-    kbT: 0, kbDir: 0, // (사이클 9) 넉백 남은 시간, 방향 on: null, prone: false, s: 'idle',
+    kbT: 0, kbDir: 0, // (사이클 9) 넉백 남은 시간, 방향
+    rope: null, climbV: 0, ropeOffT: 0, toppedOut: false, // (사이클 10) 매달린 로프, 오르내림 방향(-1/0/1), 다시 잡기 금지 남은 시간 on: null, prone: false, s: 'idle',
     t: 0, // 몸 시계 (초)
     airT: 0, // 마지막으로 땅/발판을 떠난 뒤 지난 시간
     airCharge: true, // 공중 슈퍼 점프 1회
@@ -131,6 +152,66 @@ export function stepBody(b, inp, dt, opt) {
   b.t += dt;
   if (b.cool > 0) b.cool = Math.max(0, b.cool - dt);
   if (b.ignore && b.t >= b.ignoreUntil) b.ignore = null;
+  if (b.ropeOffT > 0) b.ropeOffT = Math.max(0, b.ropeOffT - dt);
+
+  // 0) (사이클 10) 로프
+  const ropes = opt.ropes || [];
+  if (!b.rope && ropes.length && b.ropeOffT <= 0 && b.dashT <= 0 && b.kbT <= 0) {
+    for (const r of ropes) {
+      if (Math.abs(b.x - r.x) > ROPE.grab) continue;
+      // ↑: 로프 구간(아래끝 아래 20까지, 위끝 위는 제외)에서 잡음. ↓: 위끝 높이 발판에 서 있으면 잡고 내려감
+      const upGrab = inp.up && b.y > r.y1 + 1 && b.y <= r.y2 + ROPE.below;
+      const downGrab = inp.down && b.grounded && Math.abs(b.y - r.y1) <= ROPE.topSnap;
+      if (!upGrab && !downGrab) continue;
+      b.rope = r;
+      b.grounded = false;
+      b.on = null;
+      b.prone = false;
+      b.vy = 0;
+      b.x = r.x;
+      b.y = downGrab ? r.y1 + 2 : Math.min(b.y, r.y2);
+      out.grabbed = true;
+      out.jumped = !!inp.jump; // 잡는 데 쓴 ↑(점프 입력)는 소비
+      break;
+    }
+  }
+  if (b.rope) {
+    const r = b.rope;
+    const dir = inp.dir | 0;
+    if (inp.jumpTap && dir !== 0) { // 옆으로 뛰어내림
+      b.rope = null;
+      b.climbV = 0;
+      b.ropeOffT = ROPE.regrab;
+      b.vy = -ROPE.jumpOffV;
+      b.airT = 0;
+      b.x = clampX(b.x + dir * 2);
+      out.jumped = true;
+      out.unclimbed = 'jump';
+    } else {
+      if (inp.jump) out.jumped = true; // 매달린 동안 점프 입력은 소비만
+      const v = (inp.up ? -1 : 0) + (inp.down ? 1 : 0);
+      b.climbV = v;
+      b.y += v * ROPE.speed * dt;
+      b.x = r.x;
+      if (b.y <= r.y1) { // 위끝: 그 높이 발판에 올라선다 (없으면 위끝에 매달린 채)
+        const p = plats.find((q) => Math.abs(q.y - r.y1) <= ROPE.topSnap && r.x >= q.x1 && r.x <= q.x2);
+        if (p) { b.rope = null; b.climbV = 0; b.ropeOffT = ROPE.regrab; land(b, p.y, p, false); out.landed = true; out.unclimbed = 'top'; } else b.y = r.y1;
+      } else if (b.y >= r.y2) { // 아래끝: 바로 아래 면에 내려서거나 놓고 떨어진다
+        const below = surfaceBelow(plats, r.x, r.y2, groundY);
+        b.rope = null;
+        b.climbV = 0;
+        b.ropeOffT = ROPE.regrab;
+        out.unclimbed = 'bottom';
+        if (below - r.y2 <= ROPE.bottomSnap) {
+          land(b, below, below === groundY ? null : plats.find((q) => q.y === below && r.x >= q.x1 && r.x <= q.x2) || null, false);
+          out.landed = true;
+        } else { b.y = r.y2; b.grounded = false; b.vy = 0; b.airT = 0; }
+      }
+      if (b.rope) { b.s = 'climb'; return out; }
+      b.s = stateOf(b, 0);
+      return out;
+    }
+  }
 
   // 1) 땅 위 동작: 엎드리기, 점프, 내려가기
   if (b.grounded) {
@@ -221,6 +302,7 @@ export function knockBody(b, dir) {
 }
 
 export function stateOf(b, dir) {
+  if (b.rope) return 'climb';
   if (!b.grounded) return b.vy < 0 ? 'jump' : 'fall';
   if (b.prone) return 'prone';
   return dir !== 0 ? 'walk' : 'idle';

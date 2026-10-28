@@ -14,7 +14,9 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
   let pickAt = -Infinity; // (사이클 9) 마지막 줍기 누름 시각
   let lastTap = null; // { group, at }
   let superReq = null; // { kind, firstAt, at }
+  let jumpHoldOff = false; // (사이클 10) 로프 위끝에 올라선 뒤: 다시 누를 때까지 누르고 있는 점프를 무시
   const holding = (action) => {
+    if (action === 'jump' && jumpHoldOff) return false;
     for (const a of acts.values()) if (a === action) return true;
     return false;
   };
@@ -27,7 +29,7 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
     pressAction(sourceId, action, now) {
       if (acts.has(sourceId)) return; // 키 반복 무시
       acts.set(sourceId, action);
-      if (action === 'jump') jumpAt = now;
+      if (action === 'jump') { jumpAt = now; jumpHoldOff = false; }
       else if (action === 'attack') attackAt = now;
       else if (action === 'pick') pickAt = now;
     },
@@ -56,6 +58,7 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
       held.clear();
       acts.clear();
       jumpAt = -Infinity;
+      jumpHoldOff = false;
       attackAt = -Infinity;
       pickAt = -Infinity;
       lastTap = null;
@@ -77,6 +80,20 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
     },
     proning() {
       return holding('prone');
+    },
+    /** (사이클 10) 로프 오르기: ↑/W/터치 점프를 누르고 있음 (Space 제외) */
+    upHeld() {
+      for (const [id, a] of acts) if (a === 'jump' && id !== 'key:Space') return true;
+      return false;
+    },
+    /** (사이클 10) 점프를 방금(bufferMs 안) 새로 눌렀음 — 로프에서 뛰어내리기 */
+    jumpTapped(now, bufferMs) {
+      return now - jumpAt <= bufferMs;
+    },
+    /** (사이클 10) 누르고 있는 점프를 다음 누름까지 무시 (로프 위끝에서 올라선 직후 바로 뛰지 않게) */
+    suppressJumpHold() {
+      jumpHoldOff = true;
+      jumpAt = -Infinity;
     },
     /** (사이클 9) 공격: 최근 bufferMs 안에 눌렀거나 누르고 있음(누르고 있으면 쿨다운마다 계속 공격) */
     wantsAttack(now, bufferMs = 150) {

@@ -398,6 +398,20 @@ export function blinkAlpha(now, until) {
   return Math.floor(now / 80) % 2 ? 0.3 : 1;
 }
 
+/** Read-only swept collision, ordered by first contact along the shot's direction. */
+export function projectileCollision(p, box, mobs, getBox) {
+  let best = null;
+  for (const mob of mobs) {
+    if (mob.s === 'die' || mob.hp <= 0) continue;
+    const b = getBox(mob);
+    if (!overlaps(box, b)) continue;
+    const impactX = p.dir > 0 ? Math.max(p.x, b.x1 - 8) : Math.min(p.x, b.x2 + 8);
+    const distance = (impactX - p.x) * p.dir;
+    if (!best || distance < best.distance) best = { mob, impactX, distance };
+  }
+  return best;
+}
+
 /** Traveling job attacks, simulated identically for spectators; only host hit() mutates mobs. */
 export function createJobProjectiles() {
   const list = [], bursts = [];
@@ -409,16 +423,16 @@ export function createJobProjectiles() {
       for (let i = 0; i < count; i++) list.push({ a, job: j, x: a.x, y: a.y - 30 - i * 9, distance: 0, at: now + i * 75, authoritative, dir: a.dir === 'left' ? -1 : 1, damage: { ...a, hits: count === 1 ? a.hits : Math.ceil((a.hits - i) / count) } });
       if (list.length > 160) list.splice(0, list.length - 160);
     },
-    update(dt, now, hit) {
+    update(dt, now, hit, visualHit) {
       for (let i = list.length - 1; i >= 0; i--) {
         const p = list[i]; if (now < p.at) continue;
         const travel = Math.min(p.job.speed * dt, p.a.w - p.distance);
         const next = p.x + p.dir * travel;
         const box = { x1: Math.min(p.x, next) - 8, x2: Math.max(p.x, next) + 8, y1: p.y - 11, y2: p.y + 11 };
-        const r = p.authoritative ? hit(p, box) : null;
-        p.x = next; p.distance += travel;
+        const r = p.authoritative ? hit?.(p, box) : visualHit?.(p, box);
+        p.x = r ? Math.max(Math.min(p.x, next), Math.min(Math.max(p.x, next), r.impactX ?? r.mob.x)) : next; p.distance += travel;
         if (r || p.distance >= p.a.w) {
-          if (r) bursts.push({ x: r.mob.x, y: p.y, at: now, color: p.job.color, radius: p.job.splash || 26 });
+          if (r) bursts.push({ x: p.x, y: p.y, at: now, color: p.job.color, radius: p.job.splash || 26 });
           list.splice(i, 1);
         }
       }

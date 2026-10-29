@@ -25,7 +25,7 @@ import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overla
 import { createMoveInput, KEY_DIR, KEY_ACTION, KEY_TAP, KEY_ATTACK, KEY_PICK } from '../game/input.js';
 import { PHYS, createBody, stepBody, surfaceBelow, normState, isFx, knockBody } from '../game/physics.js';
 import {
-  COMBAT, attackBox, hurtBox, overlaps, randInt, createDamageNumbers, createSlashes, createTombstones, drawGhost, drawHpBar, HPBAR, blinkAlpha,
+  COMBAT, attackBox, hurtBox, overlaps, randInt, projectileCollision, createDamageNumbers, createSlashes, createTombstones, drawGhost, drawHpBar, HPBAR, blinkAlpha,
 } from '../game/combat.js';
 import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob } from '../game/mobs.js';
 import { createDrops, PICK_RANGE, TOUCH_RANGE } from '../game/drops.js';
@@ -776,7 +776,7 @@ export function mount(root, app, opts = {}) {
   /** 호스트 시뮬레이션 시작(첫 연결 1.5초 뒤). 받은 상태가 있으면 이어서, 없으면 처음부터 채운다 */
   function startSim(now) {
     if (sim || !mobDefs || !zones.length || !mobView) return;
-    sim = createMobSim({ kinds: mobDefs.kinds, zones });
+    sim = createMobSim({ kinds: mobDefs.kinds, zones, getPlayers: () => [...players.values()] });
     const known = mobView.latest();
     if (known.length) sim.load(known, now);
     else sim.fill(now);
@@ -1091,15 +1091,23 @@ export function mount(root, app, opts = {}) {
     }
     drops.update(now);
     dmgNums.update(now);
+    const mobBox = (m) => {
+      const size = mobDefs.kinds.get(m.kind).size;
+      return { x1: m.x - size.w / 2, x2: m.x + size.w / 2, y1: m.y - size.h, y2: m.y };
+    };
     projectiles.update(dt, now, (p, box) => {
-      if (!isHost()) return null;
-      const r = hostAttack(p.damage, now, box, new Set(), 1);
+      if (!isHost() || !sim) return null;
+      const list = sim.snapshot();
+      const collision = projectileCollision(p, box, list, mobBox);
+      if (!collision) return null;
+      const excluded = new Set(list.filter((m) => m.id !== collision.mob.id).map((m) => m.id));
+      const r = hostAttack(p.damage, now, box, excluded, 1);
       if (r && p.job.splash) {
         const radius = p.job.splash;
-        hostAttack(p.damage, now, { x1: r.mob.x - radius, x2: r.mob.x + radius, y1: p.y - radius, y2: p.y + radius }, new Set([r.mob.id]), p.job.targets - 1);
+        hostAttack(p.damage, now, { x1: collision.impactX - radius, x2: collision.impactX + radius, y1: p.y - radius, y2: p.y + radius }, new Set([r.mob.id]), p.job.targets - 1);
       }
-      return r;
-    });
+      return r ? { ...r, impactX: collision.impactX } : null;
+    }, (p, box) => mobView ? projectileCollision(p, box, mobView.list, mobBox) : null);
     slashes.update(now);
     stones.update(dt, now);
     while (atkBoxes.length && now - atkBoxes[0].at > ATTACK_BOX_SHOW_MS) atkBoxes.shift();
@@ -1152,7 +1160,7 @@ export function mount(root, app, opts = {}) {
   }
 
   function frameOf(p, now) {
-    if (p.anim === 'climb') return avatarR.frameAt('jump', 0);
+    if (p.anim === 'climb') return avatarR.frameIndex.back ?? 7;
     // (사이클 10) speed 버프: attack 애니메이션 ms를 쿨다운과 같은 비율로 줄인다 (240ms 기준)
     if (p.anim === 'attack' && p.atkAnimMs && p.atkAnimMs < COMBAT.attackAnimMs) return avatarR.frameAt('attack', (now - p.animSince) * (COMBAT.attackAnimMs / p.atkAnimMs));
     return avatarR.frameAt(p.anim, now - p.animSince);
@@ -1217,8 +1225,9 @@ export function mount(root, app, opts = {}) {
       if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); continue; }
       const a = blinkAlpha(now, p.invulnUntil);
       if (a < 1) ctx.globalAlpha = a;
-      const left = p.anim === 'climb' && p.climbMoving ? Math.floor(now / 250) % 2 === 1 : p.dir < 0;
-      avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), left);
+      const left = p.anim === 'climb' ? false : p.dir < 0;
+      if (p.anim === 'climb') avatarR.drawClimb(ctx, p.avatar, Math.round(sx * k), pyD, k, now, p.climbMoving);
+      else avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), left);
       ctx.globalAlpha = 1;
     }
     slashes.draw(ctx, camX, cy, k, now);

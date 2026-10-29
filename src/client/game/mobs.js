@@ -202,10 +202,32 @@ export function createMobSim(o) {
   let seq = 0;
   const stats = { spawned: 0, killed: 0 };
 
+  // Subtract unsafe horizontal intervals; selecting within the remaining space
+  // is bounded even when a narrow platform is completely occupied.
+  function safePosition(z, spec, preferred = null) {
+    const y = z.y - (spec.behavior === 'fly' ? 64 : 0);
+    let spans = [[z.x1, z.x2]];
+    for (const player of o.getPlayers?.() || []) {
+      if (player.dead || !Number.isFinite(player.x) || !Number.isFinite(player.y)) continue;
+      if (y <= player.y - 72 || y - spec.size.h >= player.y) continue;
+      const gap = Math.max(90, spec.size.w / 2 + 18);
+      const lo = player.x - gap, hi = player.x + gap;
+      spans = spans.flatMap(([a, b]) => hi <= a || lo >= b ? [[a, b]]
+        : [...(lo > a ? [[a, lo]] : []), ...(hi < b ? [[hi, b]] : [])]);
+    }
+    if (!spans.length) return null;
+    if (preferred != null && spans.some(([a, b]) => preferred >= a && preferred <= b)) return preferred;
+    const total = spans.reduce((sum, [a, b]) => sum + b - a, 0);
+    let offset = rnd() * total;
+    for (const [a, b] of spans) { if (offset <= b - a) return a + offset; offset -= b - a; }
+    return spans.at(-1)[1];
+  }
+
   function spawn(z, now, near) {
     const kind = z.mobs[Math.floor(rnd() * z.mobs.length)];
     const spec = kinds.get(kind);
-    const x = near != null ? near : z.x1 + rnd() * (z.x2 - z.x1);
+    const x = safePosition(z, spec, near);
+    if (x == null) return null;
     const m = {
       id: `${rid()}${(seq++).toString(36)}`, kind, z: z.i, x, y: z.y, base: z.y, dir: rnd() < 0.5 ? -1 : 1,
       hp: spec.hp, max: spec.hp, s: 'move', vy: 0, air: false, hitT: 0, dieT: 0, turnT: 2 + rnd() * 4, hopT: 0.4 + rnd(), pauseT: 0,
@@ -227,7 +249,7 @@ export function createMobSim(o) {
   function fill(now) {
     for (const z of zones) while (aliveIn(z.i) + pending[z.i].length < z.max && aliveIn(z.i) < z.max) {
       if (mobs.size >= MOB_LIMITS.total) return;
-      spawn(z, now);
+      if (!spawn(z, now)) pending[z.i].push(now + 1000);
     }
   }
 
@@ -239,9 +261,12 @@ export function createMobSim(o) {
       const z = zones[v.z];
       const spec = kinds.get(v.kind);
       if (!z || !spec || mobs.size >= MOB_LIMITS.total) continue;
+      if (aliveIn(z.i) + pending[z.i].length >= z.max) continue;
       if (v.s === 'die' || v.hp <= 0) { pending[z.i].push(now + RESPAWN_MS); continue; }
+      const x = safePosition(z, spec, Math.min(z.x2, Math.max(z.x1, v.x)));
+      if (x == null) { pending[z.i].push(now + 1000); continue; }
       mobs.set(v.id, {
-        id: v.id, kind: v.kind, z: z.i, x: Math.min(z.x2, Math.max(z.x1, v.x)), y: spec.behavior === 'fly' ? v.y : z.y, base: z.y,
+        id: v.id, kind: v.kind, z: z.i, x, y: spec.behavior === 'fly' ? v.y : z.y, base: z.y,
         dir: v.dir < 0 ? -1 : 1, hp: Math.min(spec.hp, v.hp), max: spec.hp, s: 'move', vy: 0, air: false, hitT: 0, dieT: 0,
         turnT: 2 + rnd() * 4, hopT: 0.4 + rnd(), pauseT: 0, phase: rnd() * Math.PI * 2,
       });
@@ -288,8 +313,9 @@ export function createMobSim(o) {
       const p = pending[z.i];
       for (let i = p.length - 1; i >= 0; i--) {
         if (now >= p[i]) {
-          p.splice(i, 1);
-          if (aliveIn(z.i) < z.max && mobs.size < MOB_LIMITS.total) spawn(z, now);
+          if (aliveIn(z.i) >= z.max) { p.splice(i, 1); continue; }
+          if (mobs.size < MOB_LIMITS.total && spawn(z, now)) p.splice(i, 1);
+          else p[i] = now + 1000;
         }
       }
     }

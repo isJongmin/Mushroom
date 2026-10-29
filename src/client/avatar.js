@@ -83,6 +83,28 @@ export function createAvatarRenderer(assets, opts = {}) {
   /** 레이어를 frames 위치(프레임 번호 배열)에 합성. 레이어 받기가 끝나야 resolve. */
   async function compose(layers, frames) {
     const imgs = await Promise.all(layers.map((l) => assets.getLayer(l.layer, l.id)));
+    // 모자 안쪽 머리카락은 챙 아래부터만 그린다. 리본은 머리를 덮지 않는다.
+    // 합성에 실제 모자가 포함될 때만 적용하므로 헤어 선택 썸네일은 유지한다.
+    const hatIndexes = layers.map((l, i) => l.part === 'hat' && l.id !== 'ribbon-pink' ? i : -1).filter((i) => i >= 0 && imgs[i]);
+    let hairTops = null;
+    if (hatIndexes.length) {
+      const mask = makeCanvas(fw, fh);
+      const mc = mask.getContext('2d');
+      hairTops = frames.map((f) => {
+        mc.clearRect(0, 0, fw, fh);
+        for (const i of hatIndexes) {
+          if (layers[i].blend !== 'source-over') continue;
+          const img = imgs[i];
+          const have = Math.max(1, Math.floor(img.naturalWidth / fw));
+          mc.drawImage(img, (f % have) * fw, 0, fw, fh, 0, 0, fw, fh);
+        }
+        const data = mc.getImageData(0, 0, fw, fh).data;
+        for (let y = fh - 1; y >= 0; y--) {
+          for (let x = 0; x < fw; x++) if (data[(y * fw + x) * 4 + 3] > 32) return Math.max(0, y - 1);
+        }
+        return 0;
+      });
+    }
     const t0 = performance.now();
     const all = frames.length === frameCount && frames.every((f, i) => f === i);
     const cv = makeCanvas(fw * frames.length, fh);
@@ -91,6 +113,12 @@ export function createAvatarRenderer(assets, opts = {}) {
     for (let i = 0; i < layers.length; i++) {
       const img = imgs[i];
       if (!img) continue; // 받지 못한 레이어는 빼고 그린다
+      c.save();
+      if (hairTops && layers[i].part === 'hair') {
+        c.beginPath();
+        hairTops.forEach((top, k) => c.rect(k * fw, top, fw, fh - top));
+        c.clip();
+      }
       c.globalCompositeOperation = layers[i].blend;
       if (all && img.naturalWidth >= fw * frameCount) {
         c.drawImage(img, 0, 0, fw * frameCount, fh, 0, 0, fw * frameCount, fh);
@@ -98,6 +126,7 @@ export function createAvatarRenderer(assets, opts = {}) {
         const have = Math.max(1, Math.floor(img.naturalWidth / fw));
         frames.forEach((f, k) => c.drawImage(img, (f % have) * fw, 0, fw, fh, k * fw, 0, fw, fh));
       }
+      c.restore();
       c.globalCompositeOperation = 'source-over';
     }
     return { cv, ms: performance.now() - t0 };

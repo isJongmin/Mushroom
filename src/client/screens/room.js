@@ -220,7 +220,7 @@ export function mount(root, app, opts = {}) {
     const icon = h('canvas', { width: '48', height: '48', 'aria-hidden': 'true' });
     drawSkillIcon(icon.getContext('2d'), job.id, slot, 48);
     const timer = h('span', { class: 'skill-timer', 'aria-hidden': 'true' });
-    const btn = h('button', { type: 'button', class: 'skill-button', testid: `skill-${slot}`, 'aria-label': `${a.name}, 재사용 ${a.cooldown}초`, title: `${a.name} · ${a.description} · ${a.cooldown}초 · ${slot}키` },
+    const btn = h('button', { type: 'button', class: slot===3 ? 'skill-button skill-button--ultimate' : 'skill-button', testid: `skill-${slot}`, 'aria-label': `${a.name}, 재사용 ${a.cooldown}초`, title: `${a.name} · ${a.description} · ${a.cooldown}초 · ${slot}키` },
       icon, h('span', { class: 'skill-name' }, a.name), h('kbd', {}, String(slot)), timer);
     on(btn, 'click', () => useSkill(slot, performance.now()));
     return { btn, timer, slot, ability: a };
@@ -1302,12 +1302,14 @@ export function mount(root, app, opts = {}) {
     const { cssW, viewW, viewH, P, dpr, k } = layout;
     if (camY === null) camY = camYTarget(camRef, viewH, 0, world.bottomY);
     const cam = cameraFor(me.x, viewW, viewH, k, camY, world);
-    const { camX } = cam;
+    const punch=skillAttacks.presentation(now,me.user_id,prefersReducedMotion());
+    const camX = cam.camX + punch.x*dpr/k;
     lastCamX = camX;
-    const cy = cam.camY;
+    const cy = cam.camY + punch.y*dpr/k;
     const ctx = canvas.getContext('2d');
     if (currentArea === 'village') drawMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
+    skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;

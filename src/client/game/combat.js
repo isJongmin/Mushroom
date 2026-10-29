@@ -466,10 +466,10 @@ export function createJobProjectiles() {
         if (completed.has(id) || list.some(p => p.id === id)) continue;
         const dir=a.dir === 'left' ? -1 : 1, clone=ability.pattern==='clones' ? Math.floor(i/3) : 0;
         const angle=ability.pattern==='fan' ? (i-1)*ability.spread : 0;
-        const delay=ability.pattern==='fan'?0:ability.pattern==='clones'?clone*180+(i%3)*65:i*85;
+        const delay=ability.pattern==='fan'?0:ability.pattern==='clones'?480+clone*180+(i%3)*65:i*85;
         list.push({ id, a, job: j, x: a.x + (clone?(-38+clone*43)*dir:0), y: a.y - 35 - clone*18,
           angle, radius: ability.pattern==='saw'?27:8, distance:0, at:now+delay, authoritative, dir,
-          damage: { ...a, hits: Math.ceil((a.hits - i) / count) } });
+          damage: { ...a, hits: Math.ceil(((ability.projectileHits ?? a.hits) - i) / count) } });
       }
       if (list.length > 160) list.splice(0, list.length - 160);
     },

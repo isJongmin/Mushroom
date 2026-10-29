@@ -10,13 +10,13 @@ for(const job of JOBS) {
   for(let slot=0;slot<4;slot++) {
     const a=attack(job.id,slot),plan=buildStrikePlan(a,mobs),def=abilityDefinition(job.id,slot);
     assert.equal(isProjectileAbility(job.id,slot),!!def.speed);
-    if(def.speed){assert.equal(plan.length,0);continue;}
+    if(def.speed&&!def.finisher){assert.equal(plan.length,0);continue;}
     assert.ok(plan.length);
     for(const e of plan){assert.ok(e.box.x1<e.box.x2);assert.ok(e.box.y1<e.box.y2);assert.ok(e.delay>=0);assert.ok(e.damage.hits>=1);}
     const host=createSkillAttacks(),replica=createSkillAttacks();let hits=0;
     host.add(a,0,true,mobs);host.add(a,0,true,mobs);replica.add(a,0,false,mobs);
     assert.equal(host.count,1);
-    for(let t=0;t<2000;t+=10){host.update(t,()=>hits++);replica.update(t,()=>assert.fail('replicas must not damage'));}
+    for(let t=0;t<def.duration+500;t+=10){host.update(t,()=>hits++);replica.update(t,()=>assert.fail('replicas must not damage'));}
     assert.equal(hits,plan.length); assert.equal(host.count,0);
     host.add(a,3000,true,mobs);host.clear();host.update(9000,()=>assert.fail('cleared attacks must not hit'));
   }
@@ -28,8 +28,8 @@ assert.equal(claws.length,2);assert.ok(claws.every(e=>e.targetId==='front'&&e.x=
 const beam=buildStrikePlan(attack('mage',2),mobs);assert.equal(beam.length,2);assert.equal(beam[0].box.x2,560);assert.equal(beam[0].box.x1,0);
 const left=buildStrikePlan(attack('mage',2,'left'),mobs);assert.equal(left[0].box.x1,-560);assert.equal(left[0].box.x2,0);
 const spin=buildStrikePlan(attack('warrior',3),mobs);assert.ok(spin[0].box.x1< -100&&spin[0].box.x2>150);
-const rain=buildStrikePlan(attack('archer',3),mobs);assert.equal(new Set(rain.map(e=>e.x)).size,6);assert.ok(rain.every((e,i)=>!i||e.delay>rain[i-1].delay));
-const storm=buildStrikePlan(attack('mage',3),mobs);assert.equal(storm.length,4);assert.equal(storm[0].x,150);assert.ok(storm[0].box.y1< -100);
+const rain=buildStrikePlan(attack('archer',3),mobs).filter(e=>e.phase!=='final');assert.equal(new Set(rain.map(e=>e.x)).size,6);assert.ok(rain.every((e,i)=>!i||e.delay>rain[i-1].delay));
+const storm=buildStrikePlan(attack('mage',3),mobs);assert.equal(storm.length,5);assert.equal(storm[0].x,150);assert.ok(storm[0].box.y1< -100);
 // Fan arrows follow three actual trajectories; clones launch nine stars from three origins.
 const fan=createJobProjectiles();fan.add(attack('archer',1),0);fan.update(.1,100,undefined,()=>null);
 assert.equal(new Set(fan.snapshot().shots.map(p=>p.y)).size,3);

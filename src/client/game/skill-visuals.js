@@ -1,3 +1,4 @@
+import { drawUltimate, drawUltimateIcon } from './ultimate-visuals.js';
 import { abilityDefinition } from './jobs.js';
 
 const TAU=Math.PI*2;
@@ -46,10 +47,17 @@ function silhouette(c,x,y,alpha,color) {
   c.save();c.globalAlpha*=alpha;c.fillStyle=color;c.beginPath();c.arc(x,y-65,12,0,TAU);c.fill();c.beginPath();c.moveTo(x-10,y-52);c.lineTo(x-18,y-17);c.lineTo(x+22,y-17);c.lineTo(x+10,y-52);c.closePath();c.fill();path(c,[[x-4,y-20],[x-14,y]],color,6);path(c,[[x+8,y-20],[x+20,y]],color,6);path(c,[[x+7,y-47],[x+38,y-42]],color,6);c.restore();
 }
 
+function haloCast(c,color) {
+  const g=c.createRadialGradient(12,-38,0,12,-38,70);g.addColorStop(0,color+'55');g.addColorStop(1,color+'00');c.fillStyle=g;c.fillRect(-60,-110,145,145);
+  magicCircle(c,12,-38,34,color,.4);
+  for(let i=0;i<8;i++){const a=i*TAU/8;star(c,12+Math.cos(a)*48,-38+Math.sin(a)*48,3,'#fff3df',4,a);}
+}
+
 /** Sixteen different pictograms, rendered with the same shapes used by their attacks. */
 export function drawSkillIcon(c,job,slot,size=40) {
   const p=abilityDefinition(job,slot)?.pattern;if(!p)return;
   const [color,core]=COLORS[p];c.save();c.translate(size/2,size/2);c.scale(size/48,size/48);c.lineCap='round';
+  if(slot===3){drawUltimateIcon(c,job);c.restore();return;}
   switch(p){
     case 'slash': slash(c,-3,3,23,-.2,color,core,.6);break;
     case 'cross':glowPath(c,[[-15,-16],[16,17]],color,core,5);glowPath(c,[[15,-16],[-16,17]],color,core,5);break;
@@ -89,6 +97,7 @@ export function drawProjectileVisual(c,p,camX,camY,k,now) {
     slash(c,-9,-7,48,.1,color,core,.6);particles(c,-32,-5,40,(t*3)%1,'#ffd076',10);
   } else {
     const big=pattern==='saw',r=big?43:14;
+    if(p.a.skill===3){const glow=c.createRadialGradient(0,0,0,0,0,35);glow.addColorStop(0,'#ffe8ff99');glow.addColorStop(1,'#b87bff00');c.fillStyle=glow;c.fillRect(-35,-35,70,70);}
     for(let i=1;i<5;i++){c.save();c.globalAlpha=.32/i;star(c,-i*10,Math.sin(i+t*8)*3,r*(1-i*.12),color,big?12:4,t*18);c.restore();}
     if(big){ring(c,0,0,48,color,2,.65);ring(c,0,0,35,core,3,.8);}
     star(c,0,0,r,color,big?12:4,t*(big?12:25));star(c,0,0,r*.45,core,big?6:4,-t*15);ring(c,0,0,big?13:3,'#34214f',big?6:2);
@@ -115,7 +124,8 @@ export function drawAbilityEffect(c,job,slot,x,y,scale,elapsed,left=false,option
   const def=abilityDefinition(job,slot);if(!def||elapsed<0||elapsed>def.duration+300)return;
   const [color,core]=COLORS[def.pattern],t=elapsed/def.duration,d=left?-1:1;
   c.save();c.translate(x,y);c.scale(d*scale,scale);c.lineCap='round';
-  // No global screen flash: bright halos stay within the spell's world footprint.
+  if(slot===3){drawUltimate(c,job,elapsed,def,{...options,left});c.restore();return;}
+  // Ordinary skills keep their own silhouettes beneath the ultimate tier.
   const origin=options.origin;
   let plan=options.plan;
   if(!plan){
@@ -125,6 +135,7 @@ export function drawAbilityEffect(c,job,slot,x,y,scale,elapsed,left=false,option
   const point=e=>origin?[(e.x-origin.x)*d,e.y-origin.y]:[e.x,e.y];
   const castAlpha=1-clamp(elapsed/350);
   if(castAlpha>0){magicCircle(c,0,-3,slot?38:20,color,t);star(c,18,-38,(slot?14:8)*castAlpha,core,6,t*3);}
+  if(slot===2){c.save();c.globalAlpha=1-clamp(elapsed/500);haloCast(c,color);c.restore();}
   switch(def.pattern){
     case 'slash':c.globalAlpha=1-clamp(t);slash(c,12,-40,65,-.25,color,core,t);break;
     case 'cross':

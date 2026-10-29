@@ -25,7 +25,7 @@ for (const j of JOBS) {
       const shots=createJobProjectiles(); shots.add(packet,0,true); assert.ok(shots.count);
       let hits=0; shots.update(.01,100, p => { hits+=p.damage.hits; return {mob:{x:1}}; });
       for(let time=200;time<=1200;time+=100) shots.update(.01,time,p=>{hits+=p.damage.hits;return{mob:{x:1}};});
-      assert.equal(shots.count,0); assert.equal(hits,a.hits);
+      assert.equal(shots.count,0); assert.equal(hits,def.projectileHits ?? a.hits);
     }
   }
   assert.equal(acceptJobAttack({x:0,y:100},{...abilityStats(j.id),seq:1,x:0,y:100,skill:99},0),false);

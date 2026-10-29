@@ -10,10 +10,10 @@ export const jobDefinition = (id) => JOBS.find(j => j.id === normalizeJob(id));
 
 // Skills are fixed contracts: the host derives damage rather than trusting client bonuses.
 const SKILLS = {
-  warrior: [['크로스 슬래시', 1.7, 155, 2, 3, 0], ['플레임 웨이브', 2.5, 460, 2, 5, 1], ['블레이드 템페스트', 4, 230, 4, 8, 3]],
-  archer: [['스프레드 샷', 1.3, 540, 3, 1, 0], ['폭발 화살', 2.5, 590, 2, 4, 1], ['애로우 레인', 3.5, 600, 6, 6, 0]],
-  mage: [['매직 클로', 1.5, 420, 2, 2, 0], ['썬더 빔', 2.2, 560, 2, 6, 3], ['썬더 스톰', 3.2, 680, 4, 8, 3]],
-  thief: [['트리플 스로우', 1.5, 420, 3, 1, 0], ['섀도 스핀', 2.2, 510, 4, 3, 2], ['섀도 클론', 3.2, 660, 9, 6, 3]],
+  warrior: [['크로스 슬래시', 1.7, 155, 2, 3, 0], ['플레임 웨이브', 2.5, 460, 2, 5, 1], ['천검 · 라스트 저지먼트', 4.8, 320, 7, 8, 3]],
+  archer: [['스프레드 샷', 1.3, 540, 3, 1, 0], ['폭발 화살', 2.5, 590, 2, 4, 1], ['피닉스 · 아스트랄 레인', 4.2, 640, 9, 8, 1]],
+  mage: [['매직 클로', 1.5, 420, 2, 2, 0], ['썬더 빔', 2.2, 560, 2, 6, 3], ['썬더 갓 · 제로 아워', 3.8, 680, 7, 8, 3]],
+  thief: [['트리플 스로우', 1.5, 420, 3, 1, 0], ['섀도 스핀', 2.2, 510, 4, 3, 2], ['팬텀 · 이클립스', 3.8, 660, 13, 8, 3]],
 };
 // Every slot owns an attack shape, trajectory and visual language (not a recolor).
 const PATTERNS = {
@@ -21,25 +21,25 @@ const PATTERNS = {
     { pattern: 'slash', description: '전방의 적을 짧게 베어요.', duration: 300, name: '검 베기' },
     { pattern: 'cross', description: '서로 교차하는 검격으로 두 번 베어요.', duration: 600 },
     { pattern: 'wave', description: '지면을 따라 불꽃 검기를 날려 폭발시켜요.', duration: 900, speed: 650, shots: 1, splash: 85 },
-    { pattern: 'whirlwind', description: '주변을 회전 검기로 네 번 휩쓸어요.', duration: 1250, radius: 230 },
+    { pattern: 'whirlwind', description: '천검을 소환해 회전 검격 후 거대한 심판검과 충격파로 마무리해요.', duration: 2800, radius: 320, impactAt: 1500 },
   ],
   archer: [
     { pattern: 'arrow', description: '전방에 화살 두 발을 연속으로 쏴요.', duration: 300, name: '더블 샷', speed: 850, shots: 2 },
     { pattern: 'fan', description: '세 방향으로 화살을 동시에 펼쳐 쏴요.', duration: 550, speed: 900, shots: 3, spread: .17 },
     { pattern: 'bomb', description: '명중한 위치에서 넓게 폭발하는 화살을 쏴요.', duration: 800, speed: 650, shots: 1, splash: 145 },
-    { pattern: 'rain', description: '전방 여섯 구역에 화살비를 차례로 내려요.', duration: 1400 },
+    { pattern: 'rain', description: '별의 화살비를 내린 뒤 불사조가 전방을 불태워요.', duration: 2800, impactAt: 1740 },
   ],
   mage: [
     { pattern: 'orb', description: '빛나는 에너지 볼을 전방으로 날려요.', duration: 400, name: '에너지 볼', speed: 520, shots: 1 },
     { pattern: 'claw', description: '가까운 적 위치에 마력 발톱을 두 번 새겨요.', duration: 750 },
     { pattern: 'beam', description: '긴 번개 광선으로 전방의 여러 적을 관통해요.', duration: 850 },
-    { pattern: 'storm', description: '적이 있는 구역에 거대한 낙뢰를 차례로 내려요.', duration: 1500 },
+    { pattern: 'storm', description: '뇌신의 봉인을 열어 낙뢰와 거대한 심판의 번개를 내려요.', duration: 2900, impactAt: 1740 },
   ],
   thief: [
     { pattern: 'star', description: '표창 두 개를 빠르게 던져요.', duration: 350, name: '표창 던지기', speed: 920, shots: 2 },
     { pattern: 'triple', description: '빠른 세 번의 투척으로 적을 집중 공격해요.', duration: 650, speed: 1100, shots: 3 },
     { pattern: 'saw', description: '거대한 회전 표창을 날려 주변을 갈라요.', duration: 900, speed: 480, shots: 1, splash: 105 },
-    { pattern: 'clones', description: '세 분신이 서로 다른 위치에서 아홉 표창을 던져요.', duration: 1350, speed: 1000, shots: 9 },
+    { pattern: 'clones', description: '분신의 표창 난무 후 붉은 달의 거대한 처형 검격을 날려요.', duration: 2800, speed: 1000, shots: 9, projectileHits: 9, finisher: true, impactAt: 1660 },
   ],
 };
 export const BASIC_INTERVAL_MS = 240; // animation cadence; basic attack has no skill cooldown

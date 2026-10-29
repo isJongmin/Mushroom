@@ -250,3 +250,11 @@ body[data-screen="room"] { background: var(--letterbox); }
   .skill-hotbar .touch-act { width: 54px; }
   .skill-button canvas { width: 34px; height: 34px; }
 }
+
+/* The ultimate occupies the final slot with its own gold frame and ready-state aura. */
+.skill-button--ultimate { border-color: #e3b65f; background: linear-gradient(145deg,#342744,#21192d); box-shadow: inset 0 0 0 1px #725438,0 0 13px #e7b45a33; }
+.skill-button--ultimate:not(:disabled) { animation: ultimate-ready 2.8s ease-in-out infinite; }
+.skill-button--ultimate .skill-name { color: #ffe4a1; }
+.skill-button--ultimate kbd { color: #ffeabe; }
+@keyframes ultimate-ready { 0%,100% { box-shadow: inset 0 0 0 1px #725438,0 0 10px #e7b45a22; } 50% { box-shadow: inset 0 0 0 1px #a1804b,0 0 20px #e7b45a66; } }
+@media (prefers-reduced-motion: reduce) { .skill-button--ultimate:not(:disabled) { animation: none; } }

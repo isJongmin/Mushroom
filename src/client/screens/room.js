@@ -838,12 +838,7 @@ export function mount(root, app, opts = {}) {
         pl.dir = p.dir === 'left' ? -1 : 1;
         slashes.add(pl, pl.dir, { w: c.w, el: c.el });
         if (debug) atkBoxes.push({ box: attackBox(p.x, p.y, p.dir, c.w), at: now });
-        // PvP: 피격자 권위 (내 위치로 판정). 타를 모두 적용한 뒤 무적
-        if (!me.dead && now >= me.invulnUntil && overlaps(attackBox(p.x, p.y, p.dir, c.w), hurtBox(me.x, me.y, me.body.prone))) {
-          cstats.pvpHits++;
-          cstats.pvpHitCount += c.hits;
-          takeDamage(rollHits(c), pl.dir, p.user_id, now);
-        }
+        // 협동 사냥: 플레이어 공격은 몬스터에게만 적용한다.
         if (isHost()) hostAttack(p, now);
         break;
       }

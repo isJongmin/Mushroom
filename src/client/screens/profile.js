@@ -11,6 +11,7 @@ import { drawFootShadow, drawMap } from '../game/world.js';
 import { pickAvatar } from '../avatar-data.js';
 import { writeProfile } from '../store.js';
 import { trimWs, charLength } from '../backend/common.js';
+import { JOBS, normalizeJob } from '../game/jobs.js';
 
 // 미리보기 무대 (사이클 5, 월드 단위): 112x144 = CSS 56x72 x --pv (데스크톱 4 → 224x288, 모바일 3 → 168x216).
 // 기준점 (56,128). 배경 = 맵 전체를 카메라 (mapX, mapY)로 그린 작은 장면 (지면선 440 → 무대 128). mapX는 소품이 적은 잔디 구간.
@@ -46,6 +47,7 @@ export function mount(root, app, opts = {}) {
   const creating = false; // 처리 중 상태 없음 (동기 저장, profile.md 6장)
   let composing = false;
   let errorShown = false; // 한 번 오류를 보인 뒤에는 매 입력마다 즉시 갱신 (5.2)
+  let selectedJob = normalizeJob(app.profile?.job);
   let activeTab = 'hair'; // 첫 진입 = 머리 (5.1)
   let view = 'front'; // front | side | back
   let walking = false;
@@ -111,6 +113,20 @@ export function mount(root, app, opts = {}) {
     h('label', { for: 'nickname', class: 'bk-label-text' }, '닉네임'),
     h('div', { class: 'bk-input-wrap' }, nickInput, h('span', { class: 'bk-input-end' }, nickCounter)),
     status);
+
+  const jobCards = JOBS.map((job) => {
+    const radio = h('input', { type: 'radio', name: 'character-job', value: job.id, testid: `job-${job.id}` });
+    radio.checked = selectedJob === job.id;
+    on(radio, 'change', () => { if (radio.checked) selectedJob = job.id; });
+    return h('label', { class: 'job-card' }, radio,
+      h('span', { class: 'job-card__body' }, h('strong', {}, job.name),
+        h('span', { class: 'job-card__skill' }, job.skill),
+        h('span', { class: 'job-card__description' }, job.description)));
+  });
+  nickArea.append(h('fieldset', { class: 'job-picker', testid: 'job-picker' },
+    h('legend', { class: 'bk-label-text' }, '직업 선택'),
+    h('p', { class: 'bk-help' }, '공격 키는 같고, 직업마다 무기와 공격 방식이 달라요.'),
+    h('div', { class: 'job-grid' }, jobCards)));
 
   // 버튼 (6장): 비활성은 aria-disabled (눌렀을 때 형식 오류를 보여 주기 위해 클릭은 받는다)
   const submit = h('button', {
@@ -384,7 +400,7 @@ export function mount(root, app, opts = {}) {
       return;
     }
     done = true;
-    const profile = { nickname: nick.value, avatar: pickAvatar(avatar) }; // 정확히 7개 키
+    const profile = { nickname: nick.value, avatar: pickAvatar(avatar), job: selectedJob };
     app.profile = profile;
     if (!writeProfile(app.profileKey, profile)) app.storageFailed = true; // 막지 않고 메모리로 진행 (6.1)
     app.go('lobby');
@@ -502,6 +518,7 @@ export function mount(root, app, opts = {}) {
     ready,
     avatar: avatar ? pickAvatar(avatar) : null,
     nickname: nickInput.value,
+    job: selectedJob,
     nicknameStatus: nick.status,
     tab: activeTab,
     view,

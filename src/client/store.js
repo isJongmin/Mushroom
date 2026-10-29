@@ -3,6 +3,7 @@
 // ARCHITECTURE 결정 6: sessionStorage `mushroom:room` = { roomId, nickname, owner(사이클 8) } — 새로고침 재입장용, 나가기·방 삭제에서 지운다.
 import { LS_PROFILE, SS_ROOM, NICK_RE } from './constants.js';
 import { normalizeAvatar, pickAvatar } from './avatar-data.js';
+import { normalizeJob } from './game/jobs.js';
 
 /** local 모드 테스트 훅(?as=)이면 프로필 키를 사용자별로 나눈다 (backend/identity.js). */
 export function profileKey(as) {
@@ -18,7 +19,7 @@ export function readProfile(key) {
     if (!o || typeof o !== 'object' || typeof o.nickname !== 'string') return null;
     const nickname = o.nickname.trim();
     if (!NICK_RE.test(nickname)) return null;
-    return { nickname, avatar: normalizeAvatar(o.avatar) };
+    return { nickname, avatar: normalizeAvatar(o.avatar), job: normalizeJob(o.job) };
   } catch {
     return null;
   }
@@ -27,7 +28,7 @@ export function readProfile(key) {
 /** @returns true면 저장 성공, false면 STORAGE 실패 (메모리로 진행) */
 export function writeProfile(key, profile) {
   try {
-    localStorage.setItem(key, JSON.stringify({ nickname: profile.nickname, avatar: pickAvatar(profile.avatar) }));
+    localStorage.setItem(key, JSON.stringify({ nickname: profile.nickname, avatar: pickAvatar(profile.avatar), job: normalizeJob(profile.job) }));
     return true;
   } catch {
     return false;

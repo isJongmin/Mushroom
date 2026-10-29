@@ -193,3 +193,17 @@ body[data-screen="room"] { background: var(--letterbox); }
 /* 버프가 있으면 조작 힌트(HUD 오른쪽)를 숨겨 버프 바와 겹치지 않게 */
 .hud:has(.buff-bar:not([hidden])) .hint-desktop { display: none; }
 .buff-bar--float { position: absolute; z-index: 1; left: 18px; top: 88px; margin-left: 0; flex-wrap: wrap; max-width: calc(100% - 36px); }
+
+/* 직업 선택: 기존 프로필 카드 안에서 키보드/터치로 고르는 네 가지 무기. */
+.job-picker { min-width: 0; border: 0; padding: 16px 0 0; margin: 8px 0 0; }
+.job-picker legend { float: left; width: 100%; margin-bottom: 8px; }
+.job-picker > p { clear: both; font-size: 12px; line-height: 1.6; }
+.job-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 12px; }
+.job-card { display: flex; align-items: flex-start; gap: 8px; border: 2px solid var(--pal-ink, #493e38); padding: 12px; cursor: pointer; background: #fff9ed; color: #493e38; }
+.job-card:has(input:checked) { background: #e5efd2; border-color: #507536; box-shadow: inset 0 -3px #cadcae; }
+.job-card:focus-within { outline: 3px solid #507536; outline-offset: 2px; }
+.job-card input { margin: 3px 0 0; accent-color: #507536; flex: none; }
+.job-card__body { display: grid; gap: 5px; min-width: 0; }
+.job-card strong { font-size: 15px; }
+.job-card__skill { font-size: 11px; color: #70604e; }
+.job-card__description { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }

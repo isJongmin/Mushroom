@@ -1,3 +1,5 @@
+import { normalizeJob, jobDefinition, acceptJobAttack } from '../game/jobs.js';
+import { createJobProjectiles } from '../game/combat.js';
 // 방 화면: 맵 + 캐릭터 + 말풍선 + HUD + 채팅 로그 (docs/design/screens/room.md v4, style-guide 6~8장·11.9)
 // 캔버스(배율/카메라/그리기 순서/라벨/말풍선)와 이동·터치·채팅 입력은 v3 game 화면 그대로.
 // 바뀐 것: 방 HUD(방 이름 + 자물쇠, 인원 n/20, 나가기), 채팅 로그 패널, 채팅 전송 = sendChat RPC,
@@ -118,6 +120,7 @@ export function mount(root, app, opts = {}) {
   // --- (사이클 9) 전투·몬스터·드롭 상태 ---------------------------------------
   const dmgNums = createDamageNumbers();
   const slashes = createSlashes();
+  const projectiles = createJobProjectiles();
   const stones = createTombstones();
   const drops = createDrops();
   let mobDefs = null; // normalizeMobManifest 결과 | null (몬스터 없음)
@@ -136,12 +139,12 @@ export function mount(root, app, opts = {}) {
   let lastMobsSent = -Infinity;
   let announceHp = false; // 새 멤버에게 내 hp 1회
   let resendDrops = false; // 호스트: 새 멤버에게 드롭 다시 알림
-  let atkSeq = 0;
+  let atkSeq = Date.now() * 1000; // monotonic across reloads, so retained peers accept new attacks
   const atkBoxes = []; // ?debug: [{ box, at }]
   const earlyHp = new Map(); // Presence보다 먼저 온 hp
   // (사이클 10) 공격 강화 버프 (60초, 최대 3스택, 사망하면 초기화)
   const buffs = createBuffs();
-  let atk = attackStats({}); // 지금 버프로 계산한 공격 값 { w, hits, dmin, dmax, el, cooldown, animMs }
+  let atk = attackStats({}, normalizeJob(profile?.job)); // 지금 버프로 계산한 공격 값 { w, hits, dmin, dmax, el, cooldown, animMs }
   let buffOrbSprite = null;
   const buffIconSprites = {}; // id -> sprite
   const cstats = {
@@ -170,7 +173,9 @@ export function mount(root, app, opts = {}) {
   const buffBar = h('div', { class: 'buff-bar', testid: 'buff-bar', role: 'status', 'aria-label': '공격 강화 버프', hidden: true });
   const buffEls = new Map(); // id -> { el, cv, num, lastKey }
   const hostChip = debug ? h('span', { class: 'bk-chip debug-host', testid: 'debug-host' }, '호스트 -') : null;
-  const hudL = h('div', { class: 'hud-l' }, roomChip, countChip, modeSlot, hostChip);
+  const job = jobDefinition(profile?.job);
+  const jobChip = h('span', { class: 'bk-chip', testid: 'room-job', title: job.description }, `${job.name} · ${job.skill}`);
+  const hudL = h('div', { class: 'hud-l' }, roomChip, countChip, jobChip, modeSlot, hostChip);
   const hud = h('div', { class: 'hud' }, hudL, h('div', { class: 'hud-r' }, hint, deleteBtn, leaveBtn));
   const modeSlot2 = h('span', { class: 'mode-slot' });
 
@@ -651,21 +656,22 @@ export function mount(root, app, opts = {}) {
     })();
   }
 
-  function refreshAttack() { atk = attackStats(buffs.stacks()); }
+  function refreshAttack() { atk = attackStats(buffs.stacks(), normalizeJob(profile?.job)); }
 
   function doAttack(now) {
     me.lastAtkAt = now;
     me.attackUntil = now + atk.animMs;
     me.atkAnimMs = atk.animMs;
     const dir = me.dir < 0 ? 'left' : 'right';
-    slashes.add(me, me.dir, { w: atk.w, el: atk.el });
+    if (atk.job === 'warrior') slashes.add(me, me.dir, { w: atk.w, el: atk.el });
     ensureSprites();
     const x = Math.round(me.x);
     const y = Math.round(me.y);
-    const a = { x, y, dir, seq: ++atkSeq, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
+    const a = { x, y, dir, seq: ++atkSeq, job: atk.job, cooldown: atk.cooldown, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
     if (debug) atkBoxes.push({ box: attackBox(x, y, dir, a.w), at: now });
     if (send('atk', a)) cstats.atkSent++;
-    if (isHost()) hostAttack(a, now);
+    if (atk.job !== 'warrior') projectiles.add(a, now, isHost());
+    else if (isHost()) hostAttack(a, now);
   }
 
   /**
@@ -777,10 +783,7 @@ export function mount(root, app, opts = {}) {
   }
 
   /** 호스트: atk(상한으로 자른 값)를 몬스터에. 타별 피해, 처치되면 버프 드롭 (golem 2개) */
-  function hostAttack(a, now) {
-    if (!sim) return;
-    const c = clampAttack(a);
-    const r = sim.hit(attackBox(a.x, a.y, a.dir, c.w), a.x, a.dir === 'left' ? -1 : 1, rollHits(c));
+  function applyMobHit(r, now) {
     if (!r) return;
     cstats.mobHits++;
     showHits(r.dmgs, r.mob.x, r.mob.y - kindsH(r.mob.kind), 'hit', now);
@@ -788,6 +791,17 @@ export function mount(root, app, opts = {}) {
       cstats.kills++;
       r.buffs.forEach((b, i) => spawnDrop(b, r.mob.x + (i - (r.buffs.length - 1) / 2) * 30, r.mob.y));
     }
+  }
+  function hostAttack(a, now, box = attackBox(a.x, a.y, a.dir, a.w), excluded = new Set(), targets = jobDefinition(a.job).targets) {
+    if (!sim) return null;
+    const c = clampAttack(a);
+    let first = null;
+    for (let n = 0; n < targets; n++) {
+      const r = sim.hit(box, a.x, a.dir === 'left' ? -1 : 1, rollHits(c), excluded);
+      if (!r) break;
+      excluded.add(r.mob.id); first ||= r; applyMobHit(r, now);
+    }
+    return first;
   }
   const kindsH = (kind) => { const k = mobDefs && mobDefs.kinds.get(kind); return k ? k.size.h : 40; };
 
@@ -828,7 +842,7 @@ export function mount(root, app, opts = {}) {
       case 'atk': {
         cstats.atkRecv++;
         const pl = players.get(p.user_id);
-        if (!pl || pl.isSelf || pl.dead) return;
+        if (!pl || pl.isSelf || !acceptJobAttack(pl, p, now)) return;
         const c = clampAttack(p); // 받는 쪽 상한: w≤175, hits≤4, dmax≤60, el 0~3
         if (c.w !== p.w || c.hits !== p.hits || c.dmax !== p.dmax || c.el !== p.el) cstats.atkCapped++;
         const animMs = Math.max(120, Math.min(COMBAT.attackAnimMs, now - (pl.lastAtkAt || 0)));
@@ -836,10 +850,11 @@ export function mount(root, app, opts = {}) {
         pl.attackUntil = now + animMs;
         pl.atkAnimMs = animMs;
         pl.dir = p.dir === 'left' ? -1 : 1;
-        slashes.add(pl, pl.dir, { w: c.w, el: c.el });
+        if (c.job === 'warrior') slashes.add(pl, pl.dir, { w: c.w, el: c.el });
+        else projectiles.add({ ...p, ...c }, now, isHost());
         if (debug) atkBoxes.push({ box: attackBox(p.x, p.y, p.dir, c.w), at: now });
         // 협동 사냥: 플레이어 공격은 몬스터에게만 적용한다.
-        if (isHost()) hostAttack(p, now);
+        if (isHost() && c.job === 'warrior') hostAttack({ ...p, ...c }, now);
         break;
       }
       case 'hp': {
@@ -1076,6 +1091,15 @@ export function mount(root, app, opts = {}) {
     }
     drops.update(now);
     dmgNums.update(now);
+    projectiles.update(dt, now, (p, box) => {
+      if (!isHost()) return null;
+      const r = hostAttack(p.damage, now, box, new Set(), 1);
+      if (r && p.job.splash) {
+        const radius = p.job.splash;
+        hostAttack(p.damage, now, { x1: r.mob.x - radius, x2: r.mob.x + radius, y1: p.y - radius, y2: p.y + radius }, new Set([r.mob.id]), p.job.targets - 1);
+      }
+      return r;
+    });
     slashes.update(now);
     stones.update(dt, now);
     while (atkBoxes.length && now - atkBoxes[0].at > ATTACK_BOX_SHOW_MS) atkBoxes.shift();
@@ -1198,6 +1222,7 @@ export function mount(root, app, opts = {}) {
       ctx.globalAlpha = 1;
     }
     slashes.draw(ctx, camX, cy, k, now);
+    projectiles.draw(ctx, camX, cy, k, now);
     fx.drawFront(ctx, camX, cy, k);
     if (debug) drawDebug(ctx, visible, mobsVis, camX, cy, k, now);
 
@@ -1601,7 +1626,7 @@ export function mount(root, app, opts = {}) {
       buffs: buffs.list(performance.now()),
       attack: { ...atk },
       reviveVisible: !reviveBtn.hidden && !reviveBox.hidden,
-      numbers: dmgNums.count, slashes: slashes.count, slashImage: slashes.hasImage, slashElementImages: slashes.elementImages, buffOrbImage: !!buffOrbSprite,
+      numbers: dmgNums.count, projectiles: projectiles.count, slashes: slashes.count, slashImage: slashes.hasImage, slashElementImages: slashes.elementImages, buffOrbImage: !!buffOrbSprite,
       sprites: { ghost: !!ghostSprite, tombstone: !!tombSprite },
       stats: { ...cstats, ...(sim ? { sim: sim.stats } : {}) },
     },
@@ -1623,7 +1648,7 @@ export function mount(root, app, opts = {}) {
     if (app.providers.room) app.providers.room = null;
     avatarR?.clear();
     fx.clear();
-    dmgNums.clear(); slashes.clear(); stones.clear(); drops.clear(); buffs.clear(); buffEls.clear();
+    dmgNums.clear(); projectiles.clear(); slashes.clear(); stones.clear(); drops.clear(); buffs.clear(); buffEls.clear();
     if (debug) { try { delete window.__mushroomDebug; } catch { /* 무시 */ } }
     sim = null;
     mobView?.clear();

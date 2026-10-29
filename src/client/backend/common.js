@@ -1,3 +1,4 @@
+import { normalizeJob } from '../game/jobs.js';
 // 두 어댑터와 화면이 공유하는 형식 검사. 서버(supabase/migrations/20261015000000_rooms.sql)와 같은 규칙.
 import { NICK_RE, ROOM_NAME_MAX, ROOM_PW_MIN, ROOM_PW_MAX, CHAT_MAX } from '../constants.js';
 import { AppError } from '../errors.js';
@@ -167,6 +168,7 @@ export function cleanGameEvent(event, p) {
       if (!UID_OK(p.user_id) || !numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
       // (사이클 10) 강화 값 w, hits, dmin, dmax, el은 숫자만 넘기고 상한 자르기는 화면(buffs.clampAttack)이 한다
       return {
+        job: normalizeJob(p.job), cooldown: numIn(p.cooldown, .1, 1) ? p.cooldown : null,
         user_id: p.user_id, x: p.x, y: p.y, dir: p.dir === 'left' ? 'left' : 'right', seq: Number.isInteger(p.seq) ? p.seq : 0,
         w: isNum(p.w) ? p.w : null, hits: isNum(p.hits) ? p.hits : null, dmin: isNum(p.dmin) ? p.dmin : null, dmax: isNum(p.dmax) ? p.dmax : null, el: isNum(p.el) ? p.el : null,
       };

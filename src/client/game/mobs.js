@@ -300,11 +300,11 @@ export function createMobSim(o) {
    * @param dmgs 타별 피해 [n..] (multi 버프면 여러 개)
    * @returns null | { mob, dmgs(실제로 들어간 타), killed, buffs(드롭할 버프 id 목록) }
    */
-  function hit(box, ax, dir, dmgs) {
+  function hit(box, ax, dir, dmgs, excluded = new Set()) {
     let best = null;
     let bestD = Infinity;
     for (const m of mobs.values()) {
-      if (m.s === 'die') continue;
+      if (m.s === 'die' || excluded.has(m.id)) continue;
       const spec = kinds.get(m.kind);
       const b = { x1: m.x - spec.size.w / 2, x2: m.x + spec.size.w / 2, y1: m.y - spec.size.h, y2: m.y };
       if (!(box.x1 < b.x2 && box.x2 > b.x1 && box.y1 < b.y2 && box.y2 > b.y1)) continue;

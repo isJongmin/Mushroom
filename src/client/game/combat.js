@@ -1,3 +1,4 @@
+import { jobDefinition } from './jobs.js';
 // (사이클 9) 전투: 판정 상자, 피해 숫자, 슬래시, HP 바, 유령, 비석. ARCHITECTURE "사이클 9 계약".
 // 좌표는 월드 단위. 그리기는 장치 px 컨텍스트(단위행렬)에 k = 장치 px / 월드로 하거나, HP 바·숫자처럼 CSS px 컨텍스트에 한다.
 // 판정 함수는 DOM이 없어도 동작한다(Node 단위 시험 가능). 그리기 함수는 canvas 컨텍스트만 받는다.
@@ -395,4 +396,61 @@ export function createTombstones() {
 export function blinkAlpha(now, until) {
   if (now >= until) return 1;
   return Math.floor(now / 80) % 2 ? 0.3 : 1;
+}
+
+/** Traveling job attacks, simulated identically for spectators; only host hit() mutates mobs. */
+export function createJobProjectiles() {
+  const list = [], bursts = [];
+  return {
+    add(a, now, authoritative = false) {
+      const j = jobDefinition(a.job);
+      if (!j.speed) return;
+      const count = j.id === 'mage' ? 1 : 2;
+      for (let i = 0; i < count; i++) list.push({ a, job: j, x: a.x, y: a.y - 30 - i * 9, distance: 0, at: now + i * 75, authoritative, dir: a.dir === 'left' ? -1 : 1, damage: { ...a, hits: count === 1 ? a.hits : Math.ceil((a.hits - i) / count) } });
+      if (list.length > 160) list.splice(0, list.length - 160);
+    },
+    update(dt, now, hit) {
+      for (let i = list.length - 1; i >= 0; i--) {
+        const p = list[i]; if (now < p.at) continue;
+        const travel = Math.min(p.job.speed * dt, p.a.w - p.distance);
+        const next = p.x + p.dir * travel;
+        const box = { x1: Math.min(p.x, next) - 8, x2: Math.max(p.x, next) + 8, y1: p.y - 11, y2: p.y + 11 };
+        const r = p.authoritative ? hit(p, box) : null;
+        p.x = next; p.distance += travel;
+        if (r || p.distance >= p.a.w) {
+          if (r) bursts.push({ x: r.mob.x, y: p.y, at: now, color: p.job.color, radius: p.job.splash || 26 });
+          list.splice(i, 1);
+        }
+      }
+      for (let i = bursts.length - 1; i >= 0; i--) if (now - bursts[i].at > 350) bursts.splice(i, 1);
+    },
+    draw(ctx, camX, camY, k, now) {
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
+      for (const p of list) {
+        if (now < p.at) continue;
+        ctx.save(); ctx.translate(Math.round((p.x - camX) * k), Math.round((p.y - camY) * k)); ctx.scale(p.dir * k, k);
+        ctx.fillStyle = p.job.color;
+        for (let n = 1; n < 5; n++) { ctx.globalAlpha = (5 - n) / 7; ctx.fillRect(-n * 9, -2, 7, 4); }
+        ctx.globalAlpha = 1;
+        if (p.job.id === 'archer') {
+          ctx.fillStyle = '#593a29'; ctx.fillRect(-22, -2, 27, 4); ctx.fillStyle = '#fff3bf';
+          ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(1, -7); ctx.lineTo(1, 7); ctx.closePath(); ctx.fill();
+          ctx.fillStyle = '#7debb0'; ctx.fillRect(-24, -6, 8, 4); ctx.fillRect(-24, 2, 8, 4);
+        } else if (p.job.id === 'thief') {
+          ctx.rotate((now - p.at) * .025); ctx.fillStyle = '#23415e'; ctx.fillRect(-10, -10, 20, 20);
+          ctx.fillStyle = '#bbf3ff'; ctx.beginPath(); for (let n = 0; n < 8; n++) { const a = n * Math.PI / 4; const r = n % 2 ? 4 : 16; ctx[n ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill(); ctx.fillStyle = '#365676'; ctx.fillRect(-3,-3,6,6);
+        } else {
+          ctx.rotate(Math.PI / 4); ctx.fillStyle = '#6844b0'; ctx.fillRect(-12,-12,24,24); ctx.fillStyle = '#ba99ff'; ctx.fillRect(-9,-9,18,18); ctx.fillStyle = '#fff1ff'; ctx.fillRect(-4,-4,8,8);
+        }
+        ctx.restore();
+      }
+      for (const b of bursts) {
+        const t = (now - b.at) / 350; ctx.globalAlpha = 1 - t; ctx.fillStyle = b.color;
+        for (let n = 0; n < 10; n++) { const a = n * Math.PI / 5; const r = b.radius * t; const size = (6 - t * 4) * k; ctx.fillRect((b.x - camX + Math.cos(a) * r) * k, (b.y - camY + Math.sin(a) * r) * k, size, size); }
+      }
+      ctx.restore();
+    },
+    clear() { list.length = 0; bursts.length = 0; },
+    get count() { return list.length; },
+  };
 }

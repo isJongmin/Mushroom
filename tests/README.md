@@ -101,3 +101,16 @@ python3 -B tests/e2e_local.py --shots /경로/폴더                  # 로비/�
 - 실제 네트워크 단절은 재현하지 않는다. local에는 끊김 경로가 없어서 항목 16은 멤버 행 삭제로 NOT_MEMBER 경로만 본다.
 - 항목 12: IME 조합 중 Esc, Safari 15.4 미만 inert 대체 경로는 UNVERIFIED. 항목 20: 리스너 개수와 JS 힙은 DevTools 없이 측정하지 않는다 (UNVERIFIED).
 - Chromium만 사용한다. dpr 3, 실기기 소프트 키보드, Safari/Firefox는 미검증.
+
+## 협동 사냥·직업 회귀 검사
+
+Node.js 22 이상에서 저장소 루트 기준:
+
+```sh
+node tests/jobs.test.mjs
+node tests/profile-jobs.test.mjs
+# Canvas 합성 검사: @napi-rs/canvas 설치 경로를 지정 (기존 게임 런타임 의존성 추가 없음)
+CANVAS_MODULE=/absolute/path/to/@napi-rs/canvas/index.js node tests/avatar-hat.test.mjs
+```
+
+브라우저 E2E를 대신하는 검사는 아니며, 충돌·전송 형식·프로필 호환·재생성 타이밍과 Canvas 합성 회귀를 검사한다.

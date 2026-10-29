@@ -1,3 +1,4 @@
+import { normalizeMapId } from '../game/areas.js';
 // supabase 모드 어댑터 (ARCHITECTURE 결정 3~6, supabase/README.md "프런트용 API 명세").
 // supabase-js는 ARCHITECTURE가 고정한 CDN URL에서 "처음 필요할 때" 동적 import 한다.
 // local 모드에서는 이 파일 자체가 import되지 않는다(backend/index.js).
@@ -165,8 +166,8 @@ export function createSupabaseBackend(url, anonKey) {
     try { sb.realtime.setAuth(session.access_token); } catch { /* 무시 */ }
 
     const me = userId;
-    // Presence 상태: 입장 시점 값. 위치는 move broadcast로만 갱신한다(Presence 전송 한도).
-    const myState = { nickname: self.nickname, avatar: self.avatar, x: self.x, y: self.y, user_id: me };
+    // Presence records entry/portal arrival; regular movement uses broadcast.
+    const myState = { nickname: self.nickname, avatar: self.avatar, x: self.x, y: self.y, mapId: normalizeMapId(self.mapId), user_id: me };
     const seenChat = new Set();
     let closed = false;
     let synced = false;
@@ -285,9 +286,9 @@ export function createSupabaseBackend(url, anonKey) {
     const conn = {
       roomId,
       deliver,
-      sendMove({ x, y, dir, s, fx }) {
+      sendMove({ x, y, dir, s, fx, mapId }) {
         if (closed) return Promise.reject(new AppError('NETWORK'));
-        const p = { user_id: me, x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' };
+        const p = { user_id: me, mapId: normalizeMapId(mapId), x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' };
         if (isFx(fx)) p.fx = fx;
         mover.push(p, !!p.fx);
         return Promise.resolve();
@@ -297,10 +298,10 @@ export function createSupabaseBackend(url, anonKey) {
         if (closed || !isGameEvent(event) || !payload || typeof payload !== 'object') return false;
         return gate.push(event, stampGameEvent(event, payload, me));
       },
-      /** 닉네임/아바타가 바뀌었을 때만 (최소 2초 간격, 대기 중 요청은 하나로 합침) */
+      /** Appearance changes and portal arrivals only; queued Presence updates coalesce. */
       async updateSelf(partial) {
         if (closed) throw new AppError('NETWORK');
-        for (const k of ['nickname', 'avatar']) if (partial && Object.prototype.hasOwnProperty.call(partial, k)) myState[k] = partial[k];
+        for (const k of ['nickname', 'avatar', 'mapId', 'x', 'y']) if (partial && Object.prototype.hasOwnProperty.call(partial, k)) myState[k] = k === 'mapId' ? normalizeMapId(partial[k]) : partial[k];
         const r = await track();
         if (r !== 'ok' && r !== 'cancelled') throw new AppError('NETWORK', r);
       },

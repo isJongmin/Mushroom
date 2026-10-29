@@ -1,3 +1,4 @@
+import { AREA_IDS, AREA_NAMES, normalizeMapId, areaMap, areaPortals, nearbyPortal, sameArea, drawBiomeMap, drawPortals, drawMinimap } from '../game/areas.js';
 import { normalizeJob, jobDefinition, acceptJobAttack } from '../game/jobs.js';
 import { createJobProjectiles } from '../game/combat.js';
 // 방 화면: 맵 + 캐릭터 + 말풍선 + HUD + 채팅 로그 (docs/design/screens/room.md v4, style-guide 6~8장·11.9)
@@ -89,6 +90,12 @@ export function mount(root, app, opts = {}) {
 
   let assets = null;
   let avatarR = null;
+  let currentArea = 'village';
+  let villageMap = null;
+  const areaCatalog = new Map();
+  const areaSnapshots = new Map();
+  let portalReadyAt = 0;
+  let lastMiniPaint = -Infinity;
   let map = null; // loadMapAssets() 결과
   let link = null; // 열린 채널 { sendMove, updateSelf, healthy, close }
   let rl = null; // room-link 상태기계
@@ -195,8 +202,17 @@ export function mount(root, app, opts = {}) {
   // (사이클 9) 모바일 공격·줍기 버튼 (캔버스 오른쪽 아래)
   const pickBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--touch touch-act', testid: 'pick', 'aria-label': '줍기' }, '줍기');
   const attackBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary bk-btn--touch touch-act', testid: 'attack', 'aria-label': '공격 (누르고 있으면 계속)' }, '공격');
+  const portalBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary portal-action', testid: 'portal-enter', hidden: true }, '포탈 이동 ↑');
+  const miniCanvas = h('canvas', { width: '204', height: '88', role: 'img', 'aria-label': '현재 맵과 플레이어 위치', testid: 'minimap-canvas' });
+  const miniName = h('span', {}, AREA_NAMES.village);
+  const miniToggle = h('button', { type: 'button', 'aria-label': '미니맵 접기', 'aria-expanded': 'true', testid: 'minimap-toggle' }, '−');
+  const miniBody = h('div', { class: 'minimap-body' }, miniCanvas, h('p', {}, '노랑 나 · 흰색 동료 · 빨강 몬스터'));
+  const minimap = h('aside', { class: 'game-minimap', 'aria-label': '미니맵', testid: 'minimap' },
+    h('div', { class: 'minimap-head' }, miniName, miniToggle), miniBody);
+  on(miniToggle, 'click', () => { const open = miniBody.hidden; miniBody.hidden = !open; miniToggle.setAttribute('aria-expanded', String(open)); miniToggle.setAttribute('aria-label', open ? '미니맵 접기' : '미니맵 펼치기'); setText(miniToggle, open ? '−' : '+'); });
+  on(portalBtn, 'click', () => enterPortal(performance.now()));
   const touchFloat = h('div', { class: 'touch-float' }, pickBtn, attackBtn);
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -368,7 +384,7 @@ export function mount(root, app, opts = {}) {
   // --- 플레이어 -------------------------------------------------------------
   function makePlayer(uid, nickname, avatar, x, isSelf) {
     return {
-      user_id: uid, nickname, avatar, x, targetX: x, y: world.groundY, dir: 1,
+      user_id: uid, nickname, avatar, mapId: isSelf ? currentArea : 'village', x, targetX: x, y: world.groundY, dir: 1,
       moving: false, lastMoveAt: 0, lastMovedAt: -Infinity, anim: 'idle', animSince: performance.now(),
       bubble: null, lastChat: null, isSelf,
       s: 'idle', // 이동 상태 idle | walk | jump | fall | prone (원격은 받은 값, 없으면 null → 추정)
@@ -406,10 +422,20 @@ export function mount(root, app, opts = {}) {
 
   /** 원격 move 적용: x 목표, 방향, 세로(받은 y로 보간, 물리 재계산 없음), s, fx(이펙트 1회) */
   function applyMove(pl, p, now = performance.now()) {
-    pl.targetX = clampX(p.x);
+    const nextArea = normalizeMapId(p.mapId);
+    const changed = pl.mapId !== nextArea;
+    pl.mapId = nextArea;
+    const remoteMap = areaCatalog.get(nextArea) || map;
+    const remoteWorld = worldFromMap(remoteMap);
+    pl.targetX = Math.min(remoteWorld.maxX, Math.max(remoteWorld.minX, p.x));
+    if (changed) {
+      pl.x = pl.targetX; pl.yBuf.length = 0; pl.attackUntil = 0;
+      fx.forget(pl); slashes.forget(pl); stones.remove(pl.user_id);
+      announce = true; announceHp = true; resendDrops = true;
+    }
     if (p.dir === 'left' || p.dir === -1) pl.dir = -1;
     else if (p.dir === 'right' || p.dir === 1) pl.dir = 1;
-    const y = isNum(p.y) ? Math.min(world.groundY, Math.max(PHYS.ceilY, p.y)) : world.groundY;
+    const y = isNum(p.y) ? Math.min(remoteWorld.groundY, Math.max(PHYS.ceilY, p.y)) : remoteWorld.groundY;
     const buf = pl.yBuf;
     // 오래 소식이 없었으면(정지 후 다시 움직임) 지금 보이는 높이를 기점으로 다시 시작한다
     const last = buf[buf.length - 1];
@@ -423,7 +449,8 @@ export function mount(root, app, opts = {}) {
     pl.s = normState(p.s);
     pl.lastMoveAt = now;
     if (pl.s === 'attack' && now >= pl.attackUntil) pl.attackUntil = now + COMBAT.attackAnimMs;
-    if (isFx(p.fx)) playFx(pl, p.fx, pl.x, pl.y, now);
+    if (isFx(p.fx) && sameArea(pl, me)) playFx(pl, p.fx, pl.x, pl.y, now);
+    if (changed) { pl.y = y; electHost(); }
   }
 
   /** 슈퍼 점프 이펙트 재생 (내 캐릭터: 시작 지점, 원격: 지금 보이는 위치) */
@@ -453,6 +480,7 @@ export function mount(root, app, opts = {}) {
             // Presence x는 입장 시점 값. 그 사람이 내 입장(presence join)을 보고 move로 현재 위치를 1회 보내 준다.
             const x = isNum(s.x) ? clampX(s.x) : WORLD.minX;
             const pl = makePlayer(s.user_id, nickname, avatar, x, false);
+            pl.mapId = normalizeMapId(s.mapId);
             players.set(s.user_id, pl);
             const early = earlyMoves.get(s.user_id);
             if (early) { applyMove(pl, { ...early, fx: null }); pl.x = pl.targetX; pl.y = pl.yTo; pl.yBuf.length = 0; } // 늦은 fx는 재생하지 않는다
@@ -512,7 +540,7 @@ export function mount(root, app, opts = {}) {
       join: () => app.backend.joinRoom({ roomId, password: null, nickname: myNick }),
       open: (sink, signal) => {
         const token = ++openSeq;
-        const self = { nickname: me.nickname, avatar: me.avatar, x: Math.round(me.x), y: Math.round(me.y) };
+        const self = { nickname: me.nickname, avatar: me.avatar, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
         return app.backend.connectRoom(roomId, { ...handlersFor(token), onDrop: sink.onDrop }, self, { signal });
       },
       heartbeat: async () => {
@@ -616,7 +644,7 @@ export function mount(root, app, opts = {}) {
   // --- (사이클 9~10) 전투 ---------------------------------------------------------
   const headOf = (p) => (avatarR ? avatarR.headTop(p.avatar) : 100);
   const groundAt = (x, y) => surfaceBelow(platforms, x, y, world.groundY);
-  const send = (event, payload) => (link && connection === 'connected' && typeof link.send === 'function' ? link.send(event, payload) : false);
+  const send = (event, payload) => (link && connection === 'connected' && typeof link.send === 'function' ? link.send(event, { ...payload, mapId: currentArea }) : false);
 
   /** hp 송신. dm = 이번에 받은 타별 피해 (다른 화면의 피해 숫자용, 사이클 10 확장) */
   function sendHp(by, dm) {
@@ -667,7 +695,7 @@ export function mount(root, app, opts = {}) {
     ensureSprites();
     const x = Math.round(me.x);
     const y = Math.round(me.y);
-    const a = { x, y, dir, seq: ++atkSeq, job: atk.job, cooldown: atk.cooldown, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
+    const a = { user_id: me.user_id, x, y, dir, seq: ++atkSeq, job: atk.job, cooldown: atk.cooldown, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
     if (debug) atkBoxes.push({ box: attackBox(x, y, dir, a.w), at: now });
     if (send('atk', a)) cstats.atkSent++;
     if (atk.job !== 'warrior') projectiles.add(a, now, isHost());
@@ -763,7 +791,7 @@ export function mount(root, app, opts = {}) {
   function electHost() {
     if (!me) return;
     let min = me.user_id;
-    for (const uid of players.keys()) if (uid < min) min = uid;
+    for (const [uid, player] of players) if (sameArea(player, me) && uid < min) min = uid;
     if (min === hostId) return;
     const was = isHost();
     hostId = min;
@@ -773,10 +801,49 @@ export function mount(root, app, opts = {}) {
     if (isHost()) hostSince = performance.now();
   }
 
+  function configureArea(nextMap) {
+    map = nextMap;
+    platforms = map.platforms || []; ropes = map.ropes || [];
+    world = worldFromMap(map);
+    Object.assign(BODY_OPT, { platforms, ropes, groundY: world.groundY, minX: world.minX, maxX: world.maxX });
+    zones = mobDefs ? normalizeZones(map.spawns || [], platforms, world, mobDefs.kinds) : [];
+    sim = null; mobView?.clear();
+    if (mobDefs) mobView = createMobView({ kinds: mobDefs.kinds, onDamage: (v, dms) => showHits(dms, v.x, v.y - v.spec.size.h, 'hit', performance.now()) });
+    const cached = areaSnapshots.get(currentArea);
+    if (cached && performance.now() - cached.at < 30000 && mobView) mobView.apply(cached.list, performance.now(), true);
+    camY = null; camRef = world.groundY;
+    setText(miniName, AREA_NAMES[currentArea]); lastMiniPaint = -Infinity;
+  }
+
+  function enterPortal(now) {
+    if (!me || me.dead || connection !== 'connected' || now < portalReadyAt) return false;
+    const portal = nearbyPortal(map, me);
+    if (!portal) return false;
+    portalReadyAt = now + 1600;
+    input.clear(); pendingFx = null; sentKey = '';
+    if (mobView) areaSnapshots.set(currentArea, { list: sim ? sim.snapshot() : mobView.latest(), at: now });
+    currentArea = portal.to; me.mapId = currentArea;
+    configureArea(areaCatalog.get(currentArea));
+    const x = portal.entry === 'left' ? 230 : world.width - 230;
+    me.body = createBody(x, world.groundY, world.groundY);
+    me.x = me.targetX = x; me.y = me.yTo = world.groundY;
+    me.s = 'idle'; me.anim = 'idle'; me.attackUntil = 0;
+    me.invulnUntil = now + 2000;
+    drops.clear(); stones.clear(); projectiles.clear(); slashes.clear(); dmgNums.clear(); fx.clear();
+    hostId = null; electHost();
+    announce = true; announceHp = true; resendDrops = true;
+    link.sendMove({ x: me.x, y: me.y, s: 'idle', dir: me.dir < 0 ? 'left' : 'right', mapId: currentArea }).catch(() => {});
+    link.updateSelf?.({ mapId: currentArea, x: me.x, y: me.y }).catch(() => {});
+    chatLog.addSystem(`${AREA_NAMES[currentArea]}에 도착했어요.`);
+    portalBtn.hidden = true; computeLayout();
+    canvas.focus({ preventScroll: true });
+    return true;
+  }
+
   /** 호스트 시뮬레이션 시작(첫 연결 1.5초 뒤). 받은 상태가 있으면 이어서, 없으면 처음부터 채운다 */
   function startSim(now) {
     if (sim || !mobDefs || !zones.length || !mobView) return;
-    sim = createMobSim({ kinds: mobDefs.kinds, zones, getPlayers: () => [...players.values()] });
+    sim = createMobSim({ kinds: mobDefs.kinds, zones, getPlayers: () => [...players.values()].filter((p) => sameArea(p, me)) });
     const known = mobView.latest();
     if (known.length) sim.load(known, now);
     else sim.fill(now);
@@ -817,7 +884,7 @@ export function mount(root, app, opts = {}) {
     const d = drops.get(dropId);
     if (!d) return;
     const pl = players.get(uid);
-    if (!pl || pl.dead || Math.abs(pl.x - d.x) > PICK_RANGE.x + 80 || Math.abs(pl.y - d.y) > PICK_RANGE.y + 80) return;
+    if (!pl || !sameArea(pl, me) || pl.dead || Math.abs(pl.x - d.x) > PICK_RANGE.x + 80 || Math.abs(pl.y - d.y) > PICK_RANGE.y + 80) return;
     drops.remove(dropId);
     send('picked', { drop_id: dropId, user_id: uid, buff: d.buff });
     if (uid === me.user_id) gainBuff(d.buff);
@@ -837,12 +904,20 @@ export function mount(root, app, opts = {}) {
   }
 
   function onGameEvent(event, p) {
+    const packetArea = normalizeMapId(p.mapId);
+    // 맵에 들어온 직후 호스트가 되더라도 이전 몬스터 상태를 이어 받는다.
+    if (event === 'mobs') {
+      const occupants = [...players.values()].filter((v) => normalizeMapId(v.mapId) === packetArea).map((v) => v.user_id).sort();
+      if (occupants[0] === p.host && p.list) areaSnapshots.set(packetArea, { list: p.list, at: performance.now() });
+    }
+    if (packetArea !== currentArea) return;
+    if (p.host && p.host !== hostId) return;
     const now = performance.now();
     switch (event) {
       case 'atk': {
         cstats.atkRecv++;
         const pl = players.get(p.user_id);
-        if (!pl || pl.isSelf || !acceptJobAttack(pl, p, now)) return;
+        if (!pl || pl.isSelf || !sameArea(pl, me) || !acceptJobAttack(pl, p, now)) return;
         const c = clampAttack(p); // 받는 쪽 상한: w≤175, hits≤4, dmax≤60, el 0~3
         if (c.w !== p.w || c.hits !== p.hits || c.dmax !== p.dmax || c.el !== p.el) cstats.atkCapped++;
         const animMs = Math.max(120, Math.min(COMBAT.attackAnimMs, now - (pl.lastAtkAt || 0)));
@@ -857,6 +932,9 @@ export function mount(root, app, opts = {}) {
         if (isHost() && c.job === 'warrior') hostAttack({ ...p, ...c }, now);
         break;
       }
+      case 'impact':
+        projectiles.impact(p.id, p.x, p.y, now, p.job);
+        break;
       case 'hp': {
         cstats.hpRecv++;
         const pl = players.get(p.user_id);
@@ -969,6 +1047,10 @@ export function mount(root, app, opts = {}) {
 
   function update(dt, now) {
     if (me) {
+      const near = connection === 'connected' && now >= portalReadyAt ? nearbyPortal(map, me) : null;
+      portalBtn.hidden = !near;
+      if (near) setText(portalBtn, `${AREA_NAMES[near.to]} 이동 ↑`);
+      if (near && input.upHeld()) enterPortal(now);
       // 내 캐릭터: 연결 중일 때만 입력을 받는다. 연결이 끊겨도 공중이면 중력으로 착지까지 진행한다.
       let inp = NO_INPUT;
       if (connection === 'connected') {
@@ -1029,12 +1111,12 @@ export function mount(root, app, opts = {}) {
         const rx = Math.round(me.x);
         const ry = Math.round(me.y);
         const dir = me.dir < 0 ? 'left' : 'right';
-        const key = `${rx}|${ry}|${dir}|${me.s}`;
+        const key = `${currentArea}|${rx}|${ry}|${dir}|${me.s}`;
         if (key !== sentKey || announce || pendingFx) {
           lastMoveSentAt = now;
           sentKey = key;
           announce = false;
-          const payload = { x: rx, y: ry, dir, s: me.s };
+          const payload = { x: rx, y: ry, dir, s: me.s, mapId: currentArea };
           if (pendingFx) { payload.fx = pendingFx; stats.fxSent++; }
           pendingFx = null;
           link.sendMove(payload).catch(() => {});
@@ -1044,7 +1126,7 @@ export function mount(root, app, opts = {}) {
       updateCamera(dt);
     }
     for (const p of players.values()) {
-      if (p.isSelf) continue;
+      if (p.isSelf || !sameArea(p, me)) continue;
       // 원격 보간: 등속(160/초) 추적 + 뒤처진 만큼 가속, 너무 멀면 순간 이동. 대시 직후에는 대시 속도 이상.
       const diff = p.targetX - p.x;
       const dist = Math.abs(diff);
@@ -1087,7 +1169,7 @@ export function mount(root, app, opts = {}) {
     }
     if (resendDrops && connection === 'connected') {
       resendDrops = false;
-      if (isHost()) for (const d of drops.list().slice(-10)) send('drop', { id: d.id, item: d.item, x: Math.round(d.x), y: Math.round(d.y), ttl: Math.max(1, Math.round(d.expires - now)) });
+      if (isHost()) for (const d of drops.list().slice(-10)) send('drop', { id: d.id, buff: d.buff, x: Math.round(d.x), y: Math.round(d.y), ttl: Math.max(1, Math.round(d.expires - now)) });
     }
     drops.update(now);
     dmgNums.update(now);
@@ -1106,6 +1188,7 @@ export function mount(root, app, opts = {}) {
         const radius = p.job.splash;
         hostAttack(p.damage, now, { x1: collision.impactX - radius, x2: collision.impactX + radius, y1: p.y - radius, y2: p.y + radius }, new Set([r.mob.id]), p.job.targets - 1);
       }
+      if (r) send('impact', { id: p.id, x: collision.impactX, y: p.y, job: p.job.id });
       return r ? { ...r, impactX: collision.impactX } : null;
     }, (p, box) => mobView ? projectileCollision(p, box, mobView.list, mobBox) : null);
     slashes.update(now);
@@ -1179,12 +1262,18 @@ export function mount(root, app, opts = {}) {
     lastCamX = camX;
     const cy = cam.camY;
     const ctx = canvas.getContext('2d');
-    drawMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
+    if (currentArea === 'village') drawMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
+    else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
+    drawPortals(ctx, map, camX, cy, k, now);
+    if (now - lastMiniPaint > 100 && !miniBody.hidden) {
+      lastMiniPaint = now;
+      drawMinimap(miniCanvas.getContext('2d'), map, players.values(), mobView?.list || [], me, { x: camX, y: cy, w: viewW, h: viewH });
+    }
     if (debugPlatforms && platforms.length) drawPlatformDebug(ctx, platforms, camX, cy, k);
     if (debug && ropes.length) drawRopeDebug(ctx, ropes, camX, cy, k); // (사이클 10) 로프 선 (그림은 아트 ground 레이어)
 
     const order = [];
-    for (const p of players.values()) if (!p.isSelf) order.push(p);
+    for (const p of players.values()) if (!p.isSelf && sameArea(p, me)) order.push(p);
     order.sort((a, b) => a.x - b.x);
     order.push(me); // 내 캐릭터는 마지막
     const visible = [];
@@ -1586,7 +1675,7 @@ export function mount(root, app, opts = {}) {
 
   // --- 테스트 훅 상태 공급 -----------------------------------------------------
   const snap = (p) => ({
-    user_id: p.user_id, nickname: p.nickname, avatar: { ...p.avatar }, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10,
+    user_id: p.user_id, nickname: p.nickname, avatar: { ...p.avatar }, mapId: p.mapId, x: Math.round(p.x * 10) / 10, y: Math.round(p.y * 10) / 10,
     dir: p.dir < 0 ? 'left' : 'right', lastChat: p.lastChat, bubble: p.bubble ? p.bubble.text : null, anim: p.anim,
     frame: avatarR ? frameOf(p, performance.now()) : null,
     s: p.s, // 나: 물리 상태, 원격: 마지막으로 받은 s (없으면 null, 옛 crouch는 prone)
@@ -1606,6 +1695,7 @@ export function mount(root, app, opts = {}) {
   app.providers.room = () => ({
     room: { id: roomId, name: roomName, locked, members: players.size, nickname: myNick, owner: isOwner },
     world: {
+      mapId: currentArea, name: AREA_NAMES[currentArea], portals: map ? areaPortals(map) : [],
       platforms: platforms.map((p) => ({ ...p })), ropes: ropes.map((r) => ({ ...r })), camY: camY === null ? null : Math.round(camY * 10) / 10,
       camX: lastCamX === null ? null : Math.round(lastCamX * 10) / 10, // (사이클 10) 카메라 경계 확인용
     },
@@ -1685,7 +1775,9 @@ export function mount(root, app, opts = {}) {
     }
     if (!alive) return;
     if (!profile || !roomId || !NICK_RE.test(myNick || '')) { clearRoomSession(); app.go('lobby'); return; }
-    map = await app.mapAssets.catch(() => null);
+    villageMap = await app.mapAssets.catch(() => null);
+    for (const id of AREA_IDS) areaCatalog.set(id, areaMap(id, villageMap));
+    map = areaCatalog.get(currentArea);
     if (!alive) return;
     platforms = map && Array.isArray(map.platforms) ? map.platforms : Object.freeze([]);
     ropes = map && Array.isArray(map.ropes) ? map.ropes : Object.freeze([]); // (사이클 10)

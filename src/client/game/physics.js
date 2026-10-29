@@ -1,3 +1,4 @@
+import { normalizeMapId } from './areas.js';
 // 캐릭터 물리 (ARCHITECTURE 복셀 아트 계약 사이클 6 조작 + 사이클 8 계약). 월드 단위, 순수 함수 — Node 단위 시험 가능.
 //   중력 2000/s², 점프 초속 650 → 최고 높이 105.6, 체공 0.65초. 공중 좌우 이동 허용.
 //   (사이클 8) 발판: 맵 manifest platforms [{ id, x1, x2, y }] (y = 윗면 = 서는 높이). 한 방향 통과 —
@@ -316,7 +317,7 @@ export function cleanMove(p) {
   const y = typeof p.y === 'number' && Number.isFinite(p.y)
     ? Math.min(MAX_WORLD_Y, Math.max(PHYS.ceilY, p.y)) : null;
   const dir = p.dir === 'left' || p.dir === -1 ? 'left' : (p.dir === 'right' || p.dir === 1 ? 'right' : null);
-  const out = { user_id: p.user_id, x: p.x, y, dir, s: normState(p.s) };
+  const out = { user_id: p.user_id, mapId: normalizeMapId(p.mapId), x: p.x, y, dir, s: normState(p.s) };
   if (isFx(p.fx)) out.fx = p.fx;
   return out;
 }

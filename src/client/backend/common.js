@@ -1,3 +1,4 @@
+import { normalizeMapId } from '../game/areas.js';
 import { normalizeJob } from '../game/jobs.js';
 // 두 어댑터와 화면이 공유하는 형식 검사. 서버(supabase/migrations/20261015000000_rooms.sql)와 같은 규칙.
 import { NICK_RE, ROOM_NAME_MAX, ROOM_PW_MIN, ROOM_PW_MAX, CHAT_MAX } from '../constants.js';
@@ -69,6 +70,7 @@ export function cleanPresenceState(s) {
   if (typeof s.user_id !== 'string' || !s.user_id || s.user_id.length > 64) return null;
   return {
     user_id: s.user_id,
+    mapId: normalizeMapId(s.mapId),
     nickname: typeof s.nickname === 'string' ? s.nickname.slice(0, 32) : '',
     avatar: s.avatar && typeof s.avatar === 'object' ? s.avatar : null,
     x: isNum(s.x) ? s.x : null,
@@ -139,7 +141,7 @@ export function createThrottle(intervalMs, send, { urgentMax = 4, urgentWindowMs
 // (사이클 9) 게임 broadcast 이벤트: atk, hp, mobs, drop, pick, picked (ARCHITECTURE "사이클 9 계약").
 // 두 어댑터가 같은 규칙으로 보내고(send) 받는다(onEvent). 형식이 틀리면 버린다.
 // 보낸 사람 표시: atk/hp/pick의 user_id와 mobs/drop/picked의 host는 어댑터가 자기 uid로 덮어쓴다(위장은 알려진 한계).
-export const GAME_EVENTS = Object.freeze(['atk', 'hp', 'mobs', 'drop', 'pick', 'picked']);
+export const GAME_EVENTS = Object.freeze(['atk', 'hp', 'mobs', 'drop', 'pick', 'picked', 'impact']);
 const GAME_EVENT_SET = new Set(GAME_EVENTS);
 export const isGameEvent = (e) => typeof e === 'string' && GAME_EVENT_SET.has(e);
 const UID_OK = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
@@ -161,7 +163,7 @@ export function stampGameEvent(event, payload, uid) {
 }
 
 /** 수신 payload 정리. 깨진 값이면 null */
-export function cleanGameEvent(event, p) {
+function cleanGameEventPayload(event, p) {
   if (!isGameEvent(event) || !p || typeof p !== 'object') return null;
   switch (event) {
     case 'atk':
@@ -172,6 +174,10 @@ export function cleanGameEvent(event, p) {
         user_id: p.user_id, x: p.x, y: p.y, dir: p.dir === 'left' ? 'left' : 'right', seq: Number.isInteger(p.seq) ? p.seq : 0,
         w: isNum(p.w) ? p.w : null, hits: isNum(p.hits) ? p.hits : null, dmin: isNum(p.dmin) ? p.dmin : null, dmax: isNum(p.dmax) ? p.dmax : null, el: isNum(p.el) ? p.el : null,
       };
+    case 'impact':
+      if (!UID_OK(p.host) || typeof p.id !== 'string' || !/^[a-zA-Z0-9:_-]{1,110}$/.test(p.id)) return null;
+      if (!numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
+      return { host: p.host, id: p.id, x: p.x, y: p.y, job: normalizeJob(p.job) };
     case 'hp':
       if (!UID_OK(p.user_id) || !numIn(p.hp, 0, 100000) || !numIn(p.max, 1, 100000)) return null;
       // dm = (사이클 10 확장) 이번에 받은 타별 피해 (피해 숫자용)
@@ -203,6 +209,12 @@ export function cleanGameEvent(event, p) {
   }
 }
 
+/** Every game packet belongs to one area; old clients belong to the village. */
+export function cleanGameEvent(event, p) {
+  const payload = cleanGameEventPayload(event, p);
+  return payload ? { ...payload, mapId: normalizeMapId(p.mapId) } : null;
+}
+
 /**
  * 게임 이벤트 송신 제한 (Supabase broadcast 한도 보호).
  *   mobs: 최소 180ms 간격, 마지막 값만 보낸다(throttle).  그 밖: 이벤트마다 1초에 최대 12건, 넘으면 버린다(stats.evDropped).
@@ -218,8 +230,8 @@ export function createEventGate(send, stats) {
       let r = recent.get(event);
       if (!r) { r = []; recent.set(event, r); }
       while (r.length && now - r[0] >= 1000) r.shift();
-      // atk은 1초 10건(사이클 10: speed 최소 0.10초 = 10회/초, move와 같은 상한), 나머지 12건
-      if (r.length >= (event === 'atk' ? 10 : 12)) { if (stats) stats.evDropped = (stats.evDropped || 0) + 1; return false; }
+      // Two shots per fast attack, with room for delivery bunching; all event rates remain bounded.
+      if (r.length >= (event === 'atk' ? 10 : event === 'impact' ? 40 : 12)) { if (stats) stats.evDropped = (stats.evDropped || 0) + 1; return false; }
       r.push(now);
       send(event, payload);
       return true;

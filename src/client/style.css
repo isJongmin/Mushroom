@@ -207,3 +207,19 @@ body[data-screen="room"] { background: var(--letterbox); }
 .job-card strong { font-size: 15px; }
 .job-card__skill { font-size: 11px; color: #70604e; }
 .job-card__description { font-size: 12px; line-height: 1.5; overflow-wrap: anywhere; }
+
+/* 미니맵은 HUD 버튼 아래 우측에 고정하고 접을 수 있다. */
+.game-minimap { position: absolute; z-index: 2; right: 12px; top: 66px; width: 212px; border: 2px solid #42615a; background: #ecf1d9; color: #2a443d; box-shadow: 0 3px #283e35; }
+.minimap-head { display: flex; justify-content: space-between; align-items: center; gap: 6px; padding: 5px 7px; font-size: 11px; font-weight: 800; }
+.minimap-head button { background: #d3dfbe; color: #304a3b; border: 1px solid #789071; width: 25px; min-height: 25px; cursor: pointer; }
+.minimap-body { padding: 0 4px 4px; }
+.minimap-body canvas { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.minimap-body p { margin: 4px 0 0; font-size: 9px; text-align: center; }
+.portal-action { position: absolute; z-index: 3; left: 50%; bottom: 70px; transform: translateX(-50%); white-space: nowrap; }
+@media (max-width: 719px) {
+  .game-minimap { top: 98px; right: 8px; width: 144px; }
+  .minimap-head { font-size: 10px; padding: 3px 4px; }
+  .minimap-body p { font-size: 8px; }
+  .portal-action { bottom: 104px; font-size: 12px; }
+  .hud-l > [data-testid="room-job"] { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
+}

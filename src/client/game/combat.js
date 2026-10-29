@@ -415,12 +415,39 @@ export function projectileCollision(p, box, mobs, getBox) {
 /** Traveling job attacks, simulated identically for spectators; only host hit() mutates mobs. */
 export function createJobProjectiles() {
   const list = [], bursts = [];
+  const completed = new Map();
+  let localSequence = 0;
+  function prune(now) {
+    for (const [id, at] of completed) if (now - at > 10000) completed.delete(id);
+    while (completed.size > 1024) completed.delete(completed.keys().next().value);
+  }
+  function finish(id, x, y, now, job) {
+    prune(now);
+    if (completed.has(id)) return false;
+    completed.set(id, now);
+    bursts.push({ x, y, at: now, color: job.color, radius: job.splash || 26 });
+    if (bursts.length > 160) bursts.shift();
+    prune(now);
+    return true;
+  }
   return {
+    /** Host acknowledgement also works before its attack arrives or after a kill snapshot. */
+    impact(id, x, y, now, jobId) {
+      const p = list.find(p => p.id === id);
+      for (let i = list.length - 1; i >= 0; i--) if (list[i].id === id) list.splice(i, 1);
+      return finish(id, x, y, now, p?.job || jobDefinition(jobId));
+    },
     add(a, now, authoritative = false) {
       const j = jobDefinition(a.job);
       if (!j.speed) return;
       const count = j.id === 'mage' ? 1 : 2;
-      for (let i = 0; i < count; i++) list.push({ a, job: j, x: a.x, y: a.y - 30 - i * 9, distance: 0, at: now + i * 75, authoritative, dir: a.dir === 'left' ? -1 : 1, damage: { ...a, hits: count === 1 ? a.hits : Math.ceil((a.hits - i) / count) } });
+      prune(now);
+      const attackId = a.user_id && Number.isSafeInteger(a.seq) ? `${a.user_id}:${a.seq}` : `local:${localSequence++}`;
+      for (let i = 0; i < count; i++) {
+        const id = `${attackId}:${i}`;
+        if (completed.has(id) || list.some(p => p.id === id)) continue;
+        list.push({ id, a, job: j, x: a.x, y: a.y - 30 - i * 9, distance: 0, at: now + i * 75, authoritative, dir: a.dir === 'left' ? -1 : 1, damage: { ...a, hits: count === 1 ? a.hits : Math.ceil((a.hits - i) / count) } });
+      }
       if (list.length > 160) list.splice(0, list.length - 160);
     },
     update(dt, now, hit, visualHit) {
@@ -432,7 +459,7 @@ export function createJobProjectiles() {
         const r = p.authoritative ? hit?.(p, box) : visualHit?.(p, box);
         p.x = r ? Math.max(Math.min(p.x, next), Math.min(Math.max(p.x, next), r.impactX ?? r.mob.x)) : next; p.distance += travel;
         if (r || p.distance >= p.a.w) {
-          if (r) bursts.push({ x: p.x, y: p.y, at: now, color: p.job.color, radius: p.job.splash || 26 });
+          if (r) finish(p.id, p.x, p.y, now, p.job);
           list.splice(i, 1);
         }
       }
@@ -464,7 +491,7 @@ export function createJobProjectiles() {
       }
       ctx.restore();
     },
-    clear() { list.length = 0; bursts.length = 0; },
+    clear() { list.length = 0; bursts.length = 0; completed.clear(); },
     get count() { return list.length; },
   };
 }

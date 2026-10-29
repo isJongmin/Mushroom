@@ -114,3 +114,15 @@ CANVAS_MODULE=/absolute/path/to/@napi-rs/canvas/index.js node tests/avatar-hat.t
 ```
 
 브라우저 E2E를 대신하는 검사는 아니며, 충돌·전송 형식·프로필 호환·재생성 타이밍과 Canvas 합성 회귀를 검사한다.
+
+## 연결 맵·외형 확장 검사
+
+```sh
+node tests/projectiles-respawn.test.mjs
+node tests/map-protocol.test.mjs
+node tests/areas.test.mjs
+node tests/wardrobe-loader.test.mjs
+python tests/avatar-wardrobe.test.py
+```
+
+발사체 소멸/확정 이벤트 순서, 안전 리스폰 재시도, 맵별 패킷 형식, 포탈 왕복/밧줄 도달, 미니맵 좌표와16개 코디 로더를 검사한다.

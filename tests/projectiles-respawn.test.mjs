@@ -52,3 +52,37 @@ players=[]; sim.step(0,1000); assert.equal(sim.size,3);
 const wide=createMobSim({kinds,zones:[{...zones[0],x2:1000,max:1}],rnd:()=>.5,getPlayers:()=>[{x:500,y:100}]});
 wide.fill(0); assert.ok(Math.abs(wide.snapshot()[0].x-500)>=90);
 console.log('Swept host/spectator projectiles, impact effects and safe deferred mob spawning pass');
+
+// Authoritative impacts survive a death snapshot arriving before the visual shot.
+const ackShots=createJobProjectiles();
+const ackAttack={...attackStats({},'mage'),user_id:'player-1',seq:42,x:0,y:100,dir:'right'};
+ackShots.add(ackAttack,0);
+ackShots.update(.01,10,()=>assert.fail('replicas cannot damage'),()=>null);
+assert.equal(ackShots.count,1);
+assert.equal(ackShots.impact('player-1:42:0',37,70,20,'mage'),true);
+assert.equal(ackShots.count,0);
+assert.equal(ackShots.impact('player-1:42:0',37,70,21,'mage'),false);
+let burstRects=0;
+ackShots.draw({save(){},restore(){},setTransform(){},fillRect(){burstRects++;}},0,0,1,21);
+assert.equal(burstRects,10); // Duplicate acknowledgements produce one burst.
+ackShots.clear();
+ackShots.impact('player-1:42:0',37,70,0,'mage');
+ackShots.add(ackAttack,20); assert.equal(ackShots.count,0); // Ack before attack.
+ackShots.clear(); ackShots.add(ackAttack,0);
+ackShots.update(.2,200,undefined,()=>({mob:{x:60},impactX:37}));
+assert.equal(ackShots.impact('player-1:42:0',37,70,210,'mage'),false); // Local prediction already burst.
+const {cleanGameEvent,stampGameEvent,createEventGate,isGameEvent}=await import('../src/client/backend/common.js');
+assert.equal(isGameEvent('impact'),true);
+const impact={id:'player-1:42:0',x:37,y:70,job:'mage',mapId:'forest'};
+const packet=cleanGameEvent('impact',stampGameEvent('impact',impact,'host-1'));
+assert.equal(packet.host,'host-1'); assert.equal(packet.id,impact.id); assert.equal(packet.job,'mage');
+assert.equal(cleanGameEvent('impact',{...packet,id:'bad id'}),null);
+assert.equal(cleanGameEvent('impact',{...packet,x:Infinity}),null);
+assert.equal(cleanGameEvent('impact',{...packet,id:'x'.repeat(111)}),null);
+assert.equal(cleanGameEvent('impact',{...packet,host:''}),null);
+const gateStats={}; let sent=0;
+const gate=createEventGate(()=>sent++,gateStats);
+for(let i=0;i<40;i++) assert.equal(gate.push('impact',packet),true);
+assert.equal(gate.push('impact',packet),false); assert.equal(sent,40); assert.equal(gateStats.evDropped,1);
+gate.cancel();
+console.log('Authoritative impact ids, reordered acknowledgements, deduplicated bursts and bounded packet rate pass');

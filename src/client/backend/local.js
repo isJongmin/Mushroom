@@ -1,3 +1,4 @@
+import { normalizeMapId } from '../game/areas.js';
 // local 모드 어댑터 — 개발·QA 전용. 실제 서비스에 쓰지 않는다. 외부 네트워크(CDN 포함)에 접근하지 않는다.
 //
 // 서버(supabase/migrations/20261015000000_rooms.sql)의 RPC 규칙을 같은 의미로 흉내 낸다.
@@ -161,7 +162,7 @@ function postToRoom(roomId, msg) {
 //   QA 훅: 같은 방 채널로 { type: 'debug-drop', user_id, fail } 를 보내면 그 사용자의 연결이 서버에 끊긴 것처럼
 //   닫히고 onDrop('CHANNEL_ERROR')가 불린다. fail = 다음 구독 시도 n번을 NETWORK로 실패시킨다(백오프 확인용).
 function createConnection(roomId, uid, handlers, self, backend, onClose) {
-  const myState = { ...self, user_id: uid };
+  const myState = { ...self, mapId: normalizeMapId(self.mapId), user_id: uid };
   const members = new Map(); // user_id -> { state, lastSeen }
   const seenChat = new Set();
   let closed = false;
@@ -185,7 +186,7 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
     members.set(st.user_id, { state: st, lastSeen: Date.now() });
     if (!prev) return 'new';
     const p = prev.state;
-    return p.nickname !== st.nickname || JSON.stringify(p.avatar) !== JSON.stringify(st.avatar) ? 'changed' : 'same';
+    return p.mapId !== st.mapId || p.nickname !== st.nickname || JSON.stringify(p.avatar) !== JSON.stringify(st.avatar) ? 'changed' : 'same';
   };
 
   const deliver = (raw) => {
@@ -294,9 +295,9 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
   const api = {
     roomId,
     deliver,
-    sendMove({ x, y, dir, s, fx }) {
+    sendMove({ x, y, dir, s, fx, mapId }) {
       if (closed) return Promise.reject(new AppError('NETWORK'));
-      const p = { user_id: uid, x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' };
+      const p = { user_id: uid, mapId: normalizeMapId(mapId), x, y, dir: dir === 'left' ? 'left' : 'right', s: isMoveState(s) ? s : 'idle' };
       if (isFx(fx)) p.fx = fx;
       mover.push(p, !!p.fx); // fx는 급송 (2초에 4회 상한)
       return Promise.resolve();
@@ -306,10 +307,10 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
       if (closed || !isGameEvent(event) || !payload || typeof payload !== 'object') return false;
       return gate.push(event, stampGameEvent(event, payload, uid));
     },
-    /** 닉네임/아바타가 바뀌었을 때만 (최소 2초 간격) */
+    /** Appearance changes and portal arrivals only (minimum 2-second Presence interval). */
     async updateSelf(partial) {
       if (closed) throw new AppError('NETWORK');
-      for (const k of ['nickname', 'avatar']) if (partial && own(partial, k)) myState[k] = partial[k];
+      for (const k of ['nickname', 'avatar', 'mapId', 'x', 'y']) if (partial && own(partial, k)) myState[k] = k === 'mapId' ? normalizeMapId(partial[k]) : partial[k];
       await track('presence-heartbeat');
     },
     healthy() {

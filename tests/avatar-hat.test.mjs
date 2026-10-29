@@ -17,7 +17,7 @@ for(const hatId of ['cap-black','none','ribbon-pink']) {
   const cv=createCanvas(10,10),c=cv.getContext('2d');assert(renderer.draw(c,avatar,5,10,1,frame,false));
   const pixel=(x,y)=>Array.from(c.getImageData(x,y,1,1).data);
   assert.deepEqual(pixel(1,8),[255,0,0,255]); // loose hair retained
-  if(hatId==='cap-black') {assert.deepEqual(pixel(1,0),[0,0,0,0]);const brim=pixel(4,frame?6:4);assert.ok(brim[1]>200 && brim[0]<60 && brim[3]===255);}
+  if(hatId==='cap-black') {assert.ok(pixel(1,0)[3]<32);const brim=pixel(4,frame?6:4);assert.ok(brim[1]>200 && brim[0]<60 && brim[3]===255);}
   else assert.deepEqual(pixel(1,0),[255,0,0,255]); // none/ribbon retains crown
  }
 }

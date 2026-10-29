@@ -99,10 +99,22 @@ export function createAvatarRenderer(assets, opts = {}) {
           mc.drawImage(img, (f % have) * fw, 0, fw, fh, 0, 0, fw, fh);
         }
         const data = mc.getImageData(0, 0, fw, fh).data;
-        for (let y = fh - 1; y >= 0; y--) {
-          for (let x = 0; x < fw; x++) if (data[(y * fw + x) * 4 + 3] > 32) return Math.max(0, y - 1);
+        // 챙은 기울어져 있으므로 전역 최하단 대신 열별 경계를 사용한다.
+        // 3px 겹침으로 안티앨리어싱 경계의 투명한 틈도 채운다.
+        const tops = Array(fw).fill(null);
+        for (let x = 0; x < fw; x++) {
+          for (let y = fh - 1; y >= 0; y--) {
+            if (data[(y * fw + x) * 4 + 3] > 32) { tops[x] = Math.max(0, y - 3); break; }
+          }
         }
-        return 0;
+        const occupied = tops.map((v, x) => v === null ? -1 : x).filter((x) => x >= 0);
+        if (!occupied.length) return Array(fw).fill(0);
+        for (let x = 0; x < fw; x++) if (tops[x] === null) {
+          let nearest = occupied[0];
+          for (const j of occupied) if (Math.abs(j - x) < Math.abs(nearest - x)) nearest = j;
+          tops[x] = tops[nearest];
+        }
+        return tops;
       });
     }
     const t0 = performance.now();
@@ -116,7 +128,7 @@ export function createAvatarRenderer(assets, opts = {}) {
       c.save();
       if (hairTops && layers[i].part === 'hair') {
         c.beginPath();
-        hairTops.forEach((top, k) => c.rect(k * fw, top, fw, fh - top));
+        hairTops.forEach((tops, k) => tops.forEach((top, x) => c.rect(k * fw + x, top, 1, fh - top)));
         c.clip();
       }
       c.globalCompositeOperation = layers[i].blend;

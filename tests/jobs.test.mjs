@@ -21,10 +21,10 @@ for (const j of JOBS) {
     assert.equal(acceptJobAttack(pl,{...wire,seq:packet.seq+1},now+(slot?def.cooldown*1000:BASIC_INTERVAL_MS)),true);
     assert.equal(acceptJobAttack(pl,{...wire,seq:packet.seq+2},now+100000),true);
     assert.equal(acceptJobAttack(pl,{...wire,seq:packet.seq+3,x:10000},now+200000),false);
-    if(j.speed) {
+    if(def.speed) {
       const shots=createJobProjectiles(); shots.add(packet,0,true); assert.ok(shots.count);
       let hits=0; shots.update(.01,100, p => { hits+=p.damage.hits; return {mob:{x:1}}; });
-      shots.update(.01,300,p=>{hits+=p.damage.hits;return{mob:{x:1}};});
+      for(let time=200;time<=1200;time+=100) shots.update(.01,time,p=>{hits+=p.damage.hits;return{mob:{x:1}};});
       assert.equal(shots.count,0); assert.equal(hits,a.hits);
     }
   }

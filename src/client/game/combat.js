@@ -1,3 +1,4 @@
+import { drawProjectileVisual, drawImpactVisual } from './skill-visuals.js';
 import { jobDefinition, abilityDefinition } from './jobs.js';
 // (사이클 9) 전투: 판정 상자, 피해 숫자, 슬래시, HP 바, 유령, 비석. ARCHITECTURE "사이클 9 계약".
 // 좌표는 월드 단위. 그리기는 장치 px 컨텍스트(단위행렬)에 k = 장치 px / 월드로 하거나, HP 바·숫자처럼 CSS px 컨텍스트에 한다.
@@ -405,9 +406,23 @@ export function projectileCollision(p, box, mobs, getBox) {
     if (mob.s === 'die' || mob.hp <= 0) continue;
     const b = getBox(mob);
     if (!overlaps(box, b)) continue;
-    const impactX = p.dir > 0 ? Math.max(p.x, b.x1 - 8) : Math.min(p.x, b.x2 + 8);
-    const distance = (impactX - p.x) * p.dir;
-    if (!best || distance < best.distance) best = { mob, impactX, distance };
+    let impactX, impactY = p.y, distance;
+    if (Number.isFinite(p.nextX) && Number.isFinite(p.nextY)) {
+      // Segment vs expanded target: diagonal shots cannot hit empty corners of a swept AABB.
+      const radius = p.radius || 8;
+      let enter=0, leave=1, valid=true;
+      for (const [from, to, min, max] of [[p.x,p.nextX,b.x1-radius,b.x2+radius],[p.y,p.nextY,b.y1-radius,b.y2+radius]]) {
+        const delta=to-from;
+        if (Math.abs(delta)<1e-9) { if(from<min||from>max) valid=false; }
+        else { const a=(min-from)/delta, z=(max-from)/delta; enter=Math.max(enter,Math.min(a,z)); leave=Math.min(leave,Math.max(a,z)); }
+      }
+      if(!valid||enter>leave||leave<0||enter>1) continue;
+      distance=enter; impactX=p.x+(p.nextX-p.x)*enter; impactY=p.y+(p.nextY-p.y)*enter;
+    } else {
+      impactX = p.dir > 0 ? Math.max(p.x, b.x1 - 8) : Math.min(p.x, b.x2 + 8);
+      distance = (impactX - p.x) * p.dir;
+    }
+    if (!best || distance < best.distance) best = { mob, impactX, impactY, distance };
   }
   return best;
 }
@@ -423,76 +438,67 @@ export function createJobProjectiles() {
   }
   function finish(id, x, y, now, job) {
     prune(now);
-    if (completed.has(id)) return false;
+    if (completed.has(id)) { const burst=bursts.find(b=>b.id===id); if(burst){burst.x=x;burst.y=y;} return false; }
     completed.set(id, now);
-    bursts.push({ x, y, at: now, color: job.color, radius: job.splash || 26 });
+    bursts.push({ id, x, y, at: now, job: job.id, skill: job.skill || 0 });
     if (bursts.length > 160) bursts.shift();
     prune(now);
     return true;
   }
   return {
     /** Host acknowledgement also works before its attack arrives or after a kill snapshot. */
-    impact(id, x, y, now, jobId) {
+    impact(id, x, y, now, jobId, slot = 0) {
       const p = list.find(p => p.id === id);
       for (let i = list.length - 1; i >= 0; i--) if (list[i].id === id) list.splice(i, 1);
-      return finish(id, x, y, now, p?.job || jobDefinition(jobId));
+      return finish(id, x, y, now, p?.job || { ...jobDefinition(jobId), skill: slot });
     },
     add(a, now, authoritative = false) {
       const base = jobDefinition(a.job);
       const ability = abilityDefinition(a.job, a.skill ?? 0);
-      const j = { ...base, splash: ability.splash, targets: ability.targets };
+      if (!ability?.speed) return;
+      const j = { ...base, speed: ability.speed, splash: ability.splash, targets: ability.targets, skill: a.skill || 0 };
       if (!j.speed) return;
-      const count = Math.min(a.hits, j.id === 'mage' ? 1 : (a.skill ? 3 : 2));
+      const count = ability.shots;
       prune(now);
       const attackId = a.user_id && Number.isSafeInteger(a.seq) ? `${a.user_id}:${a.seq}` : `local:${localSequence++}`;
       for (let i = 0; i < count; i++) {
         const id = `${attackId}:${i}`;
         if (completed.has(id) || list.some(p => p.id === id)) continue;
-        list.push({ id, a, job: j, x: a.x, y: a.y - 30 - i * 9, distance: 0, at: now + i * 75, authoritative, dir: a.dir === 'left' ? -1 : 1, damage: { ...a, hits: count === 1 ? a.hits : Math.ceil((a.hits - i) / count) } });
+        const dir=a.dir === 'left' ? -1 : 1, clone=ability.pattern==='clones' ? Math.floor(i/3) : 0;
+        const angle=ability.pattern==='fan' ? (i-1)*ability.spread : 0;
+        const delay=ability.pattern==='fan'?0:ability.pattern==='clones'?clone*180+(i%3)*65:i*85;
+        list.push({ id, a, job: j, x: a.x + (clone?(-38+clone*43)*dir:0), y: a.y - 35 - clone*18,
+          angle, radius: ability.pattern==='saw'?27:8, distance:0, at:now+delay, authoritative, dir,
+          damage: { ...a, hits: Math.ceil((a.hits - i) / count) } });
       }
       if (list.length > 160) list.splice(0, list.length - 160);
     },
     update(dt, now, hit, visualHit) {
       for (let i = list.length - 1; i >= 0; i--) {
         const p = list[i]; if (now < p.at) continue;
-        const travel = Math.min(p.job.speed * dt, p.a.w - p.distance);
-        const next = p.x + p.dir * travel;
-        const box = { x1: Math.min(p.x, next) - 8, x2: Math.max(p.x, next) + 8, y1: p.y - 11, y2: p.y + 11 };
-        const r = p.authoritative ? hit?.(p, box) : visualHit?.(p, box);
-        p.x = r ? Math.max(Math.min(p.x, next), Math.min(Math.max(p.x, next), r.impactX ?? r.mob.x)) : next; p.distance += travel;
-        if (r || p.distance >= p.a.w) {
-          if (r) finish(p.id, p.x, p.y, now, p.job);
+        const travel = Math.min(p.job.speed * Math.min(dt, Math.max(0, (now-p.at)/1000)), p.a.w - p.distance);
+        const next = p.x + p.dir * Math.cos(p.angle) * travel, nextY=p.y + Math.sin(p.angle)*travel;
+        p.nextX=next; p.nextY=nextY;
+        const r=p.radius;
+        const box = { x1: Math.min(p.x, next) - r, x2: Math.max(p.x, next) + r, y1: Math.min(p.y,nextY) - r, y2: Math.max(p.y,nextY) + r };
+        const result = p.authoritative ? hit?.(p, box) : visualHit?.(p, box);
+        p.x = result ? (result.impactX ?? result.mob.x) : next;
+        p.y = result ? (result.impactY ?? p.y) : nextY;
+        p.distance += travel;
+        if (result || p.distance >= p.a.w) {
+          if (result) finish(p.id, p.x, p.y, now, p.job);
           list.splice(i, 1);
         }
       }
-      for (let i = bursts.length - 1; i >= 0; i--) if (now - bursts[i].at > 350) bursts.splice(i, 1);
+      for (let i = bursts.length - 1; i >= 0; i--) if (now - bursts[i].at > 600) bursts.splice(i, 1);
     },
     draw(ctx, camX, camY, k, now) {
-      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0); ctx.imageSmoothingEnabled = false;
-      for (const p of list) {
-        if (now < p.at) continue;
-        ctx.save(); ctx.translate(Math.round((p.x - camX) * k), Math.round((p.y - camY) * k)); ctx.scale(p.dir * k, k);
-        ctx.fillStyle = p.job.color;
-        for (let n = 1; n < 5; n++) { ctx.globalAlpha = (5 - n) / 7; ctx.fillRect(-n * 9, -2, 7, 4); }
-        ctx.globalAlpha = 1;
-        if (p.job.id === 'archer') {
-          ctx.fillStyle = '#593a29'; ctx.fillRect(-22, -2, 27, 4); ctx.fillStyle = '#fff3bf';
-          ctx.beginPath(); ctx.moveTo(13, 0); ctx.lineTo(1, -7); ctx.lineTo(1, 7); ctx.closePath(); ctx.fill();
-          ctx.fillStyle = '#7debb0'; ctx.fillRect(-24, -6, 8, 4); ctx.fillRect(-24, 2, 8, 4);
-        } else if (p.job.id === 'thief') {
-          ctx.rotate((now - p.at) * .025); ctx.fillStyle = '#23415e'; ctx.fillRect(-10, -10, 20, 20);
-          ctx.fillStyle = '#bbf3ff'; ctx.beginPath(); for (let n = 0; n < 8; n++) { const a = n * Math.PI / 4; const r = n % 2 ? 4 : 16; ctx[n ? 'lineTo' : 'moveTo'](Math.cos(a) * r, Math.sin(a) * r); } ctx.closePath(); ctx.fill(); ctx.fillStyle = '#365676'; ctx.fillRect(-3,-3,6,6);
-        } else {
-          ctx.rotate(Math.PI / 4); ctx.fillStyle = '#6844b0'; ctx.fillRect(-12,-12,24,24); ctx.fillStyle = '#ba99ff'; ctx.fillRect(-9,-9,18,18); ctx.fillStyle = '#fff1ff'; ctx.fillRect(-4,-4,8,8);
-        }
-        ctx.restore();
-      }
-      for (const b of bursts) {
-        const t = (now - b.at) / 350; ctx.globalAlpha = 1 - t; ctx.fillStyle = b.color;
-        for (let n = 0; n < 10; n++) { const a = n * Math.PI / 5; const r = b.radius * t; const size = (6 - t * 4) * k; ctx.fillRect((b.x - camX + Math.cos(a) * r) * k, (b.y - camY + Math.sin(a) * r) * k, size, size); }
-      }
+      ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
+      for (const p of list) if (now >= p.at) drawProjectileVisual(ctx,p,camX,camY,k,now);
+      for (const b of bursts) drawImpactVisual(ctx,b,camX,camY,k,now);
       ctx.restore();
     },
+    snapshot() { return { shots: list.map(p=>({id:p.id,x:p.x,y:p.y,angle:p.angle,at:p.at,pattern:abilityDefinition(p.a.job,p.a.skill??0).pattern,hits:p.damage.hits})), bursts:bursts.map(b=>({...b})) }; },
     clear() { list.length = 0; bursts.length = 0; completed.clear(); },
     get count() { return list.length; },
   };

@@ -1,4 +1,5 @@
-import { drawSkillIcon, drawAbilityEffect } from '../game/skill-visuals.js';
+import { createSkillAttacks } from '../game/attack-patterns.js';
+import { drawSkillIcon } from '../game/skill-visuals.js';
 import { AREA_IDS, AREA_NAMES, normalizeMapId, areaMap, areaPortals, nearbyPortal, sameArea, drawBiomeMap, drawPortals, drawMinimap } from '../game/areas.js';
 import { normalizeJob, jobDefinition, acceptJobAttack, abilityDefinition, abilityStats, BASIC_INTERVAL_MS } from '../game/jobs.js';
 import { createJobProjectiles } from '../game/combat.js';
@@ -129,6 +130,7 @@ export function mount(root, app, opts = {}) {
   const dmgNums = createDamageNumbers();
   const slashes = createSlashes();
   const projectiles = createJobProjectiles();
+  const skillAttacks = createSkillAttacks();
   const stones = createTombstones();
   const drops = createDrops();
   let mobDefs = null; // normalizeMobManifest 결과 | null (몬스터 없음)
@@ -218,7 +220,7 @@ export function mount(root, app, opts = {}) {
     const icon = h('canvas', { width: '48', height: '48', 'aria-hidden': 'true' });
     drawSkillIcon(icon.getContext('2d'), job.id, slot, 48);
     const timer = h('span', { class: 'skill-timer', 'aria-hidden': 'true' });
-    const btn = h('button', { type: 'button', class: 'skill-button', testid: `skill-${slot}`, 'aria-label': `${a.name}, 재사용 ${a.cooldown}초`, title: `${a.name} · ${a.cooldown}초 · ${slot}키` },
+    const btn = h('button', { type: 'button', class: 'skill-button', testid: `skill-${slot}`, 'aria-label': `${a.name}, 재사용 ${a.cooldown}초`, title: `${a.name} · ${a.description} · ${a.cooldown}초 · ${slot}키` },
       icon, h('span', { class: 'skill-name' }, a.name), h('kbd', {}, String(slot)), timer);
     on(btn, 'click', () => useSkill(slot, performance.now()));
     return { btn, timer, slot, ability: a };
@@ -706,15 +708,19 @@ export function mount(root, app, opts = {}) {
     me.attackUntil = now + atk.animMs;
     me.atkAnimMs = atk.animMs;
     const dir = me.dir < 0 ? 'left' : 'right';
-    if (atk.job === 'warrior') slashes.add(me, me.dir, { w: atk.w, el: atk.el });
     ensureSprites();
     const x = Math.round(me.x);
     const y = Math.round(me.y);
     const a = { user_id: me.user_id, x, y, dir, seq: ++atkSeq, skill: slot, job: atk.job, cooldown: atk.cooldown, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
     if (debug) atkBoxes.push({ box: attackBox(x, y, dir, a.w), at: now });
     if (send('atk', a)) cstats.atkSent++;
-    if (atk.job !== 'warrior') projectiles.add(a, now, isHost());
-    else if (isHost()) hostAttack(a, now);
+    playAttack(a, now);
+  }
+
+  function playAttack(a, now) {
+    const mobs = isHost() && sim ? sim.snapshot() : mobView?.list || [];
+    skillAttacks.add(a, now, isHost(), mobs);
+    projectiles.add(a, now, isHost());
   }
 
   function useSkill(slot, now) {
@@ -862,7 +868,7 @@ export function mount(root, app, opts = {}) {
     me.x = me.targetX = x; me.y = me.yTo = world.groundY;
     me.s = 'idle'; me.anim = 'idle'; me.attackUntil = 0;
     me.invulnUntil = now + 2000;
-    drops.clear(); stones.clear(); projectiles.clear(); slashes.clear(); dmgNums.clear(); fx.clear();
+    drops.clear(); stones.clear(); projectiles.clear(); skillAttacks.clear(); slashes.clear(); dmgNums.clear(); fx.clear();
     hostId = null; electHost();
     announce = true; announceHp = true; resendDrops = true;
     link.sendMove({ x: me.x, y: me.y, s: 'idle', dir: me.dir < 0 ? 'left' : 'right', mapId: currentArea }).catch(() => {});
@@ -954,21 +960,20 @@ export function mount(root, app, opts = {}) {
         const c = clampAttack(p);
         if (!c) return; // 받는 쪽 상한: w≤175, hits≤4, dmax≤60, el 0~3
         if (c.w !== p.w || c.hits !== p.hits || c.dmax !== p.dmax || c.el !== p.el) cstats.atkCapped++;
-        const animMs = Math.max(120, Math.min(COMBAT.attackAnimMs, now - (pl.lastAtkAt || 0)));
+        const animMs = c.animMs;
         pl.attackJob = c.job; pl.lastSkill = p.skill; pl.effectAt = now;
         pl.lastAtkAt = now;
         pl.attackUntil = now + animMs;
         pl.atkAnimMs = animMs;
         pl.dir = p.dir === 'left' ? -1 : 1;
-        if (c.job === 'warrior') slashes.add(pl, pl.dir, { w: c.w, el: c.el });
-        else projectiles.add({ ...p, ...c }, now, isHost());
+        playAttack({ ...p, ...c }, now);
         if (debug) atkBoxes.push({ box: attackBox(p.x, p.y, p.dir, c.w), at: now });
         // 협동 사냥: 플레이어 공격은 몬스터에게만 적용한다.
-        if (isHost() && c.job === 'warrior') hostAttack({ ...p, ...c }, now);
         break;
       }
       case 'impact':
-        projectiles.impact(p.id, p.x, p.y, now, p.job);
+        if (p.id.includes(':strike')) skillAttacks.impact(p.id, p.x, p.y, now);
+        else projectiles.impact(p.id, p.x, p.y, now, p.job, p.skill);
         break;
       case 'hp': {
         cstats.hpRecv++;
@@ -1207,6 +1212,14 @@ export function mount(root, app, opts = {}) {
       const size = mobDefs.kinds.get(m.kind).size;
       return { x1: m.x - size.w / 2, x2: m.x + size.w / 2, y1: m.y - size.h, y2: m.y };
     };
+    skillAttacks.update(now, (event, a) => {
+      if (!isHost() || !sim) return;
+      const owner=players.get(a.user_id);
+      if (!owner || !sameArea(owner, me)) return;
+      const excluded = event.targetId == null ? new Set() : new Set(sim.snapshot().filter(m=>m.id!==event.targetId).map(m=>m.id));
+      const result=hostAttack(event.damage, now, event.box, excluded, event.targets);
+      if(result) send('impact',{id:event.id,x:event.x,y:event.y,job:a.job,skill:a.skill});
+    });
     projectiles.update(dt, now, (p, box) => {
       if (!isHost() || !sim) return null;
       const list = sim.snapshot();
@@ -1216,10 +1229,10 @@ export function mount(root, app, opts = {}) {
       const r = hostAttack(p.damage, now, box, excluded, 1);
       if (r && p.job.splash) {
         const radius = p.job.splash;
-        hostAttack(p.damage, now, { x1: collision.impactX - radius, x2: collision.impactX + radius, y1: p.y - radius, y2: p.y + radius }, new Set([r.mob.id]), p.job.targets - 1);
+        hostAttack(p.damage, now, { x1: collision.impactX - radius, x2: collision.impactX + radius, y1: collision.impactY - radius, y2: collision.impactY + radius }, new Set([r.mob.id]), p.job.targets - 1);
       }
-      if (r) send('impact', { id: p.id, x: collision.impactX, y: p.y, job: p.job.id });
-      return r ? { ...r, impactX: collision.impactX } : null;
+      if (r) send('impact', { id: p.id, x: collision.impactX, y: collision.impactY, job: p.job.id, skill: p.a.skill });
+      return r ? { ...r, impactX: collision.impactX, impactY: collision.impactY } : null;
     }, (p, box) => mobView ? projectileCollision(p, box, mobView.list, mobBox) : null);
     slashes.update(now);
     stones.update(dt, now);
@@ -1349,10 +1362,10 @@ export function mount(root, app, opts = {}) {
       if (p.anim === 'climb') avatarR.drawClimb(ctx, p.avatar, Math.round(sx * k), pyD, k, now, p.climbMoving);
       else avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), left);
       ctx.globalAlpha = 1;
-      if (p.effectAt != null) drawAbilityEffect(ctx, p.attackJob || job.id, p.lastSkill || 0, Math.round(sx*k), pyD, k, now-p.effectAt, left);
     }
     slashes.draw(ctx, camX, cy, k, now);
     projectiles.draw(ctx, camX, cy, k, now);
+    skillAttacks.draw(ctx, camX, cy, k, now);
     fx.drawFront(ctx, camX, cy, k);
     if (debug) drawDebug(ctx, visible, mobsVis, camX, cy, k, now);
 
@@ -1761,7 +1774,7 @@ export function mount(root, app, opts = {}) {
       attack: { ...atk },
       skills: skillButtons.map(s => ({ slot: s.slot, name: s.ability.name, leftMs: Math.max(0, skillReadyAt[s.slot] - performance.now()) })),
       reviveVisible: !reviveBtn.hidden && !reviveBox.hidden,
-      numbers: dmgNums.count, projectiles: projectiles.count, slashes: slashes.count, slashImage: slashes.hasImage, slashElementImages: slashes.elementImages, buffOrbImage: !!buffOrbSprite,
+      numbers: dmgNums.count, projectiles: projectiles.count, casts: skillAttacks.snapshot(), slashes: slashes.count, slashImage: slashes.hasImage, slashElementImages: slashes.elementImages, buffOrbImage: !!buffOrbSprite,
       sprites: { ghost: !!ghostSprite, tombstone: !!tombSprite },
       stats: { ...cstats, ...(sim ? { sim: sim.stats } : {}) },
     },
@@ -1783,7 +1796,7 @@ export function mount(root, app, opts = {}) {
     if (app.providers.room) app.providers.room = null;
     avatarR?.clear();
     fx.clear();
-    dmgNums.clear(); projectiles.clear(); slashes.clear(); stones.clear(); drops.clear(); buffs.clear(); buffEls.clear();
+    dmgNums.clear(); projectiles.clear(); skillAttacks.clear(); slashes.clear(); stones.clear(); drops.clear(); buffs.clear(); buffEls.clear();
     if (debug) { try { delete window.__mushroomDebug; } catch { /* 무시 */ } }
     sim = null;
     mobView?.clear();

@@ -177,7 +177,8 @@ function cleanGameEventPayload(event, p) {
     case 'impact':
       if (!UID_OK(p.host) || typeof p.id !== 'string' || !/^[a-zA-Z0-9:_-]{1,110}$/.test(p.id)) return null;
       if (!numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
-      return { host: p.host, id: p.id, x: p.x, y: p.y, job: normalizeJob(p.job) };
+      if (p.skill != null && (!Number.isInteger(p.skill) || p.skill < 0 || p.skill > 3)) return null;
+      return { host: p.host, id: p.id, x: p.x, y: p.y, job: normalizeJob(p.job), skill: p.skill ?? 0 };
     case 'hp':
       if (!UID_OK(p.user_id) || !numIn(p.hp, 0, 100000) || !numIn(p.max, 1, 100000)) return null;
       // dm = (사이클 10 확장) 이번에 받은 타별 피해 (피해 숫자용)

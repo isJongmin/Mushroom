@@ -24,11 +24,9 @@ for (const job of ['archer','mage','thief']) for (const authoritative of [false,
   assert.equal(damage>0,authoritative);
   assert.equal(visual>0,!authoritative);
   // Every peer draws an impact at the first contact, before the target center.
-  const rects=[];
-  const ctx={save(){},restore(){},setTransform(){},fillRect(...args){rects.push(args);}};
-  shots.draw(ctx,0,0,1,200);
-  assert.ok(rects.length>0);
-  assert.ok(rects.every(r=>r[0]===37));
+  const bursts=shots.snapshot().bursts;
+  assert.ok(bursts.length>0);
+  assert.ok(bursts.every(b=>b.x===37));
 }
 const kinds=new Map([['dummy',{hp:100,speed:0,behavior:'walk',size:{w:30,h:40},buffDrop:0}]]);
 const zones=[{i:0,x1:0,x2:100,y:100,max:3,mobs:['dummy']}];
@@ -62,9 +60,7 @@ assert.equal(ackShots.count,1);
 assert.equal(ackShots.impact('player-1:42:0',37,70,20,'mage'),true);
 assert.equal(ackShots.count,0);
 assert.equal(ackShots.impact('player-1:42:0',37,70,21,'mage'),false);
-let burstRects=0;
-ackShots.draw({save(){},restore(){},setTransform(){},fillRect(){burstRects++;}},0,0,1,21);
-assert.equal(burstRects,10); // Duplicate acknowledgements produce one burst.
+assert.equal(ackShots.snapshot().bursts.length,1); // Duplicate acknowledgements produce one burst.
 ackShots.clear();
 ackShots.impact('player-1:42:0',37,70,0,'mage');
 ackShots.add(ackAttack,20); assert.equal(ackShots.count,0); // Ack before attack.

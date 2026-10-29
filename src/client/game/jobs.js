@@ -42,7 +42,7 @@ const PATTERNS = {
     { pattern: 'clones', description: '분신의 표창 난무 후 붉은 달의 거대한 처형 검격을 날려요.', duration: 2800, speed: 1000, shots: 9, projectileHits: 9, finisher: true, impactAt: 1660 },
   ],
 };
-export const BASIC_INTERVAL_MS = 240; // animation cadence; basic attack has no skill cooldown
+export const BASIC_INTERVAL_MS = 360; // animation cadence; basic attack has no skill cooldown
 export function abilityDefinition(jobId, slot = 0) {
   const j = jobDefinition(jobId);
   if (!Number.isInteger(slot) || slot < 0 || slot > 3) return null;

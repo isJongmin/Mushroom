@@ -494,8 +494,9 @@ export function createJobProjectiles() {
     },
     draw(ctx, camX, camY, k, now) {
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
-      for (const p of list) if (now >= p.at) drawProjectileVisual(ctx,p,camX,camY,k,now);
-      for (const b of bursts) drawImpactVisual(ctx,b,camX,camY,k,now);
+      const visible=(x,y,margin)=>!ctx.canvas||((x-camX)*k>=-margin&&(x-camX)*k<=ctx.canvas.width+margin&&(y-camY)*k>=-margin&&(y-camY)*k<=ctx.canvas.height+margin);
+      for (const p of list) if (now >= p.at && visible(p.x,p.y,160*k)) drawProjectileVisual(ctx,p,camX,camY,k,now);
+      for (const b of bursts) if(visible(b.x,b.y,220*k)) drawImpactVisual(ctx,b,camX,camY,k,now);
       ctx.restore();
     },
     snapshot() { return { shots: list.map(p=>({id:p.id,x:p.x,y:p.y,angle:p.angle,at:p.at,pattern:abilityDefinition(p.a.job,p.a.skill??0).pattern,hits:p.damage.hits})), bursts:bursts.map(b=>({...b})) }; },

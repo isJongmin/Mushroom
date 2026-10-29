@@ -1288,6 +1288,11 @@ export function mount(root, app, opts = {}) {
 
   function frameOf(p, now) {
     if (p.anim === 'climb') return avatarR.frameIndex.back ?? 7;
+    // Replay each basic swing once over the 360ms cadence, including held-input attacks.
+    if (p.anim === 'attack' && (p.lastSkill ?? 0) === 0 && p.atkAnimMs) {
+      const elapsed = Math.max(0, now - p.lastAtkAt) * COMBAT.attackAnimMs / p.atkAnimMs;
+      return avatarR.frameAt('attack', Math.min(COMBAT.attackAnimMs - 1, elapsed));
+    }
     // (사이클 10) speed 버프: attack 애니메이션 ms를 쿨다운과 같은 비율로 줄인다 (240ms 기준)
     if (p.anim === 'attack' && p.atkAnimMs && p.atkAnimMs < COMBAT.attackAnimMs) return avatarR.frameAt('attack', (now - p.animSince) * (COMBAT.attackAnimMs / p.atkAnimMs));
     return avatarR.frameAt(p.anim, now - p.animSince);

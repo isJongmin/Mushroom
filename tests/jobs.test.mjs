@@ -35,3 +35,13 @@ const sim=createMobSim({kinds,zones:[{i:0,x1:0,x2:100,y:100,max:1,mobs:['dummy']
 sim.fill(0); const hit=sim.hit({x1:0,x2:100,y1:0,y2:110},0,1,[999]);
 assert.ok(hit.killed); assert.deepEqual(hit.buffs,['heal']);
 console.log('PASS all 12 skills: cooldowns, canonical damage, wire round-trip, replay/origin validation, projectile hit totals; no attack upgrade drops');
+
+for(const job of ['archer','thief']) {
+  const a=abilityStats(job,0),def=abilityDefinition(job,0),shots=createJobProjectiles();
+  assert.equal(a.hits,1);assert.equal(def.shots,1);assert.equal(a.animMs,360);
+  shots.add({...a,user_id:'basic',seq:1,x:0,y:100,dir:'right'},0,true);
+  assert.equal(shots.count,1);assert.equal(shots.snapshot().shots[0].hits,1);
+  assert.equal(clampAttack({...a,hits:2}).hits,1);
+  assert.equal(abilityStats(job,1).hits,3);
+}
+console.log('PASS archer/thief basics launch one projectile and deal one hit; former two-hit claims are normalized; triple skills remain unchanged');

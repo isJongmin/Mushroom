@@ -170,7 +170,7 @@ function normalizeAvatarManifest(raw) {
     animations: normalizeAnimations(raw.animations, frameCount),
     aliases: normalizeAliases(raw.aliases),
     files: normalizeFiles(raw.files, layerOrder),
-    rawPresets: Array.isArray(raw.presets) ? raw.presets.slice(0, 12) : [],
+    rawPresets: Array.isArray(raw.presets) ? raw.presets.slice(0, 32) : [],
   };
 }
 

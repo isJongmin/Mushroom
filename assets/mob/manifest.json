@@ -1,5 +1,5 @@
 {
-  "revision": "fine-voxel-mobs-20261029-v2",
+  "revision": "fine-voxel-mobs-20261029-v3",
   "density": 1.5,
   "note": "frame/anchor = 에셋 px(시트 좌표), size = 월드 단위 판정 상자(기준점 = 상자 아래 중앙). 기본 방향은 오른쪽, 왼쪽은 좌우 반전. hop은 뜀 높이가 프레임에 들어 있다.",
   "mobs": {
@@ -216,6 +216,90 @@
       "behavior": "walk",
       "buffDrop": 1.0,
       "buffDropCount": 2,
+      "artStyle": "fine-voxel-3d"
+    },
+    "forest-stump": {
+      "name": "이끼나무 그루터기",
+      "hp": 70,
+      "speed": 35,
+      "touchDamage": 8,
+      "size": {
+        "w": 48,
+        "h": 60
+      },
+      "anchor": {
+        "x": 72,
+        "y": 132
+      },
+      "frame": {
+        "w": 144,
+        "h": 144
+      },
+      "sheet": "assets/mob/forest-stump.png",
+      "pixelArt": false,
+      "frames": 9,
+      "animations": {
+        "move": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "hit": [
+          4,
+          5
+        ],
+        "die": [
+          6,
+          7,
+          8
+        ]
+      },
+      "fps": 8,
+      "behavior": "walk",
+      "buffDrop": 0.45,
+      "artStyle": "fine-voxel-3d"
+    },
+    "crystal-crab": {
+      "name": "수정 돌게",
+      "hp": 100,
+      "speed": 42,
+      "touchDamage": 10,
+      "size": {
+        "w": 62,
+        "h": 40
+      },
+      "anchor": {
+        "x": 78,
+        "y": 108
+      },
+      "frame": {
+        "w": 156,
+        "h": 120
+      },
+      "sheet": "assets/mob/crystal-crab.png",
+      "pixelArt": false,
+      "frames": 9,
+      "animations": {
+        "move": [
+          0,
+          1,
+          2,
+          3
+        ],
+        "hit": [
+          4,
+          5
+        ],
+        "die": [
+          6,
+          7,
+          8
+        ]
+      },
+      "fps": 10,
+      "behavior": "walk",
+      "buffDrop": 0.55,
       "artStyle": "fine-voxel-3d"
     }
   },

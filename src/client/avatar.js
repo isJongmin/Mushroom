@@ -85,7 +85,7 @@ export function createAvatarRenderer(assets, opts = {}) {
     const imgs = await Promise.all(layers.map((l) => assets.getLayer(l.layer, l.id)));
     // 모자 안쪽 머리카락은 챙 아래부터만 그린다. 리본은 머리를 덮지 않는다.
     // 합성에 실제 모자가 포함될 때만 적용하므로 헤어 선택 썸네일은 유지한다.
-    const hatIndexes = layers.map((l, i) => l.part === 'hat' && l.id !== 'ribbon-pink' ? i : -1).filter((i) => i >= 0 && imgs[i]);
+    const hatIndexes = layers.map((l, i) => l.part === 'hat' && !['ribbon-pink', 'warrior-circlet'].includes(l.id) ? i : -1).filter((i) => i >= 0 && imgs[i]);
     let hairTops = null;
     if (hatIndexes.length) {
       const mask = makeCanvas(fw, fh);

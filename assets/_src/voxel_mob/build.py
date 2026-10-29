@@ -55,11 +55,13 @@ def contact(images,path,*,frames=False):
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument('--static',action='store_true');ap.add_argument('--jobs',type=int,default=4)
+    ap.add_argument('--only', nargs='+', choices=NAMES)
     args=ap.parse_args()
+    names=args.only or NAMES
     OUT.mkdir(exist_ok=True)
     manifest=json.loads((ROOT/'assets/mob/manifest.json').read_text())
-    tasks=[(k,f,manifest['mobs'][k]) for k in NAMES for f in ([0] if args.static else range(manifest['mobs'][k]['frames']))]
-    images={k:{} for k in NAMES};report=[]
+    tasks=[(k,f,manifest['mobs'][k]) for k in names for f in ([0] if args.static else range(manifest['mobs'][k]['frames']))]
+    images={k:{} for k in names};report=[]
     with Pool(args.jobs) as pool:
         for k,f,arr,count,seconds in pool.imap_unordered(render_frame,tasks):
             im=Image.fromarray(arr)
@@ -70,28 +72,28 @@ def main():
                 raise AssertionError(f'clipped {k}:{f}: {bbox} in {im.size}')
             report.append(dict(kind=k,frame=f,boxes=count,seconds=seconds,bbox=bbox))
             print(f'{k}:{f} boxes={count} {seconds}s bbox={bbox}',flush=True)
-    contact([(k,images[k][0]) for k in NAMES],OUT/'static-contact.png')
-    for k in NAMES:
+    contact([(k,images[k][0]) for k in names],OUT/('biome-static-contact.png' if args.only else 'static-contact.png'))
+    for k in names:
         images[k][0].save(OUT/f'{k}-static.png')
     if not args.static:
-        for k in NAMES:
+        for k in names:
             spec=manifest['mobs'][k];w=spec['frame']['w'];h=spec['frame']['h'];n=spec['frames']
             sheet=Image.new('RGBA',(w*n,h))
             for f in range(n):sheet.paste(images[k][f],(f*w,0))
             sheet.save(ROOT/spec['sheet'],optimize=True)
             frames=[images[k][f] for f in spec['animations']['move']]
             frames[0].save(OUT/f'{k}-move.gif',save_all=True,append_images=frames[1:],duration=round(1000/spec['fps']),loop=0,disposal=2)
-        contact([(f'{k} {f}',images[k][f]) for k in NAMES for f in sorted(images[k])],OUT/'all-frames.png',frames=True)
-        manifest['revision']='fine-voxel-mobs-20261029-v2'
+        contact([(f'{k} {f}',images[k][f]) for k in names for f in sorted(images[k])],OUT/('biome-all-frames.png' if args.only else 'all-frames.png'),frames=True)
+        manifest['revision']='fine-voxel-mobs-20261029-v3'
         manifest['mobArt']={'source':'assets/_src/voxel_mob','renderer':'shared voxel/vox.py analytic cuboid raycaster',
                             'model':'original solid 3D stepped box geometry','voxelSheetPx':1.82,
                             'yaw':YAW,'pitch':PITCH,'direction':'right; runtime mirrors left'}
-        for k in NAMES:
+        for k in names:
             manifest['mobs'][k]['artStyle']='fine-voxel-3d'
             manifest['mobs'][k]['pixelArt']=False  # Shared SS4 output has intentional smooth coverage.
         (ROOT/'assets/mob/manifest.json').write_text(json.dumps(manifest,ensure_ascii=False,indent=2)+'\n')
     report.sort(key=lambda x:(NAMES.index(x['kind']),x['frame']))
-    (OUT/('static-report.json' if args.static else 'build-report.json')).write_text(json.dumps(report,indent=2)+'\n')
+    (OUT/(('biome-' if args.only else '')+('static-report.json' if args.static else 'build-report.json'))).write_text(json.dumps(report,indent=2)+'\n')
     print(f'complete: {len(report)} geometric frames; {OUT}',flush=True)
 
 

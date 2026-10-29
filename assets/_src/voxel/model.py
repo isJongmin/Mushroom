@@ -1274,6 +1274,8 @@ HATS = dict(hair10.HATS)
 
 import variety  # Additive wardrobe, preserving all existing material colors.
 variety.install(sys.modules[__name__])
+import adventure  # Distinct hair silhouettes and four RPG job wardrobes.
+adventure.install(sys.modules[__name__])
 
 PARTS = {
     'skin': {k: (lambda k=k: skin(k)) for k in SKINS},

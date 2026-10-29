@@ -95,6 +95,11 @@ def t_layer(args):
     cat, pid, fr = args
     t = time.time()
     out = {}
+    if cat == 'hair' and pid == 'bald':
+        # Intentional empty geometry must remain a selectable, cacheable layer.
+        for layer in ('hair_back', 'hair_front', 'shade_hair'):
+            out[layer] = np.zeros((H, W, 4), np.uint8)
+        return args, out, time.time() - t
     if cat == 'skin':
         r = R(assemble({'skin': pid}, fr), fr)
         out['skin'] = downsample(r['img'], r['a'])
@@ -218,7 +223,7 @@ def layer_files(avatar_dir):
 
 def manifest(files):
     return {
-        'revision': 'fine-pixel-variety-20261029-v2',
+        'revision': 'silhouette-jobs-20261029-v3',
         'frame': {'w': W, 'h': H},
         'anchor': {'x': ANCHOR[0], 'y': ANCHOR[1]},
         'density': DENSITY,
@@ -281,7 +286,8 @@ def build(out_dir, src_out, jobs=2, truth=True, log=print, only=None):
         names = set().union(*[set(v) for v in frs.values()])
         for L in sorted(names):
             arr = np.concatenate([frs[fr].get(L, empty) for fr in FRAMES], axis=1)
-            if arr[..., 3].any():
+            if arr[..., 3].any() or (cat == 'hair' and pid == 'bald'):
+                # A deliberate bald selection still ships valid transparent layers.
                 sheets[(L, pid)] = arr
     if only is None and os.path.isdir(out_dir):
         shutil.rmtree(out_dir)

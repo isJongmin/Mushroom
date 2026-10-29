@@ -1,5 +1,5 @@
 {
-  "revision": "fine-pixel-variety-20261029-v2",
+  "revision": "silhouette-jobs-20261029-v3",
   "frame": {
     "w": 144,
     "h": 192
@@ -238,6 +238,22 @@
       {
         "id": "silver-bob",
         "label": "실버 단발"
+      },
+      {
+        "id": "bald",
+        "label": "대머리"
+      },
+      {
+        "id": "wolf-cut",
+        "label": "레이어드 울프컷"
+      },
+      {
+        "id": "mohawk",
+        "label": "모호크"
+      },
+      {
+        "id": "pompadour",
+        "label": "포마드 퐁파두르"
       }
     ],
     "top": [
@@ -288,6 +304,22 @@
       {
         "id": "cardigan-sage",
         "label": "세이지 가디건과 숄더백"
+      },
+      {
+        "id": "warrior-armor",
+        "label": "전사 갑옷과 검"
+      },
+      {
+        "id": "archer-ranger",
+        "label": "궁수 망토와 활·화살통"
+      },
+      {
+        "id": "mage-robe",
+        "label": "마법사 로브와 지팡이"
+      },
+      {
+        "id": "thief-jacket",
+        "label": "도적 재킷과 단검"
       }
     ],
     "bottom": [
@@ -330,6 +362,22 @@
       {
         "id": "widepants-cream",
         "label": "크림 와이드 팬츠"
+      },
+      {
+        "id": "warrior-greaves",
+        "label": "전사 판금 바지"
+      },
+      {
+        "id": "ranger-trousers",
+        "label": "궁수 바지"
+      },
+      {
+        "id": "mage-trousers",
+        "label": "마법사 바지"
+      },
+      {
+        "id": "thief-trousers",
+        "label": "도적 바지"
       }
     ],
     "shoes": [
@@ -360,6 +408,22 @@
       {
         "id": "sneakers-black",
         "label": "검은 운동화"
+      },
+      {
+        "id": "warrior-sabatons",
+        "label": "전사 철부츠"
+      },
+      {
+        "id": "ranger-boots",
+        "label": "궁수 장화"
+      },
+      {
+        "id": "mage-boots",
+        "label": "마법사 부츠"
+      },
+      {
+        "id": "thief-boots",
+        "label": "도적 부츠"
       }
     ],
     "hat": [
@@ -398,6 +462,22 @@
       {
         "id": "beanie-sage",
         "label": "세이지 비니"
+      },
+      {
+        "id": "warrior-circlet",
+        "label": "전사 서클릿"
+      },
+      {
+        "id": "ranger-cap",
+        "label": "궁수 깃털모자"
+      },
+      {
+        "id": "mage-hat",
+        "label": "마법사 고깔모자"
+      },
+      {
+        "id": "thief-hood",
+        "label": "도적 두건"
       }
     ]
   },
@@ -545,11 +625,60 @@
         "shoes": "maryjane-red",
         "hat": "none"
       }
+    },
+    {
+      "label": "전사",
+      "avatar": {
+        "skin": "medium",
+        "face": "basic",
+        "hair": "mohawk",
+        "top": "warrior-armor",
+        "bottom": "warrior-greaves",
+        "shoes": "warrior-sabatons",
+        "hat": "warrior-circlet"
+      }
+    },
+    {
+      "label": "궁수",
+      "avatar": {
+        "skin": "medium",
+        "face": "basic",
+        "hair": "wolf-cut",
+        "top": "archer-ranger",
+        "bottom": "ranger-trousers",
+        "shoes": "ranger-boots",
+        "hat": "ranger-cap"
+      }
+    },
+    {
+      "label": "마법사",
+      "avatar": {
+        "skin": "medium",
+        "face": "basic",
+        "hair": "bald",
+        "top": "mage-robe",
+        "bottom": "mage-trousers",
+        "shoes": "mage-boots",
+        "hat": "mage-hat"
+      }
+    },
+    {
+      "label": "도적",
+      "avatar": {
+        "skin": "medium",
+        "face": "basic",
+        "hair": "pompadour",
+        "top": "thief-jacket",
+        "bottom": "thief-trousers",
+        "shoes": "thief-boots",
+        "hat": "thief-hood"
+      }
     }
   ],
   "files": {
     "hair_back": [
       "ash-twoblock",
+      "bald",
       "black-seethrough",
       "black-twintail",
       "black-wolfcut",
@@ -560,11 +689,14 @@
       "mint-curly",
       "pink-bridge-ponytail",
       "pink-long",
+      "pompadour",
       "silver-bob",
       "sky-bob",
-      "tan-ponytail"
+      "tan-ponytail",
+      "wolf-cut"
     ],
     "top_back": [
+      "archer-ranger",
       "blouse-white",
       "cape-blue",
       "cardigan-cream",
@@ -572,11 +704,14 @@
       "hoodie-black",
       "hoodie-lavender",
       "hoodie-white",
+      "mage-robe",
       "overalls-green",
       "puffer-mint",
       "tee-stripe-red",
+      "thief-jacket",
       "varsity-burgundy",
-      "varsity-navy"
+      "varsity-navy",
+      "warrior-armor"
     ],
     "skin": [
       "dark",
@@ -599,11 +734,15 @@
       "cargo-black",
       "denim-wide",
       "jeans-blue",
+      "mage-trousers",
       "pants-black",
       "pants-navy",
+      "ranger-trousers",
       "shorts-brown",
       "skirt-check",
       "skirt-pink",
+      "thief-trousers",
+      "warrior-greaves",
       "widepants-cream"
     ],
     "shoes": [
@@ -611,11 +750,16 @@
       "chunky-white",
       "hightop-black",
       "loafer-socks",
+      "mage-boots",
       "maryjane-red",
+      "ranger-boots",
       "sneakers-black",
-      "sneakers-white"
+      "sneakers-white",
+      "thief-boots",
+      "warrior-sabatons"
     ],
     "shade_top": [
+      "archer-ranger",
       "blouse-white",
       "cape-blue",
       "cardigan-cream",
@@ -623,13 +767,17 @@
       "hoodie-black",
       "hoodie-lavender",
       "hoodie-white",
+      "mage-robe",
       "overalls-green",
       "puffer-mint",
       "tee-stripe-red",
+      "thief-jacket",
       "varsity-burgundy",
-      "varsity-navy"
+      "varsity-navy",
+      "warrior-armor"
     ],
     "top": [
+      "archer-ranger",
       "blouse-white",
       "cape-blue",
       "cardigan-cream",
@@ -637,14 +785,18 @@
       "hoodie-black",
       "hoodie-lavender",
       "hoodie-white",
+      "mage-robe",
       "overalls-green",
       "puffer-mint",
       "tee-stripe-red",
+      "thief-jacket",
       "varsity-burgundy",
-      "varsity-navy"
+      "varsity-navy",
+      "warrior-armor"
     ],
     "shade_hair": [
       "ash-twoblock",
+      "bald",
       "black-seethrough",
       "black-short",
       "black-twintail",
@@ -654,11 +806,14 @@
       "copper-spacebuns",
       "espresso-crop",
       "mint-curly",
+      "mohawk",
       "pink-bridge-ponytail",
       "pink-long",
+      "pompadour",
       "silver-bob",
       "sky-bob",
-      "tan-ponytail"
+      "tan-ponytail",
+      "wolf-cut"
     ],
     "hat_back": [
       "beanie-sage",
@@ -668,10 +823,14 @@
       "cap-white",
       "explorer-brown",
       "mushroom-red",
-      "ribbon-pink"
+      "ranger-cap",
+      "ribbon-pink",
+      "thief-hood",
+      "warrior-circlet"
     ],
     "hair_front": [
       "ash-twoblock",
+      "bald",
       "black-seethrough",
       "black-short",
       "black-twintail",
@@ -681,11 +840,14 @@
       "copper-spacebuns",
       "espresso-crop",
       "mint-curly",
+      "mohawk",
       "pink-bridge-ponytail",
       "pink-long",
+      "pompadour",
       "silver-bob",
       "sky-bob",
-      "tan-ponytail"
+      "tan-ponytail",
+      "wolf-cut"
     ],
     "shade_hat": [
       "beanie-sage",
@@ -694,8 +856,12 @@
       "cap-black",
       "cap-white",
       "explorer-brown",
+      "mage-hat",
       "mushroom-red",
-      "ribbon-pink"
+      "ranger-cap",
+      "ribbon-pink",
+      "thief-hood",
+      "warrior-circlet"
     ],
     "hat": [
       "beanie-sage",
@@ -704,8 +870,12 @@
       "cap-black",
       "cap-white",
       "explorer-brown",
+      "mage-hat",
       "mushroom-red",
-      "ribbon-pink"
+      "ranger-cap",
+      "ribbon-pink",
+      "thief-hood",
+      "warrior-circlet"
     ]
   }
 }

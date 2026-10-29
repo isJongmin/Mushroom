@@ -1,4 +1,5 @@
 {
+  "revision": "fine-voxel-mobs-20261029-v2",
   "density": 1.5,
   "note": "frame/anchor = 에셋 px(시트 좌표), size = 월드 단위 판정 상자(기준점 = 상자 아래 중앙). 기본 방향은 오른쪽, 왼쪽은 좌우 반전. hop은 뜀 높이가 프레임에 들어 있다.",
   "mobs": {
@@ -20,6 +21,7 @@
         "h": 72
       },
       "sheet": "assets/mob/snail.png",
+      "pixelArt": false,
       "frames": 9,
       "animations": {
         "move": [
@@ -40,7 +42,8 @@
       },
       "fps": 6,
       "behavior": "walk",
-      "buffDrop": 0.35
+      "buffDrop": 0.35,
+      "artStyle": "fine-voxel-3d"
     },
     "mushroom": {
       "name": "주황버섯",
@@ -60,6 +63,7 @@
         "h": 126
       },
       "sheet": "assets/mob/mushroom.png",
+      "pixelArt": false,
       "frames": 11,
       "animations": {
         "move": [
@@ -82,7 +86,8 @@
       },
       "fps": 10,
       "behavior": "hop",
-      "buffDrop": 0.45
+      "buffDrop": 0.45,
+      "artStyle": "fine-voxel-3d"
     },
     "slime": {
       "name": "슬라임",
@@ -102,6 +107,7 @@
         "h": 114
       },
       "sheet": "assets/mob/slime.png",
+      "pixelArt": false,
       "frames": 11,
       "animations": {
         "move": [
@@ -124,7 +130,8 @@
       },
       "fps": 10,
       "behavior": "hop",
-      "buffDrop": 0.5
+      "buffDrop": 0.5,
+      "artStyle": "fine-voxel-3d"
     },
     "bat": {
       "name": "박쥐",
@@ -144,6 +151,7 @@
         "h": 102
       },
       "sheet": "assets/mob/bat.png",
+      "pixelArt": false,
       "frames": 9,
       "animations": {
         "move": [
@@ -164,7 +172,8 @@
       },
       "fps": 10,
       "behavior": "fly",
-      "buffDrop": 0.4
+      "buffDrop": 0.4,
+      "artStyle": "fine-voxel-3d"
     },
     "golem": {
       "name": "돌골렘",
@@ -184,6 +193,7 @@
         "h": 198
       },
       "sheet": "assets/mob/golem.png",
+      "pixelArt": false,
       "frames": 9,
       "animations": {
         "move": [
@@ -205,7 +215,8 @@
       "fps": 5,
       "behavior": "walk",
       "buffDrop": 1.0,
-      "buffDropCount": 2
+      "buffDropCount": 2,
+      "artStyle": "fine-voxel-3d"
     }
   },
   "ghost": {
@@ -362,5 +373,14 @@
       "element": 3,
       "note": "기준점 = 공격자 발 위치. 오른쪽 공격 기준, 왼쪽은 좌우 반전. slash와 같은 규격·같은 호, 색만 다르다."
     }
+  },
+  "mobArt": {
+    "source": "assets/_src/voxel_mob",
+    "renderer": "shared voxel/vox.py analytic cuboid raycaster",
+    "model": "original solid 3D stepped box geometry",
+    "voxelSheetPx": 1.82,
+    "yaw": 18,
+    "pitch": 12,
+    "direction": "right; runtime mirrors left"
   }
 }

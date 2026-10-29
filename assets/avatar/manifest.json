@@ -1,4 +1,5 @@
 {
+  "revision": "fine-pixel-variety-20261029-v2",
   "frame": {
     "w": 144,
     "h": 192
@@ -19,7 +20,9 @@
     "back",
     "jump",
     "fall",
-    "prone"
+    "prone",
+    "attack0",
+    "attack1"
   ],
   "animations": {
     "idle_front": {
@@ -61,6 +64,13 @@
         10
       ],
       "ms": 200
+    },
+    "attack": {
+      "frames": [
+        11,
+        12
+      ],
+      "ms": 120
     }
   },
   "layerOrder": [
@@ -216,6 +226,18 @@
       {
         "id": "mint-curly",
         "label": "민트 곱슬"
+      },
+      {
+        "id": "espresso-crop",
+        "label": "에스프레소 크롭"
+      },
+      {
+        "id": "copper-spacebuns",
+        "label": "코퍼 스페이스 번"
+      },
+      {
+        "id": "silver-bob",
+        "label": "실버 단발"
       }
     ],
     "top": [
@@ -258,6 +280,14 @@
       {
         "id": "cape-blue",
         "label": "파란 망토 셔츠"
+      },
+      {
+        "id": "varsity-burgundy",
+        "label": "버건디 바시티 재킷"
+      },
+      {
+        "id": "cardigan-sage",
+        "label": "세이지 가디건과 숄더백"
       }
     ],
     "bottom": [
@@ -296,6 +326,10 @@
       {
         "id": "jeans-blue",
         "label": "청바지"
+      },
+      {
+        "id": "widepants-cream",
+        "label": "크림 와이드 팬츠"
       }
     ],
     "shoes": [
@@ -360,6 +394,10 @@
       {
         "id": "ribbon-pink",
         "label": "분홍 리본"
+      },
+      {
+        "id": "beanie-sage",
+        "label": "세이지 비니"
       }
     ]
   },
@@ -435,31 +473,109 @@
         "shoes": "boots-brown",
         "hat": "mushroom-red"
       }
+    },
+    {
+      "label": "버건디 크롭",
+      "avatar": {
+        "skin": "dark",
+        "hair": "espresso-crop",
+        "face": "smile",
+        "top": "varsity-burgundy",
+        "bottom": "widepants-cream",
+        "shoes": "chunky-white",
+        "hat": "none"
+      }
+    },
+    {
+      "label": "코퍼 가든",
+      "avatar": {
+        "skin": "medium",
+        "hair": "copper-spacebuns",
+        "face": "wink",
+        "top": "cardigan-sage",
+        "bottom": "skirt-check",
+        "shoes": "loafer-socks",
+        "hat": "none"
+      }
+    },
+    {
+      "label": "실버 스트리트",
+      "avatar": {
+        "skin": "dark",
+        "hair": "silver-bob",
+        "face": "basic",
+        "top": "hoodie-black",
+        "bottom": "cargo-beige",
+        "shoes": "hightop-black",
+        "hat": "none"
+      }
+    },
+    {
+      "label": "민트 데이",
+      "avatar": {
+        "skin": "medium",
+        "hair": "mint-curly",
+        "face": "smile",
+        "top": "tee-stripe-red",
+        "bottom": "widepants-cream",
+        "shoes": "sneakers-white",
+        "hat": "none"
+      }
+    },
+    {
+      "label": "세이지 산책",
+      "avatar": {
+        "skin": "light",
+        "hair": "espresso-crop",
+        "face": "sleepy",
+        "top": "cardigan-sage",
+        "bottom": "denim-wide",
+        "shoes": "boots-brown",
+        "hat": "beanie-sage"
+      }
+    },
+    {
+      "label": "트윈 리본",
+      "avatar": {
+        "skin": "medium",
+        "hair": "black-twintail",
+        "face": "wink",
+        "top": "varsity-burgundy",
+        "bottom": "skirt-pink",
+        "shoes": "maryjane-red",
+        "hat": "none"
+      }
     }
   ],
   "files": {
     "hair_back": [
       "ash-twoblock",
       "black-seethrough",
-      "black-short",
       "black-twintail",
       "black-wolfcut",
       "blonde-spiky",
       "brown-short",
+      "copper-spacebuns",
+      "espresso-crop",
+      "mint-curly",
       "pink-bridge-ponytail",
       "pink-long",
+      "silver-bob",
+      "sky-bob",
       "tan-ponytail"
     ],
     "top_back": [
       "blouse-white",
       "cape-blue",
       "cardigan-cream",
+      "cardigan-sage",
       "hoodie-black",
       "hoodie-lavender",
       "hoodie-white",
       "overalls-green",
       "puffer-mint",
       "tee-stripe-red",
+      "varsity-burgundy",
       "varsity-navy"
     ],
     "skin": [
@@ -487,7 +603,8 @@
       "pants-navy",
       "shorts-brown",
       "skirt-check",
-      "skirt-pink"
+      "skirt-pink",
+      "widepants-cream"
     ],
     "shoes": [
       "boots-brown",
@@ -502,24 +619,28 @@
       "blouse-white",
       "cape-blue",
       "cardigan-cream",
+      "cardigan-sage",
       "hoodie-black",
       "hoodie-lavender",
       "hoodie-white",
       "overalls-green",
       "puffer-mint",
       "tee-stripe-red",
+      "varsity-burgundy",
       "varsity-navy"
     ],
     "top": [
       "blouse-white",
       "cape-blue",
       "cardigan-cream",
+      "cardigan-sage",
       "hoodie-black",
       "hoodie-lavender",
       "hoodie-white",
       "overalls-green",
       "puffer-mint",
       "tee-stripe-red",
+      "varsity-burgundy",
       "varsity-navy"
     ],
     "shade_hair": [
@@ -530,14 +651,23 @@
       "black-wolfcut",
       "blonde-spiky",
       "brown-short",
+      "copper-spacebuns",
+      "espresso-crop",
       "mint-curly",
       "pink-bridge-ponytail",
       "pink-long",
+      "silver-bob",
       "sky-bob",
       "tan-ponytail"
     ],
     "hat_back": [
+      "beanie-sage",
+      "beanie-yellow",
+      "bucket-white",
       "cap-black",
+      "cap-white",
+      "explorer-brown",
+      "mushroom-red",
       "ribbon-pink"
     ],
     "hair_front": [
@@ -548,13 +678,17 @@
       "black-wolfcut",
       "blonde-spiky",
       "brown-short",
+      "copper-spacebuns",
+      "espresso-crop",
       "mint-curly",
       "pink-bridge-ponytail",
       "pink-long",
+      "silver-bob",
       "sky-bob",
       "tan-ponytail"
     ],
     "shade_hat": [
+      "beanie-sage",
       "beanie-yellow",
       "bucket-white",
       "cap-black",
@@ -564,6 +698,7 @@
       "ribbon-pink"
     ],
     "hat": [
+      "beanie-sage",
       "beanie-yellow",
       "bucket-white",
       "cap-black",

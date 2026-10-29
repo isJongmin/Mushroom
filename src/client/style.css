@@ -47,6 +47,12 @@ body[data-screen="room"] { background: var(--letterbox); }
 .bk-preview__ctrl .bk-btn--latch { flex: none; }
 .create-parts .section-title + .bk-presets { margin-top: 0; }
 .create-parts .bk-presets { margin-bottom: var(--sp-4); }
+.preset-more { margin-bottom: var(--sp-4); }
+.preset-more > summary { cursor: pointer; gap: var(--sp-2); list-style: none; }
+.preset-more > summary::-webkit-details-marker { display: none; }
+.preset-more > .bk-presets { margin-top: var(--sp-3); }
+.preset-more__collapse, .preset-more[open] .preset-more__expand { display: none; }
+.preset-more[open] .preset-more__collapse { display: inline; }
 .create-parts .bk-tabs--cat { margin-bottom: var(--sp-3); }
 .bk-presets .bk-btn > span { overflow-wrap: anywhere; }
 .bk-slots { margin: 0 0 var(--sp-2); }

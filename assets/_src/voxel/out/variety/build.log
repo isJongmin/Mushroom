@@ -1,0 +1,90 @@
+{
+ "timing": {
+  "irr0_s": 20.9,
+  "layers_s": 142.6,
+  "layer_task_mean_s": 4.6,
+  "layer_tasks": 91,
+  "truth_s": 135.6,
+  "total_s": 303.0,
+  "jobs": 3,
+  "only": [
+   "bottom:widepants-cream",
+   "hair:copper-spacebuns",
+   "hair:espresso-crop",
+   "hair:silver-bob",
+   "hat:beanie-sage",
+   "top:cardigan-sage",
+   "top:varsity-burgundy"
+  ],
+  "truth_presets": [
+   7,
+   8,
+   9,
+   10,
+   11,
+   12
+  ]
+ },
+ "layer_vs_full": {
+  "preset1": {
+   "mean_abs_rgb": 5.887,
+   "p95": 26.33,
+   "alpha_mae": 0.099
+  },
+  "preset2": {
+   "mean_abs_rgb": 4.142,
+   "p95": 23.0,
+   "alpha_mae": 0.192
+  },
+  "preset3": {
+   "mean_abs_rgb": 3.952,
+   "p95": 23.0,
+   "alpha_mae": 0.088
+  },
+  "preset4": {
+   "mean_abs_rgb": 2.648,
+   "p95": 10.67,
+   "alpha_mae": 0.064
+  },
+  "preset5": {
+   "mean_abs_rgb": 4.965,
+   "p95": 27.72,
+   "alpha_mae": 0.205
+  },
+  "preset6": {
+   "mean_abs_rgb": 5.35,
+   "p95": 31.33,
+   "alpha_mae": 0.112
+  },
+  "preset7": {
+   "mean_abs_rgb": 2.929,
+   "p95": 12.33,
+   "alpha_mae": 0.071
+  },
+  "preset8": {
+   "mean_abs_rgb": 3.168,
+   "p95": 13.33,
+   "alpha_mae": 0.072
+  },
+  "preset9": {
+   "mean_abs_rgb": 3.403,
+   "p95": 13.33,
+   "alpha_mae": 0.055
+  },
+  "preset10": {
+   "mean_abs_rgb": 3.463,
+   "p95": 15.81,
+   "alpha_mae": 0.058
+  },
+  "preset11": {
+   "mean_abs_rgb": 9.046,
+   "p95": 67.33,
+   "alpha_mae": 0.106
+  },
+  "preset12": {
+   "mean_abs_rgb": 4.081,
+   "p95": 21.13,
+   "alpha_mae": 0.085
+  }
+ }
+}

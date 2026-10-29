@@ -1,17 +1,18 @@
 """아바타 납품 검사 (복셀 아트 계약).
 
 python3 assets/_src/voxel/check.py              # 전체 (결정적 빌드 검사 포함: 임시 폴더에 다시 빌드해 해시 비교)
+python3 assets/_src/voxel/check.py --only hair:espresso-crop  # 전체 계약 + 선택 파츠 증분 결정성 재렌더
 python3 assets/_src/voxel/check.py --fast       # 결정성 재빌드 생략
 python3 assets/_src/voxel/check.py --av DIR --src-out DIR   # (사이클 10) 설치 전 다른 폴더의 빌드 결과 검사
 
 검사 항목
  1. manifest 형식 (frame/anchor/density/frames/animations/layerOrder{layer,part,blend}/parts/presets)
-    (사이클 7) 파츠 개수 hair 12 / top 10 / bottom 9 / shoes 7 / hat 8(none 포함), 사이클 5 id 전부 유지
+    (사이클 7) 파츠 개수 hair 15 / top 12 / bottom 10 / shoes 7 / hat 9(none 포함), 사이클 5 id 전부 유지
  2. manifest <-> 파일 일치: 모든 PNG가 layerOrder 의 레이어 + 해당 part 의 id 이고, 필수 레이어 파일이 있다
     + manifest.files: 모든 레이어 키, 정렬된 id, 실제 파일과 정확히 일치, 필수 레이어는 모든 id(hat 은 none 제외) 포함
  3. 시트 크기 = (144*13) x 192 RGBA
  4. 기준점이 프레임 안
- 5. 프리셋 6종 합성(+파츠 전 변형 무작위 조합) 결과가 프레임 안 (가장자리 1px 여백), 발이 기준점 근처
+ 5. 프리셋 12종 합성(+파츠 전 변형 무작위 조합) 결과가 프레임 안 (가장자리 1px 여백), 발이 기준점 근처
     (사이클 6) jump/fall: 발이 기준선 위로 떠도 되지만 기준선 아래로 넘지 않고, 몸 중심 높이가 side 와 비슷
     (사이클 8) prone: 몸 최하단이 기준선, 키(기준선~위끝)가 side 의 35~45% (모자 포함 조합은 50% 이하), 몸 가로 중심이 기준점 x 근처
     (사이클 8) layerOrder: shoes_under 가 bottom 바로 앞
@@ -24,6 +25,7 @@ import sys
 import json
 import hashlib
 import tempfile
+import shutil
 import numpy as np
 from PIL import Image
 
@@ -79,7 +81,7 @@ def main():
     ok('shoes_under' in lay and lay.index('shoes_under') + 1 == lay.index('bottom')
        and lo[lay.index('shoes_under')]['part'] == 'shoes', 'shoes_under(part shoes) 가 bottom 바로 앞')
     counts = {k: len(v) for k, v in m['parts'].items()}
-    ok(counts == {'skin': 3, 'face': 4, 'hair': 12, 'top': 10, 'bottom': 9, 'shoes': 7, 'hat': 8}, 'parts 개수 %s' % counts)
+    ok(counts == {'skin': 3, 'face': 4, 'hair': 15, 'top': 12, 'bottom': 10, 'shoes': 7, 'hat': 9}, 'parts 개수 %s' % counts)
     V5IDS = {'skin': ['light', 'medium', 'dark'], 'face': ['basic', 'smile', 'wink', 'sleepy'],
              'hair': ['black-short', 'brown-short', 'blonde-spiky', 'pink-long', 'sky-bob', 'tan-ponytail', 'black-twintail', 'mint-curly'],
              'top': ['hoodie-black', 'hoodie-white', 'blouse-white', 'overalls-green', 'tee-stripe-red', 'cape-blue'],
@@ -90,7 +92,19 @@ def main():
     lost = {k: [i for i in v if i not in have.get(k, ())] for k, v in V5IDS.items()}
     ok(not any(lost.values()), '사이클 5 id 전부 유지 (저장된 프로필 호환) %s' % {k: v for k, v in lost.items() if v})
     ok(m['parts']['hat'][0]['id'] == 'none', 'hat 첫 항목 none')
-    ok(len(m.get('presets', [])) == 6, 'presets 6종')
+    ok(len(m.get('presets', [])) == 12, 'presets 12종 (기존 6 + 신규 6)')
+    ok(m.get('revision') == 'fine-pixel-variety-20261029-v2', '새 revision으로 캐시 갱신')
+    extra = m.get('presets', [])[6:]
+    ok({pr['avatar']['skin'] for pr in extra} == {'light', 'medium', 'dark'}
+       and {pr['avatar']['face'] for pr in extra} == {'basic', 'smile', 'wink', 'sleepy'},
+       '새 추천: 피부 3톤과 표정 4종 모두 사용')
+    ok(m['presets'] == [{'label': lab, 'avatar': av} for lab, av in B.PRESETS], '추천 순서와 모델 원본 일치')
+    V10IDS = {'hair': ['ash-twoblock', 'black-seethrough', 'black-wolfcut', 'pink-bridge-ponytail'],
+              'top': ['hoodie-lavender', 'cardigan-cream', 'varsity-navy', 'puffer-mint'],
+              'bottom': ['denim-wide', 'skirt-check', 'cargo-black', 'cargo-beige'],
+              'shoes': ['chunky-white', 'loafer-socks', 'hightop-black'],
+              'hat': ['bucket-white', 'cap-black']}
+    ok(all(set(v) <= have[k] for k, v in V10IDS.items()), '사이클 10 기존 id도 전부 유지')
     ids = {k: {p['id'] for p in v} for k, v in m['parts'].items()}
     ok(all(all(pr['avatar'][k] in ids[k] for k in ids) for pr in m['presets']), 'presets 의 id 가 parts 에 있음')
 
@@ -171,7 +185,7 @@ def main():
             ratio_hat = [min(ratio_hat[0], r), max(ratio_hat[1], r)]
         a = c[:, fi['prone'] * 144:(fi['prone'] + 1) * 144, 3].astype(float)
         pcx.append(float((a.sum(0) * np.arange(144)).sum() / a.sum()))
-    ok(worst[0] >= 1 and worst[1] >= 1 and worst[2] <= 142 and worst[3] <= 190, '불투명(a>8) 범위 x %d..%d, y %d..%d (프리셋 6 + 무작위 40, 13프레임)' % (worst[0], worst[2], worst[1], worst[3]))
+    ok(worst[0] >= 1 and worst[1] >= 1 and worst[2] <= 142 and worst[3] <= 190, '불투명(a>8) 범위 x %d..%d, y %d..%d (프리셋 12 + 무작위 40, 13프레임)' % (worst[0], worst[2], worst[1], worst[3]))
     ok(foot_err <= 10, '측면/걷기/엎드리기/공격 발 끝이 기준선 y=180 근처 (최대 차 %dpx)' % foot_err)
     ok(all(160 <= air[n][0] and air[n][1] <= 190 for n in air), 'jump/fall 발 끝 y: jump %d..%d, fall %d..%d (기준선 위로 뜰 수 있음, 아래로 190 이하)'
        % (air['jump'][0], air['jump'][1], air['fall'][0], air['fall'][1]))
@@ -182,6 +196,8 @@ def main():
 
     print('[6] 레이어 합성 vs 전체 렌더')
     rep = json.load(open(os.path.join(src, 'build_report.json')))['layer_vs_full']
+    # Existing six are compared against the unchanged fine-pixel reference renders.
+    # New presets require their own full renders; no composite is used as its own truth.
     for i, (lab, av) in enumerate(B.PRESETS):
         tp = os.path.join(src, 'truth', 'preset%d.png' % (i + 1))
         tr = np.array(Image.open(tp).convert('RGBA'))
@@ -193,7 +209,10 @@ def main():
     if not fast:
         print('[7] 결정적 빌드 (임시 폴더에 다시 빌드)')
         with tempfile.TemporaryDirectory() as td:
-            B.build(os.path.join(td, 'avatar'), os.path.join(td, 'src'), jobs=2, truth=False, log=lambda *_: None)
+            only = B.parse_only(sys.argv[sys.argv.index('--only') + 1]) if '--only' in sys.argv else None
+            if only:
+                shutil.copytree(AV, os.path.join(td, 'avatar'))
+            B.build(os.path.join(td, 'avatar'), os.path.join(td, 'src'), jobs=3, truth=False, log=lambda *_: None, only=only)
             h1, h2 = hashes(AV), hashes(os.path.join(td, 'avatar'))
             diff = sorted(k for k in set(h1) | set(h2) if h1.get(k) != h2.get(k))
             ok(not diff, '%d개 파일 해시 동일 %s' % (len(h1), diff[:5]))

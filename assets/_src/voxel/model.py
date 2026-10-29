@@ -12,6 +12,7 @@ torso 뼈 상자의 y 는 발바닥 기준 절대 높이(서 있을 때). 머리
 dict 의 rot=(rx, ry, rz) 는 뼈 안에서 상자를 더 돌린다(도, 회전 순서 z @ y @ x).
 """
 import functools
+import sys
 import numpy as np
 from vox import Box, rot_x, rot_y, rot_z, UNIT
 import legacy_v5 as V5
@@ -20,7 +21,7 @@ import legacy_v5 as V5
 HK = 1.28                         # 사이클 5 머리 -> 사이클 7 머리 배율
 HEAD_PIVOT = (0, 42.0, 0)
 HEAD_H = (14.0, 12.8, 12.8)       # 머리 28 x 25.6 x 25.6, 머리 로컬 y 0..25.6
-GIRTH = (1.14, 1.10)              # 사이클 10: 몸/팔다리 가로, 깊이 배율 (시안의 통통한 몸)
+GIRTH = (1.02, 1.00)              # Fine-pixel revision: relaxed clothing, slimmer limbs.
 SHOULDER = (9.1 * GIRTH[0], 38.2, 0)
 HIP = (3.9 * GIRTH[0], 24.5, 0)
 KNEE = (0, -14.0, 0)              # 허벅지 뼈 기준 무릎
@@ -37,21 +38,23 @@ LABELS = {
              ('black-wolfcut', '검은 울프컷'), ('pink-bridge-ponytail', '핑크 브릿지 포니테일'),
              ('black-short', '검은 짧은 머리'), ('brown-short', '밤색 짧은 머리'), ('blonde-spiky', '금발 뻗친 머리'),
              ('pink-long', '분홍 긴 머리'), ('sky-bob', '하늘색 단발'), ('tan-ponytail', '갈색 포니테일'),
-             ('black-twintail', '검은 양갈래'), ('mint-curly', '민트 곱슬')],
+             ('black-twintail', '검은 양갈래'), ('mint-curly', '민트 곱슬'), ('espresso-crop', '에스프레소 크롭'),
+             ('copper-spacebuns', '코퍼 스페이스 번'), ('silver-bob', '실버 단발')],
     'top': [('hoodie-lavender', '라벤더 오버핏 후드'), ('cardigan-cream', '크림 가디건과 숄더백'),
             ('varsity-navy', '네이비 바시티 재킷'), ('puffer-mint', '민트 크롭 패딩과 크로스백'),
             ('hoodie-black', '검은 후드티'), ('hoodie-white', '흰 후드티'), ('blouse-white', '흰 블라우스'),
-            ('overalls-green', '초록 멜빵'), ('tee-stripe-red', '빨간 줄무늬 티'), ('cape-blue', '파란 망토 셔츠')],
+            ('overalls-green', '초록 멜빵'), ('tee-stripe-red', '빨간 줄무늬 티'), ('cape-blue', '파란 망토 셔츠'), ('varsity-burgundy', '버건디 바시티 재킷'),
+            ('cardigan-sage', '세이지 가디건과 숄더백')],
     'bottom': [('denim-wide', '연청 와이드 데님'), ('skirt-check', '체크 플리츠 스커트'),
                ('cargo-black', '검정 카고 조거'), ('cargo-beige', '베이지 와이드 카고'),
                ('pants-navy', '남색 바지'), ('pants-black', '검은 바지'), ('skirt-pink', '분홍 치마'),
-               ('shorts-brown', '갈색 반바지'), ('jeans-blue', '청바지')],
+               ('shorts-brown', '갈색 반바지'), ('jeans-blue', '청바지'), ('widepants-cream', '크림 와이드 팬츠')],
     'shoes': [('chunky-white', '흰 청키 스니커즈'), ('loafer-socks', '로퍼와 니삭스'), ('hightop-black', '검정 하이탑'),
               ('sneakers-white', '흰 운동화'), ('maryjane-red', '빨간 메리제인'), ('boots-brown', '갈색 부츠'),
               ('sneakers-black', '검은 운동화')],
     'hat': [('none', '없음'), ('bucket-white', '흰 버킷햇'), ('cap-black', '검정 무지 캡'),
             ('cap-white', '흰 야구모자'), ('mushroom-red', '빨간 버섯 모자'),
-            ('explorer-brown', '갈색 탐험가 모자'), ('beanie-yellow', '노란 비니'), ('ribbon-pink', '분홍 리본')],
+            ('explorer-brown', '갈색 탐험가 모자'), ('beanie-yellow', '노란 비니'), ('ribbon-pink', '분홍 리본'), ('beanie-sage', '세이지 비니')],
 }
 PRESETS = [
     ('라벤더 후드', dict(skin='light', hair='ash-twoblock', face='basic', top='hoodie-lavender', bottom='denim-wide', shoes='chunky-white', hat='bucket-white')),
@@ -61,6 +64,16 @@ PRESETS = [
     ('분홍 소녀', dict(skin='light', hair='pink-long', face='basic', top='blouse-white', bottom='skirt-pink', shoes='maryjane-red', hat='none')),
     ('버섯 꼬마', dict(skin='light', hair='blonde-spiky', face='basic', top='overalls-green', bottom='jeans-blue', shoes='boots-brown', hat='mushroom-red')),
 ]
+# First six presets above retain their original IDs, order and appearance.
+PRESETS += [
+    ('버건디 크롭', dict(skin='dark', hair='espresso-crop', face='smile', top='varsity-burgundy', bottom='widepants-cream', shoes='chunky-white', hat='none')),
+    ('코퍼 가든', dict(skin='medium', hair='copper-spacebuns', face='wink', top='cardigan-sage', bottom='skirt-check', shoes='loafer-socks', hat='none')),
+    ('실버 스트리트', dict(skin='dark', hair='silver-bob', face='basic', top='hoodie-black', bottom='cargo-beige', shoes='hightop-black', hat='none')),
+    ('민트 데이', dict(skin='medium', hair='mint-curly', face='smile', top='tee-stripe-red', bottom='widepants-cream', shoes='sneakers-white', hat='none')),
+    ('세이지 산책', dict(skin='light', hair='espresso-crop', face='sleepy', top='cardigan-sage', bottom='denim-wide', shoes='boots-brown', hat='beanie-sage')),
+    ('트윈 리본', dict(skin='medium', hair='black-twintail', face='wink', top='varsity-burgundy', bottom='skirt-pink', shoes='maryjane-red', hat='none')),
+]
+
 CATS = ['skin', 'face', 'hair', 'top', 'bottom', 'shoes', 'hat']
 
 SKINS = {'light': '#FAD6C0', 'medium': '#E2A982', 'dark': '#A3684A'}
@@ -1259,6 +1272,9 @@ import hair10  # noqa: E402  (사이클 10: 머리카락/모자는 SDF 복셀)
 HAIRS = dict(hair10.HAIRS)
 HATS = dict(hair10.HATS)
 
+import variety  # Additive wardrobe, preserving all existing material colors.
+variety.install(sys.modules[__name__])
+
 PARTS = {
     'skin': {k: (lambda k=k: skin(k)) for k in SKINS},
     'face': {k: (lambda k=k: face(k)) for k in ('basic', 'smile', 'wink', 'sleepy')},
@@ -1589,7 +1605,8 @@ def girth(d):
     return dict(d, c=(cx * gx, cy, cz * gz), h=(hx * gx, hy, hz * gz))
 
 
-CUBE_K = {'skin': 0.35, 'hair': 0.55, 'hat': 0.9, 'proxy': 0.0}     # 사이클 10: 파츠별 큐브 질감 세기 (기본 1.0)
+CUBE_K = {'skin': 0.06, 'hair': 0.30, 'hat': 0.45, 'top': 0.40,
+          'bottom': 0.35, 'shoes': 0.30, 'proxy': 0.0}
 
 
 @functools.lru_cache(maxsize=None)
@@ -1607,10 +1624,10 @@ def grade(col, deep=False):
     return '#%02X%02X%02X' % tuple(c)
 
 
-GRADE_SAT = 0.84
-GRADE_WARM = (1.0, 0.975, 0.93)
-GRADE_LO = np.array([0.13, 0.11, 0.10])
-GRADE_HI = np.array([0.975, 0.955, 0.92])
+GRADE_SAT = 0.98
+GRADE_WARM = (1.0, 0.99, 0.98)
+GRADE_LO = np.array([0.045, 0.040, 0.050])
+GRADE_HI = np.array([0.985, 0.980, 0.975])
 
 
 def make_boxes(defs, xf, layer, tag, back_view=False):

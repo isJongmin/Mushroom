@@ -201,6 +201,7 @@ function fallbackManifest() {
  */
 export async function loadAvatarAssets() {
   const rawManifest = await fetchJson(new URL('avatar/manifest.json', ASSET_ROOT));
+  const revision = typeof rawManifest?.revision === 'string' ? rawManifest.revision.slice(0, 64) : '';
   const manifest = normalizeAvatarManifest(rawManifest);
   if (!manifest) warnOnce('avatar:manifest', 'assets/avatar/manifest.json이 없거나 계약 형식이 아닙니다 (단색 대체 아바타로 그립니다)');
   const base = manifest || fallbackManifest();
@@ -226,7 +227,9 @@ export async function loadAvatarAssets() {
     let e = imgs.get(key);
     if (!e) {
       e = { img: undefined, promise: null };
-      e.promise = loadImage(new URL(`avatar/${layer}/${id}.png`, ASSET_ROOT)).then((img) => {
+      const url = new URL(`avatar/${layer}/${id}.png`, ASSET_ROOT);
+      if (revision) url.searchParams.set('v', revision);
+      e.promise = loadImage(url).then((img) => {
         const ok = img && img.naturalWidth >= base.frame.w && img.naturalHeight >= base.frame.h;
         // 경고는 files가 있을 때만 (대체 모드는 시작 때 경고 1회만 남긴다)
         if (!ok && base.files) warnOnce(`avatar:${key}`, `파츠 시트를 불러오지 못했습니다: ${key}.png (이 레이어는 빼고 그립니다)`);

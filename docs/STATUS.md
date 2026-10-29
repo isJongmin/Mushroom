@@ -1,6 +1,15 @@
 # 진행 상황
 
-## 현재 상태 (사이클 4, 2026-10-15): 로그인 없는 채팅방 구조
+## 최신 아트 (2026-10-29, 사용자 승인 완료)
+
+- 작업 브랜치: `art/fine-pixel-preview`. 사용자 승인으로 캐릭터 다양화·3D 블록 몬스터 변경을 `main`에 반영한다.
+- 캐릭터: 기존 코디 6개와 파츠 보존. 새 헤어 3종, 상의 2종, 하의 1종, 모자 1종과 추천 코디 6개 추가(총12개). 피부3종/표정4종을 조합한다.
+- 프로필: 기본6개 + native details로 추가6개 펼치기. 추가 썸네일은 펼칠 때 합성한다.
+- 몬스터: 과거 2D 필터 결과를 대신해 5종을 독립적인 3D 블록 모델로 제작. 현재 원본은 `assets/_src/voxel_mob/`, 49개 이동/피격/사망 프레임. 전투수치와 기존 frame/anchor 계약 유지.
+- 최신 실제 스프라이트 시안: `assets/_src/voxel-variety-review/`. 이전 승인 전 시안은 `assets/_src/fine-pixel-review/`에 보존. 상세 검증·재생성 방법은 `docs/handoff/art-20261029-avatar-variety.md`, `art-20261029-voxel-mobs.md` 참고.
+- 브라우저 E2E는 실행환경에 Chromium이 없고 설치 다운로드가 실패하여 미실행. 에셋·기하·정규화·소스 검증과 E2E 명세 업데이트는 별도로 수행한다.
+
+## 이전 상태 (사이클 4, 2026-10-15): 로그인 없는 채팅방 구조
 - 흐름: 프로필(닉네임 + 꾸미기) → 로비(방 목록/만들기) → 방(맵 + 말풍선 + 채팅 로그)
 - backend: 마이그레이션 20261015000000_rooms.sql — rooms/room_members/room_messages, RPC 7종(security definer), 비밀번호 bcrypt, 비공개 채널 RLS(realtime.messages), 채팅은 서버가 realtime.send로 송신. 로컬 PostgreSQL 16 스텁 환경에서 163건 + 동시성 7건 통과. 사이클 1~3의 characters 테이블 제거
 - design: 프로필/로비/방 화면 설계, ui-kit 14~23절(모달, 방 목록, 자물쇠, 채팅 로그), 시안 docs/design/ref/c4/

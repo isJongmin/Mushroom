@@ -1,3 +1,4 @@
+import { drawAbilityEffect } from '../game/skill-visuals.js';
 // 프로필 화면: 닉네임 + 캐릭터 꾸미기 (docs/design/screens/profile.md v4, character-create.md v3 3·5장, style-guide 5.12~5.14)
 // - 서버와 통신하지 않는다. 저장 = localStorage `mushroom:profile` = { nickname, avatar(7키) } (ARCHITECTURE 결정 3).
 // - 모드: first(최초, "입장하기") / edit(로비 "꾸미기"에서, "취소" + "저장").
@@ -52,6 +53,7 @@ export function mount(root, app, opts = {}) {
   let view = 'front'; // front | side | back
   let walking = false;
   let walkStart = 0;
+  let previewAttackAt = -Infinity;
   let raf = 0;
   let cancelRepaint = () => {};
   const nick = { value: '', status: 'empty' };
@@ -117,16 +119,23 @@ export function mount(root, app, opts = {}) {
   const jobCards = JOBS.map((job) => {
     const radio = h('input', { type: 'radio', name: 'character-job', value: job.id, testid: `job-${job.id}` });
     radio.checked = selectedJob === job.id;
-    on(radio, 'change', () => { if (radio.checked) selectedJob = job.id; });
+    on(radio, 'change', () => {
+      if (!radio.checked) return;
+      selectedJob = job.id;
+      walking = false; walkBtn.setAttribute('aria-pressed', 'false');
+      setView('side');
+      previewAttackAt = performance.now();
+      lastDrawn = ''; drawPreview(previewAttackAt); startLoop();
+    });
     return h('label', { class: 'job-card' }, radio,
       h('span', { class: 'job-card__body' }, h('strong', {}, job.name),
         h('span', { class: 'job-card__skill' }, job.skill),
         h('span', { class: 'job-card__description' }, job.description)));
   });
-  nickArea.append(h('fieldset', { class: 'job-picker', testid: 'job-picker' },
+  const jobArea = h('fieldset', { class: 'job-picker create-job', testid: 'job-picker' },
     h('legend', { class: 'bk-label-text' }, '직업 선택'),
     h('p', { class: 'bk-help' }, '공격 키는 같고, 직업마다 무기와 공격 방식이 달라요.'),
-    h('div', { class: 'job-grid' }, jobCards)));
+    h('div', { class: 'job-grid' }, jobCards));
 
   // 버튼 (6장): 비활성은 aria-disabled (눌렀을 때 형식 오류를 보여 주기 위해 클릭은 받는다)
   const submit = h('button', {
@@ -140,7 +149,7 @@ export function mount(root, app, opts = {}) {
   const title = h('h2', { class: 'card-title', tabindex: '-1', testid: 'profile-title' }, editMode ? '프로필 수정' : '프로필 만들기');
   const card = h('section', { class: 'bk-panel card-create', 'aria-labelledby': 'profile-title', testid: 'profile-card' },
     h('div', { class: 'card-head' }, title),
-    h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, ctaArea),
+    h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, jobArea, ctaArea),
     footRow);
   title.id = 'profile-title';
   const logo = editMode ? null
@@ -176,6 +185,7 @@ export function mount(root, app, opts = {}) {
   }
 
   function previewFrame(now) {
+    if (now - previewAttackAt < 650) return renderer.frameAt('attack', Math.min(239, now - previewAttackAt));
     if (walking) return renderer.frameAt('walk', now - walkStart);
     if (view === 'front') return renderer.frameAt('idle_front', now - walkStart); // 앞 = 숨쉬기 0,1
     return renderer.frameIndex[view];
@@ -184,7 +194,7 @@ export function mount(root, app, opts = {}) {
   function drawPreview(now = performance.now(), force = true) {
     const fr = renderer && avatar ? previewFrame(now) : -1;
     const ok = !!(renderer && avatar && renderer.isReady(avatar));
-    const key = `${ok ? PART_KEYS.map((p) => avatar[p]).join('|') : '-'}#${fr}`;
+    const key = `${ok ? PART_KEYS.map((p) => avatar[p]).join('|') : '-'}#${fr}#${now - previewAttackAt < 650 ? Math.floor(now / 16) : selectedJob}`;
     if (!force && key === lastDrawn) return;
     lastDrawn = key;
     const c = stageCanvas.getContext('2d');
@@ -196,6 +206,7 @@ export function mount(root, app, opts = {}) {
       const fy = STAGE.ay * k;
       if (ok) drawFootShadow(c, fx, fy, k);
       renderer.draw(c, avatar, fx, fy, k, fr, false);
+      drawAbilityEffect(c, selectedJob, 0, fx, fy, k, now-previewAttackAt);
     }
     if (ok && !shownOnce) { shownOnce = true; stageDots.hidden = true; }
   }
@@ -203,12 +214,12 @@ export function mount(root, app, opts = {}) {
   // 앞(숨쉬기)과 걷기는 애니메이션: 프레임이 바뀔 때만 다시 그린다
   function loop(now) {
     raf = 0;
-    if (!alive || !(walking || view === 'front')) return;
+    if (!alive) return;
     drawPreview(now, false);
-    raf = requestAnimationFrame(loop);
+    if (walking || view === 'front' || now - previewAttackAt < 650) raf = requestAnimationFrame(loop);
   }
   function stopLoop() { if (raf) cancelAnimationFrame(raf); raf = 0; }
-  function startLoop() { if (!raf && alive && ready && (walking || view === 'front')) raf = requestAnimationFrame(loop); }
+  function startLoop() { if (!raf && alive && ready && (walking || view === 'front' || performance.now() - previewAttackAt < 650)) raf = requestAnimationFrame(loop); }
 
   function setView(next) {
     view = next;

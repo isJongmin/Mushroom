@@ -223,3 +223,30 @@ body[data-screen="room"] { background: var(--letterbox); }
   .portal-action { bottom: 104px; font-size: 12px; }
   .hud-l > [data-testid="room-job"] { max-width: 130px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 10px; }
 }
+
+/* Wardrobe: a dedicated full-width job section, separate from nickname controls. */
+.card-create .create-grid { grid-template-columns: 240px minmax(0,1fr); grid-template-areas: "prev parts" "nick parts" "jobs jobs" "cta cta"; grid-template-rows: auto auto auto auto; }
+.create-job { grid-area: jobs; }
+.card-create .job-picker { border-top: 2px solid var(--text-muted); padding: 18px 0 0; margin: 0; }
+.card-create .job-picker legend { float: none; width: auto; padding: 0 8px 0 0; margin: 0; }
+.card-create .job-grid { grid-template-columns: repeat(4,minmax(0,1fr)); gap: 12px; }
+.card-create .job-card { min-width: 0; }
+.card-create .create-cta { position: static; padding-top: 8px; }
+.skill-hotbar.touch-float { display: flex; position: absolute; right: 14px; bottom: 14px; z-index: 3; gap: 8px; align-items: stretch; }
+.skill-button { position: relative; width: 82px; min-height: 84px; border: 2px solid #a39bb9; background: #242338; color: #fff; padding: 4px; cursor: pointer; touch-action: manipulation; }
+.skill-button canvas { display: block; width: 42px; height: 42px; margin: auto; }
+.skill-name { position: relative; z-index: 1; display: block; font: 700 10px/1.3 system-ui; overflow-wrap: anywhere; }
+.skill-button kbd { position: absolute; left: 4px; top: 3px; color: #f8d281; font-size: 11px; }
+.skill-button.is-cooling canvas { filter: grayscale(1); opacity: .4; }
+.skill-button.is-cooling::after { content: ''; position: absolute; inset: 0; background: #10101bd9; clip-path: inset(calc(100% - var(--cooldown)) 0 0); pointer-events: none; }
+.skill-timer { position: absolute; inset: 0; z-index: 2; display: flex; align-items: center; justify-content: center; font: 800 23px system-ui; color: white; text-shadow: 0 2px 3px #000; pointer-events: none; }
+.skill-button:disabled { cursor: default; }
+.skill-hotbar .touch-act { align-self: stretch; width: 64px; height: auto; padding: 4px; }
+@media (max-width: 719px) {
+  .card-create .create-grid { grid-template-columns: minmax(0,1fr); grid-template-areas: "prev" "nick" "jobs" "parts" "cta"; }
+  .card-create .job-grid { grid-template-columns: repeat(2,minmax(0,1fr)); }
+  .skill-hotbar.touch-float { right: 8px; bottom: 8px; gap: 6px; }
+  .skill-button { width: 65px; min-height: 74px; }
+  .skill-hotbar .touch-act { width: 54px; }
+  .skill-button canvas { width: 34px; height: 34px; }
+}

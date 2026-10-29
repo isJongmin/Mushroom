@@ -10,7 +10,7 @@
 //   z = 스폰 구역 번호(정수, 같은 맵 manifest라 모두 같다): 호스트가 바뀌면 새 호스트가 순찰 범위와 리스폰을 이어 간다.
 // - 다른 클라이언트는 createMobView로 받은 기록을 220ms 늦게 재생(두 기록 사이 직선 보간)한다.
 import { loadImage, warnOnce } from '../assets.js';
-import { rollDropKind } from './buffs.js';
+
 
 const REPO_ROOT = new URL('../../../', import.meta.url);
 const SRC_RE = /^assets\/[a-z0-9_\-/]+\.(png|webp)$/i;
@@ -355,7 +355,7 @@ export function createMobSim(o) {
       best.dieT = DIE_MS / 1000;
       stats.killed++;
       // 드롭 하나마다 25% heal, 나머지 버프 5종 균등 (사이클 10 변경)
-      if (rnd() < spec.buffDrop) for (let i = 0; i < spec.buffDropCount; i++) buffs.push(rollDropKind(rnd));
+      if (rnd() < .25) buffs.push('heal'); // only automatic health recovery; no attack upgrades
     } else {
       best.s = 'hit';
       best.hitT = HIT_MS / 1000;

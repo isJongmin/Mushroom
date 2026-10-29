@@ -1,4 +1,4 @@
-import { jobDefinition } from './jobs.js';
+import { jobDefinition, abilityStats } from './jobs.js';
 // (사이클 10) 공격 강화 버프. ARCHITECTURE "사이클 10 계약" + "변경(2026-10-29 사용자): 최대 10스택 + HP 회복 아이템".
 // DOM 없이 동작(Node 단위 시험 가능), 그리기 함수는 canvas만 받는다.
 //   (2026-10-29 사용자: "지나치게 커지는 게 원하는 것") 스택당 처음 값 그대로 10스택까지 누적
@@ -72,30 +72,12 @@ export const elementTier = (n) => (n <= 0 ? 0 : n <= 3 ? 1 : n <= 6 ? 2 : 3);
 
 /** 버프 스택 → 공격 값 { w, hits, dmin, dmax, el, cooldown(초), animMs, elementStacks } */
 export function attackStats(st = {}, job = 'warrior') {
-  const j = jobDefinition(job);
-  const s = (id) => Math.max(0, Math.min(BUFF.maxStacks, st[id] | 0));
-  const cooldown = Math.max(BUFF.cooldownMin, j.cooldown * BUFF.cooldownMul ** s('speed'));
-  const mul = 1 + BUFF.elementPerStack * s('element'); // 속성 피해 배율 (dmin/dmax에 넣는다)
-  return {
-    job: j.id,
-    w: Math.min(ATK_CAP.w, j.range + BUFF.wPerStack * s('range')),
-    hits: Math.min(ATK_CAP.hits, j.hits + s('multi')),
-    dmin: Math.min(ATK_CAP.dmax, Math.round((j.min + BUFF.powerPerStack * s('power')) * mul)),
-    dmax: Math.min(ATK_CAP.dmax, Math.round((j.max + BUFF.powerPerStack * s('power')) * mul)),
-    el: elementTier(s('element')),
-    cooldown: Math.round(cooldown * 1000) / 1000,
-    animMs: Math.round(BUFF.animMs * (cooldown / BUFF.cooldown)),
-  };
+  return abilityStats(job);
 }
 
 /** 받은 atk의 강화 값 정리 (상한으로 자르고, 없으면 기본값) */
 export function clampAttack(p) {
-  const w = clampN(p && p.w, 1, ATK_CAP.w, BUFF.baseW);
-  const hits = Math.round(clampN(p && p.hits, 1, ATK_CAP.hits, BUFF.baseHits));
-  const dmax = Math.round(clampN(p && p.dmax, 0, ATK_CAP.dmax, BUFF.dmgMax));
-  const dmin = Math.round(clampN(p && p.dmin, 0, dmax, Math.min(BUFF.dmgMin, dmax)));
-  const el = Math.round(clampN(p && p.el, 0, ATK_CAP.el, 0));
-  return { w, hits, dmin, dmax, el, job: jobDefinition(p && p.job).id, cooldown: clampN(p && p.cooldown, .1, 1, jobDefinition(p && p.job).cooldown) };
+  return abilityStats(p?.job, p?.skill ?? 0);
 }
 
 /** 한 번의 atk가 주는 타별 피해 목록 (속성 배율은 이미 dmin/dmax에 들어 있다) */

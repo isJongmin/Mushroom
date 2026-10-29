@@ -147,7 +147,7 @@ export const isGameEvent = (e) => typeof e === 'string' && GAME_EVENT_SET.has(e)
 const UID_OK = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
 const SID_RE = /^[a-z0-9]{1,16}$/i;
 const KIND_RE = /^[a-z0-9-]{1,32}$/;
-const BUFF_SET = new Set(['range', 'multi', 'element', 'power', 'speed', 'heal']); // (사이클 10) game/buffs.js DROP_KINDS (버프 5종 + heal)
+const BUFF_SET = new Set(['heal']); // (사이클 10) game/buffs.js DROP_KINDS (버프 5종 + heal)
 const DM_OK = (v) => Array.isArray(v) && v.length > 0 && v.length <= 12 && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 1000);
 const MOB_S = new Set(['move', 'hit', 'die']);
 const numIn = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
@@ -170,7 +170,7 @@ function cleanGameEventPayload(event, p) {
       if (!UID_OK(p.user_id) || !numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
       // (사이클 10) 강화 값 w, hits, dmin, dmax, el은 숫자만 넘기고 상한 자르기는 화면(buffs.clampAttack)이 한다
       return {
-        job: normalizeJob(p.job), cooldown: numIn(p.cooldown, .1, 1) ? p.cooldown : null,
+        job: normalizeJob(p.job), skill: p.skill == null ? 0 : Number.isInteger(p.skill) && p.skill >= 0 && p.skill <= 3 ? p.skill : -1, cooldown: numIn(p.cooldown, 0, 15) ? p.cooldown : null,
         user_id: p.user_id, x: p.x, y: p.y, dir: p.dir === 'left' ? 'left' : 'right', seq: Number.isInteger(p.seq) ? p.seq : 0,
         w: isNum(p.w) ? p.w : null, hits: isNum(p.hits) ? p.hits : null, dmin: isNum(p.dmin) ? p.dmin : null, dmax: isNum(p.dmax) ? p.dmax : null, el: isNum(p.el) ? p.el : null,
       };

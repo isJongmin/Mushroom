@@ -1,5 +1,6 @@
+import { drawSkillIcon, drawAbilityEffect } from '../game/skill-visuals.js';
 import { AREA_IDS, AREA_NAMES, normalizeMapId, areaMap, areaPortals, nearbyPortal, sameArea, drawBiomeMap, drawPortals, drawMinimap } from '../game/areas.js';
-import { normalizeJob, jobDefinition, acceptJobAttack } from '../game/jobs.js';
+import { normalizeJob, jobDefinition, acceptJobAttack, abilityDefinition, abilityStats, BASIC_INTERVAL_MS } from '../game/jobs.js';
 import { createJobProjectiles } from '../game/combat.js';
 // 방 화면: 맵 + 캐릭터 + 말풍선 + HUD + 채팅 로그 (docs/design/screens/room.md v4, style-guide 6~8장·11.9)
 // 캔버스(배율/카메라/그리기 순서/라벨/말풍선)와 이동·터치·채팅 입력은 v3 game 화면 그대로.
@@ -23,7 +24,7 @@ import { ROOM_MESSAGES as M, LOBBY_MESSAGES as LM, AppError, toAppError } from '
 import { createAvatarRenderer, smooth } from '../avatar.js';
 import { drawMap, drawFootShadow, cameraFor, camYTarget, drawPlatformDebug, drawRopeDebug, worldFromMap } from '../game/world.js';
 import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overlay.js';
-import { createMoveInput, KEY_DIR, KEY_ACTION, KEY_TAP, KEY_ATTACK, KEY_PICK } from '../game/input.js';
+import { createMoveInput, KEY_DIR, KEY_ACTION, KEY_TAP, KEY_ATTACK } from '../game/input.js';
 import { PHYS, createBody, stepBody, surfaceBelow, normState, isFx, knockBody } from '../game/physics.js';
 import {
   COMBAT, attackBox, hurtBox, overlaps, randInt, projectileCollision, createDamageNumbers, createSlashes, createTombstones, drawGhost, drawHpBar, HPBAR, blinkAlpha,
@@ -31,7 +32,7 @@ import {
 import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob } from '../game/mobs.js';
 import { createDrops, PICK_RANGE, TOUCH_RANGE } from '../game/drops.js';
 import {
-  BUFF_IDS, BUFF_LABEL, isBuff, hitGap, HEAL, HEAL_AMOUNT, attackStats, clampAttack, rollHits, createBuffs, drawBuffOrb,
+  BUFF_IDS, BUFF_LABEL, hitGap, HEAL, HEAL_AMOUNT, attackStats, clampAttack, rollHits, createBuffs, drawBuffOrb,
 } from '../game/buffs.js';
 import { createFx, prefersReducedMotion } from '../game/fx.js';
 import { openModal } from '../ui/modal.js';
@@ -181,7 +182,7 @@ export function mount(root, app, opts = {}) {
   const buffEls = new Map(); // id -> { el, cv, num, lastKey }
   const hostChip = debug ? h('span', { class: 'bk-chip debug-host', testid: 'debug-host' }, '호스트 -') : null;
   const job = jobDefinition(profile?.job);
-  const jobChip = h('span', { class: 'bk-chip', testid: 'room-job', title: job.description }, `${job.name} · ${job.skill}`);
+  const jobChip = h('span', { class: 'bk-chip', testid: 'room-job', title: job.description }, `${job.name} · 스킬 3종`);
   const hudL = h('div', { class: 'hud-l' }, roomChip, countChip, jobChip, modeSlot, hostChip);
   const hud = h('div', { class: 'hud' }, hudL, h('div', { class: 'hud-r' }, hint, deleteBtn, leaveBtn));
   const modeSlot2 = h('span', { class: 'mode-slot' });
@@ -200,7 +201,7 @@ export function mount(root, app, opts = {}) {
   const reviveBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary', testid: 'revive', hidden: true }, '마을에서 부활');
   const reviveBox = h('div', { class: 'bk-panel revive-box', testid: 'revive-box', role: 'status', hidden: true }, reviveText, reviveBtn);
   // (사이클 9) 모바일 공격·줍기 버튼 (캔버스 오른쪽 아래)
-  const pickBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--touch touch-act', testid: 'pick', 'aria-label': '줍기' }, '줍기');
+
   const attackBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary bk-btn--touch touch-act', testid: 'attack', 'aria-label': '공격 (누르고 있으면 계속)' }, '공격');
   const portalBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary portal-action', testid: 'portal-enter', hidden: true }, '포탈 이동 ↑');
   const miniCanvas = h('canvas', { width: '204', height: '88', role: 'img', 'aria-label': '현재 맵과 플레이어 위치', testid: 'minimap-canvas' });
@@ -211,7 +212,18 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'minimap-head' }, miniName, miniToggle), miniBody);
   on(miniToggle, 'click', () => { const open = miniBody.hidden; miniBody.hidden = !open; miniToggle.setAttribute('aria-expanded', String(open)); miniToggle.setAttribute('aria-label', open ? '미니맵 접기' : '미니맵 펼치기'); setText(miniToggle, open ? '−' : '+'); });
   on(portalBtn, 'click', () => enterPortal(performance.now()));
-  const touchFloat = h('div', { class: 'touch-float' }, pickBtn, attackBtn);
+  const skillReadyAt = [0, 0, 0, 0];
+  const skillButtons = [1, 2, 3].map(slot => {
+    const a = abilityDefinition(job.id, slot);
+    const icon = h('canvas', { width: '48', height: '48', 'aria-hidden': 'true' });
+    drawSkillIcon(icon.getContext('2d'), job.id, slot, 48);
+    const timer = h('span', { class: 'skill-timer', 'aria-hidden': 'true' });
+    const btn = h('button', { type: 'button', class: 'skill-button', testid: `skill-${slot}`, 'aria-label': `${a.name}, 재사용 ${a.cooldown}초`, title: `${a.name} · ${a.cooldown}초 · ${slot}키` },
+      icon, h('span', { class: 'skill-name' }, a.name), h('kbd', {}, String(slot)), timer);
+    on(btn, 'click', () => useSkill(slot, performance.now()));
+    return { btn, timer, slot, ability: a };
+  });
+  const touchFloat = h('div', { class: 'touch-float skill-hotbar' }, attackBtn, ...skillButtons.map(s => s.btn));
   const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap);
 
   const chatLog = createChatLog({
@@ -342,7 +354,7 @@ export function mount(root, app, opts = {}) {
     countDot.hidden = !(next === 'disconnected' || next === 'failed');
     const interactive = next === 'connected' || next === 'disconnected';
     chatInput.disabled = next !== 'connected';
-    for (const b of [leftBtn, rightBtn, crouchBtn, jumpBtn, attackBtn, pickBtn]) b.disabled = !interactive;
+    for (const b of [leftBtn, rightBtn, crouchBtn, jumpBtn, attackBtn]) b.disabled = !interactive;
     touchFloat.classList.toggle('is-hidden', !full);
     if (!full) buffBar.hidden = true;
     updateSendBtn();
@@ -686,7 +698,10 @@ export function mount(root, app, opts = {}) {
 
   function refreshAttack() { atk = attackStats(buffs.stacks(), normalizeJob(profile?.job)); }
 
-  function doAttack(now) {
+  function doAttack(now, slot = 0) {
+    const atk = abilityStats(job.id, slot);
+    me.lastSkill = slot;
+    me.effectAt = now;
     me.lastAtkAt = now;
     me.attackUntil = now + atk.animMs;
     me.atkAnimMs = atk.animMs;
@@ -695,11 +710,29 @@ export function mount(root, app, opts = {}) {
     ensureSprites();
     const x = Math.round(me.x);
     const y = Math.round(me.y);
-    const a = { user_id: me.user_id, x, y, dir, seq: ++atkSeq, job: atk.job, cooldown: atk.cooldown, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
+    const a = { user_id: me.user_id, x, y, dir, seq: ++atkSeq, skill: slot, job: atk.job, cooldown: atk.cooldown, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
     if (debug) atkBoxes.push({ box: attackBox(x, y, dir, a.w), at: now });
     if (send('atk', a)) cstats.atkSent++;
     if (atk.job !== 'warrior') projectiles.add(a, now, isHost());
     else if (isHost()) hostAttack(a, now);
+  }
+
+  function useSkill(slot, now) {
+    if (!me || me.dead || me?.body?.rope || connection !== 'connected' || document.body.classList.contains('has-modal')) return false;
+    if (document.activeElement?.matches('input, textarea, [contenteditable=true]')) document.activeElement.blur();
+    if (now < skillReadyAt[slot]) return false;
+    doAttack(now, slot);
+    skillReadyAt[slot] = now + abilityDefinition(job.id, slot).cooldown * 1000;
+    return true;
+  }
+  function paintSkills(now) {
+    for (const s of skillButtons) {
+      const left = Math.max(0, skillReadyAt[s.slot] - now);
+      s.btn.classList.toggle('is-cooling', left > 0);
+      s.btn.disabled = left > 0 || !me || me.dead || !!me?.body?.rope || connection !== 'connected';
+      setText(s.timer, left > 0 ? (left / 1000).toFixed(1) : '');
+      s.btn.style.setProperty('--cooldown', `${left / (s.ability.cooldown * 1000) * 100}%`);
+    }
   }
 
   /**
@@ -856,12 +889,12 @@ export function mount(root, app, opts = {}) {
     showHits(r.dmgs, r.mob.x, r.mob.y - kindsH(r.mob.kind), 'hit', now);
     if (r.killed) {
       cstats.kills++;
-      r.buffs.forEach((b, i) => spawnDrop(b, r.mob.x + (i - (r.buffs.length - 1) / 2) * 30, r.mob.y));
+      r.buffs.filter(b => b === HEAL).forEach((b, i) => spawnDrop(b, r.mob.x + (i - (r.buffs.length - 1) / 2) * 30, r.mob.y));
     }
   }
-  function hostAttack(a, now, box = attackBox(a.x, a.y, a.dir, a.w), excluded = new Set(), targets = jobDefinition(a.job).targets) {
+  function hostAttack(a, now, box = attackBox(a.x, a.y, a.dir, a.w), excluded = new Set(), targets = abilityDefinition(a.job, a.skill ?? 0).targets) {
     if (!sim) return null;
-    const c = clampAttack(a);
+    const c = a; // already canonical; projectile hit counts may be split
     let first = null;
     for (let n = 0; n < targets; n++) {
       const r = sim.hit(box, a.x, a.dir === 'left' ? -1 : 1, rollHits(c), excluded);
@@ -918,9 +951,11 @@ export function mount(root, app, opts = {}) {
         cstats.atkRecv++;
         const pl = players.get(p.user_id);
         if (!pl || pl.isSelf || !sameArea(pl, me) || !acceptJobAttack(pl, p, now)) return;
-        const c = clampAttack(p); // 받는 쪽 상한: w≤175, hits≤4, dmax≤60, el 0~3
+        const c = clampAttack(p);
+        if (!c) return; // 받는 쪽 상한: w≤175, hits≤4, dmax≤60, el 0~3
         if (c.w !== p.w || c.hits !== p.hits || c.dmax !== p.dmax || c.el !== p.el) cstats.atkCapped++;
         const animMs = Math.max(120, Math.min(COMBAT.attackAnimMs, now - (pl.lastAtkAt || 0)));
+        pl.attackJob = c.job; pl.lastSkill = p.skill; pl.effectAt = now;
         pl.lastAtkAt = now;
         pl.attackUntil = now + animMs;
         pl.atkAnimMs = animMs;
@@ -949,7 +984,7 @@ export function mount(root, app, opts = {}) {
         break;
       case 'drop':
         cstats.dropsRecv++;
-        drops.add(p, groundAt(p.x, p.y - 1), now);
+        if (p.buff === HEAL) drops.add(p, groundAt(p.x, p.y - 1), now);
         break;
       case 'pick':
         if (isHost()) hostPick(p.user_id, p.drop_id);
@@ -975,12 +1010,7 @@ export function mount(root, app, opts = {}) {
       chatLog.addSystem(`HP를 ${gained} 회복했어요`);
       return;
     }
-    if (!isBuff(id)) return;
-    buffs.add(id, now);
-    refreshAttack();
-    cstats.buffsGained++;
-    const st = buffs.stacks()[id];
-    chatLog.addSystem(`${BUFF_LABEL[id]} 강화 ${st}단계 (60초)`);
+
   }
 
   /** HUD 버프 바: 아이콘(스프라이트 또는 절차적 구슬) + 남은 시간 원형 게이지 + 스택 수. 10Hz로 다시 그린다 */
@@ -1033,7 +1063,7 @@ export function mount(root, app, opts = {}) {
   if (debug) {
     try {
       window.__mushroomDebug = Object.freeze({
-        buff(id) { if (!isBuff(id) && id !== HEAL) return false; gainBuff(id); return buffs.stacks(); },
+        buff(id) { if (id !== HEAL) return false; gainBuff(id); return buffs.stacks(); },
         /** QA: 내 HP를 n으로 (회복 시험용, hp 송신) */
         setHp(n) { if (!me || me.dead) return false; me.hp = Math.max(1, Math.min(me.max, n | 0)); sendHp(null); return me.hp; },
         clearBuffs() { buffs.clear(); refreshAttack(); return true; },
@@ -1083,8 +1113,8 @@ export function mount(root, app, opts = {}) {
       // (사이클 9) 공격: 쿨다운 0.45초, 누르고 있으면 계속. 유령은 공격·줍기 불가
       if (connection === 'connected' && !me.dead) {
         if (b.rope) input.consumeAttack(); // (사이클 10) 매달린 동안 공격 불가 (누름도 쌓지 않음)
-        else if (input.wantsAttack(now) && now - me.lastAtkAt >= atk.cooldown * 1000) { input.consumeAttack(); doAttack(now); }
-        if (input.takePick(now)) tryPick(PICK_RANGE, false);
+        else if (input.wantsAttack(now) && now - me.lastAtkAt >= BASIC_INTERVAL_MS) { input.consumeAttack(); doAttack(now); }
+
         tryPick(TOUCH_RANGE, true); // (사이클 10) 닿으면 자동 줍기
       }
       me.s = me.dead ? 'ghost' : now < me.attackUntil ? 'attack' : b.s;
@@ -1194,6 +1224,7 @@ export function mount(root, app, opts = {}) {
     slashes.update(now);
     stones.update(dt, now);
     while (atkBoxes.length && now - atkBoxes[0].at > ATTACK_BOX_SHOW_MS) atkBoxes.shift();
+    paintSkills(now);
     buffs.update(now);
     const nAtkKey = buffs.size;
     if (nAtkKey !== lastBuffCount) { lastBuffCount = nAtkKey; refreshAttack(); } // 만료
@@ -1318,6 +1349,7 @@ export function mount(root, app, opts = {}) {
       if (p.anim === 'climb') avatarR.drawClimb(ctx, p.avatar, Math.round(sx * k), pyD, k, now, p.climbMoving);
       else avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), left);
       ctx.globalAlpha = 1;
+      if (p.effectAt != null) drawAbilityEffect(ctx, p.attackJob || job.id, p.lastSkill || 0, Math.round(sx*k), pyD, k, now-p.effectAt, left);
     }
     slashes.draw(ctx, camX, cy, k, now);
     projectiles.draw(ctx, camX, cy, k, now);
@@ -1475,11 +1507,14 @@ export function mount(root, app, opts = {}) {
     if (isTypingTarget(ae) || chatLog.el.contains(ae)) return;
     if (document.body.classList.contains('has-modal')) return; // 확인 모달이 열려 있으면 게임 입력 없음
     const now = performance.now();
-    // (사이클 9) 공격 Ctrl / J / X, 줍기 Z. Ctrl은 단독으로만(Ctrl+J 등 브라우저 단축키는 양보)
+    // (사이클 9) 공격 Ctrl / J / X, 스킬 1 / 2 / 3. Ctrl은 단독으로만(Ctrl+J 등 브라우저 단축키는 양보)
+    if (/^Digit[123]$/.test(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault(); if (!e.repeat) useSkill(Number(e.code.slice(-1)), now); return;
+    }
     const atkKey = KEY_ATTACK[e.code] && (e.code.startsWith('Control') || !e.ctrlKey);
-    if ((atkKey || (KEY_PICK[e.code] && !e.ctrlKey)) && !e.metaKey && !e.altKey) {
+    if (atkKey && !e.metaKey && !e.altKey) {
       e.preventDefault();
-      if (!e.repeat && connection === 'connected') input.pressAction(`key:${e.code}`, atkKey ? 'attack' : 'pick', now);
+      if (!e.repeat && connection === 'connected') input.pressAction(`key:${e.code}`, 'attack', now);
       return;
     }
     // 브라우저 단축키 (Ctrl+S 등). (사이클 9) 공격용 Ctrl을 누른 채 방향키·Space는 게임 입력으로 받는다
@@ -1526,7 +1561,7 @@ export function mount(root, app, opts = {}) {
   const touchButtons = [
     [leftBtn, -1, 'touch:left', 'left'], [rightBtn, 1, 'touch:right', 'right'],
     [crouchBtn, 'prone', 'touch:prone', null], [jumpBtn, 'jump', 'touch:jump', 'up'],
-    [attackBtn, 'attack', 'touch:attack', null], [pickBtn, 'pick', 'touch:pick', null], // (사이클 9)
+    [attackBtn, 'attack', 'touch:attack', null], // (사이클 9)
   ];
   for (const [btn, what, id, group] of touchButtons) {
     const release = () => { input.release(id); btn.classList.remove('is-pressed'); };
@@ -1724,6 +1759,7 @@ export function mount(root, app, opts = {}) {
       // (사이클 10) 버프 [{ id, stacks, leftMs, frac }]와 지금 공격 값 { w, hits, dmin, dmax, el, cooldown, animMs }
       buffs: buffs.list(performance.now()),
       attack: { ...atk },
+      skills: skillButtons.map(s => ({ slot: s.slot, name: s.ability.name, leftMs: Math.max(0, skillReadyAt[s.slot] - performance.now()) })),
       reviveVisible: !reviveBtn.hidden && !reviveBox.hidden,
       numbers: dmgNums.count, projectiles: projectiles.count, slashes: slashes.count, slashImage: slashes.hasImage, slashElementImages: slashes.elementImages, buffOrbImage: !!buffOrbSprite,
       sprites: { ghost: !!ghostSprite, tombstone: !!tombSprite },

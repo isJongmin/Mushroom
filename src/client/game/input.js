@@ -11,7 +11,6 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
   let seq = 0;
   let jumpAt = -Infinity; // 마지막 점프 누름 시각 (performance.now 기준)
   let attackAt = -Infinity; // (사이클 9) 마지막 공격 누름 시각
-  let pickAt = -Infinity; // (사이클 9) 마지막 줍기 누름 시각
   let lastTap = null; // { group, at }
   let superReq = null; // { kind, firstAt, at }
   let jumpHoldOff = false; // (사이클 10) 로프 위끝에 올라선 뒤: 다시 누를 때까지 누르고 있는 점프를 무시
@@ -31,7 +30,6 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
       acts.set(sourceId, action);
       if (action === 'jump') { jumpAt = now; jumpHoldOff = false; }
       else if (action === 'attack') attackAt = now;
-      else if (action === 'pick') pickAt = now;
     },
     /** 더블탭 묶음 누름 ('left' | 'right' | 'up'). 키 반복은 부르는 쪽이 거른다. */
     tap(group, now) {
@@ -60,7 +58,6 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
       jumpAt = -Infinity;
       jumpHoldOff = false;
       attackAt = -Infinity;
-      pickAt = -Infinity;
       lastTap = null;
       superReq = null;
     },
@@ -100,12 +97,7 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
       return now - attackAt <= bufferMs || holding('attack');
     },
     consumeAttack() { attackAt = -Infinity; },
-    /** (사이클 9) 줍기 요청 1회 (꺼내면 지운다) */
-    takePick(now, bufferMs = 150) {
-      const r = now - pickAt <= bufferMs;
-      pickAt = -Infinity;
-      return r;
-    },
+
   };
 }
 
@@ -135,6 +127,5 @@ export const KEY_TAP = Object.freeze({
   KeyW: 'up',
 });
 
-/** (사이클 9) 공격 = Ctrl / J / X, 줍기 = Z */
+/** 기본 공격 = Ctrl / J / X. 스킬 = 1 / 2 / 3 (room). */
 export const KEY_ATTACK = Object.freeze({ ControlLeft: true, ControlRight: true, KeyJ: true, KeyX: true });
-export const KEY_PICK = Object.freeze({ KeyZ: true });

@@ -1,4 +1,4 @@
-import { jobDefinition } from './jobs.js';
+import { jobDefinition, abilityDefinition } from './jobs.js';
 // (사이클 9) 전투: 판정 상자, 피해 숫자, 슬래시, HP 바, 유령, 비석. ARCHITECTURE "사이클 9 계약".
 // 좌표는 월드 단위. 그리기는 장치 px 컨텍스트(단위행렬)에 k = 장치 px / 월드로 하거나, HP 바·숫자처럼 CSS px 컨텍스트에 한다.
 // 판정 함수는 DOM이 없어도 동작한다(Node 단위 시험 가능). 그리기 함수는 canvas 컨텍스트만 받는다.
@@ -438,9 +438,11 @@ export function createJobProjectiles() {
       return finish(id, x, y, now, p?.job || jobDefinition(jobId));
     },
     add(a, now, authoritative = false) {
-      const j = jobDefinition(a.job);
+      const base = jobDefinition(a.job);
+      const ability = abilityDefinition(a.job, a.skill ?? 0);
+      const j = { ...base, splash: ability.splash, targets: ability.targets };
       if (!j.speed) return;
-      const count = j.id === 'mage' ? 1 : 2;
+      const count = Math.min(a.hits, j.id === 'mage' ? 1 : (a.skill ? 3 : 2));
       prune(now);
       const attackId = a.user_id && Number.isSafeInteger(a.seq) ? `${a.user_id}:${a.seq}` : `local:${localSequence++}`;
       for (let i = 0; i < count; i++) {

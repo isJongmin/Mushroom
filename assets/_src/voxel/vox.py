@@ -65,11 +65,11 @@ class Box:
 # ---------------------------------------------------------------- 조명 (뷰 공간: x 오른쪽, y 위, z 카메라 쪽)
 # 사이클 10: 배경 그림(골든아워, 좌상단 따뜻한 빛, 갈색 그림자)에 맞춤. 하늘/정면 필을 회청색에서 따뜻한 회갈색으로.
 KEY_DIR = norm([-0.48, 0.70, 0.52])
-KEY_COL = np.array([1.00, 0.84, 0.64]) * 1.85
-SKY_COL = np.array([0.62, 0.58, 0.58]) * 0.70
+KEY_COL = np.array([1.00, 0.93, 0.84]) * 1.60
+SKY_COL = np.array([0.76, 0.82, 0.94]) * 0.76
 GND_COL = np.array([0.46, 0.32, 0.22]) * 0.50
 FILL_DIR = norm([0.45, 0.10, 0.90])
-FILL_COL = np.array([0.74, 0.64, 0.58]) * 0.40
+FILL_COL = np.array([0.88, 0.88, 0.94]) * 0.46
 BACK_DIR = norm([0.80, 0.35, -0.50])
 BACK_COL = np.array([1.00, 0.76, 0.54]) * 0.80
 RIM_COL = np.array([1.00, 0.80, 0.58]) * 0.90
@@ -298,9 +298,9 @@ def render(boxes, yaw, pitch, scale, *, vis=None, mask=(), occ=None, W=144, H=19
     return out
 
 
-CUBE = 2.0 * UNIT      # 큐브 질감 한 칸 (모델 단위): 시트 약 3.6px (배경 큐브 6~8px 보다 작게, 시안 캐릭터 결 크기)
-CUBE_JIT = 0.075       # 칸마다 명도 편차 (세기 1 기준)
-CUBE_EDGE = 0.16       # 칸 경계 폭 (칸 비율)
+CUBE = 1.0 * UNIT      # Fine-pixel revision: 1.82 sheet px, half the previous texture cell.
+CUBE_JIT = 0.035       # Quiet texture preserves facial and clothing readability.
+CUBE_EDGE = 0.12
 
 
 def cube_tex(P, b, Mv, V, axis):

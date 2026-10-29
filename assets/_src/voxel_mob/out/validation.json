@@ -1,0 +1,116 @@
+{
+  "result": "PASS",
+  "geometricFrames": 49,
+  "allAnimationFramesDistinct": true,
+  "allFramesUnclipped": true,
+  "originalGameplayAndFramesPreserved": true,
+  "representativeRerenderByteIdentical": 5,
+  "extraMobPngsUnchanged": 3,
+  "fxUnchanged": true,
+  "sheets": [
+    {
+      "kind": "snail",
+      "size": [
+        810,
+        72
+      ],
+      "frames": 9,
+      "frameHashes": [
+        "cb85889d981c7bebff3863572f75e2f90178fac0ef041edab2298238e574577b",
+        "432b76e9dbd1b2ad64ea4ff0bd2cddb4c625cb3759fb1418b11caa1e4210712c",
+        "c5aa3ea623b4d595bd57bfa9257e0927fe0a8a5a5bd63faea67ff91f241f037a",
+        "cc5d81025f29412bf932c99b9ba51ae785b6dd2f8be19a0c0b908a5bf557dcd1",
+        "412a23600775dc077024a94d647d656f6526f1b894861adf990e04a31005696a",
+        "f94f1347a98e711d5ae45b229d376ab0437fe4a36c06ef3a88d796b95d126509",
+        "0e269144df6bbb5215bbcc8f6df841888e4fe9ffe4c95ef6e445788b051e3ee8",
+        "289d4273fc3cc2d9e7c0c887f3131b163b183ba81d0bcc27ccd5a6f3f5520956",
+        "ee170348f5c331c5ca1a2977c5c9b3252b36a06046dfe9b6528c260ba7889be3"
+      ],
+      "sheetSha256": "8daccf5bc2872787a10d3d44fd78ede02be5e62484bef978d2b71d004ecace71"
+    },
+    {
+      "kind": "mushroom",
+      "size": [
+        1188,
+        126
+      ],
+      "frames": 11,
+      "frameHashes": [
+        "fdd46cdb13a420c19c11d6bac18741882fe94fa212375e3e0260040ff0c4bf8b",
+        "deeec9c26faddd5e558089d115c32347632f75f6695249394ec46a2b7a1b2495",
+        "ba97d85a13d7fb7819898a4a2098dbf006370c7fb53ea9611c2e94c4c22b916e",
+        "e8852efa00f9c5a9dcf5c5ae683130ee6a07a11408ec83e2fa68221a9102740e",
+        "83e4a0a4673ef97e3d7701307d0ed9459c88f9a6e7d2d7f1e5f1d61dc125f00c",
+        "c98ecefa01f3bb7e0e41bc0060ba5f5f4f70b6b4038ef1aab4da51851f5a7198",
+        "2f973bd6e1a0a3a48dfa956609f0db21513b1b9b483f1c52fc7a642b5419d218",
+        "6d754937759736335cd304091b80ddfb60fda1501863a5abfae65900ff3d1b59",
+        "7951f64828496a7b736f1c3ccd962dca06dce5220d4dda83ef1895e2b14f2cb3",
+        "ee43aaabbec61b17b0944d40d3e02d8f13e36306646daa80b9649da9aa5aacaa",
+        "112b4249f6f46e677e6556724094e499c9c92ca2d71ef1667a00b8fafa004a8a"
+      ],
+      "sheetSha256": "e11c8b12ed129b3d5d405c455072d1540e1f63f271ee65a4d4f17ec186a6893a"
+    },
+    {
+      "kind": "slime",
+      "size": [
+        1188,
+        114
+      ],
+      "frames": 11,
+      "frameHashes": [
+        "d71c55f165705e9f26d4a7abef48f5b1ffa2bf1f13821be057fe0158619efdbc",
+        "f3b3dccd61e88cf3ec6b5a97866605b49de1b7e76f713d2670fe464f06aea5d5",
+        "37403ad15a656c3ff659c09ec2fed323c298b8230908d51e4361d6490cb4cb2b",
+        "92f56cba118ee204cb5013f4aeb9fafd331d4c236171747fb120f9549289f3ac",
+        "c53992aa28d0d3cda39d4fb3b716d3dee796d08e1040556107b5c0f2abe79130",
+        "99f25bdc9da7163a471a5f46c9931aae78a3cbf717729e432c44a33093e54c4d",
+        "bdbccb190d97e489cd4f5f480bd70ec2c5db31a1e6aa6f516d35083758271b88",
+        "c3687fb32e7769cd2816401fae6b93d6f00606dd45355c003a40e3eceb17a3df",
+        "d2513349587f3499500010f3bcda2f8bc4f62beb68ae4f8101e24c8d85b78d36",
+        "e19bb58ba5def549a1d4df4d7af4cd80f4cdbd51830f47f4aacb07c1d26ff870",
+        "b6148305447f73bde17c6fdcc33013ef8a283c087f6488677de06989ca237452"
+      ],
+      "sheetSha256": "b5fc7585583feea29e12af5856b472a55e3c5cc6ee6416291bdae909b38b888d"
+    },
+    {
+      "kind": "bat",
+      "size": [
+        1080,
+        102
+      ],
+      "frames": 9,
+      "frameHashes": [
+        "56057cbf83c5ceec1186a1a3693ff7da1e864aabd73abc3b5be5814e9092a37b",
+        "401846df357b25d958d2ccf4081992c157e05459740c6dbca7d8c205241e9dae",
+        "0ddf141d320d242a9dfc87c7f27e97d622592f2209622df4ff50db63276fb17a",
+        "140c14df15ab13b730ce82fa8ea6dec68424cc427cb48b44447b4ba81bdf1e6a",
+        "45ddb0a23de8679f8207d643940cb07c851eaca39e11b63b8f1890e79fcf525c",
+        "b43bfd669466871455992f05592e8abcbfb1b80617588de4dca9f56036af4594",
+        "84a1d7861d6107272caf747a924d0c547832bb7c786ad9c9506f143e82ab0b91",
+        "c468b5f6b006689b0716a8e17fd3a5a830aa5f267de7172b64b2a3a3b133373f",
+        "97d37e041ac303a1c215dba2016449075a7e44c3f1ee1b131077aeaf94311de9"
+      ],
+      "sheetSha256": "bb656f635f7ae8c499016069ded138456d11651179f5587e8e29bf4db8d424fb"
+    },
+    {
+      "kind": "golem",
+      "size": [
+        1944,
+        198
+      ],
+      "frames": 9,
+      "frameHashes": [
+        "368c89b956bff0ae71d4f60eeda5e43556cf3c36508e88126641cd88983defda",
+        "a82b80b05ba480c306829e178b536f930412bf3bb6313bf70da9d6e2ebedddd8",
+        "de3616dde17cd7c619400cd5aeb38feb674fc0000f9e73ecbcdfde368bd34c49",
+        "844bb92bfb3a69ffe2ee24c14ecb71224023599f1a36d8daad8593a8c839e520",
+        "b745e298051216e310f70de0c3718963275968046110b60555b0ba4ce0061d1e",
+        "da357a9a851c031cbf91656050c4c9e1f3b88a1871a8a407e6d18926266a51db",
+        "66477ca04dbb77c079bd210fb045d906046c706bc0b082e960d166cbdd0a376e",
+        "8df20b7c74d2d049511856fd98911ce3a093832235909e9b7df9f98dc26ec1a1",
+        "2aab1729f24d0eb623338220b7dfee1f9811b2411199079c0eca764b7c49800e"
+      ],
+      "sheetSha256": "4e83c35455e96ea0415b68174e541c3ad0b84792f8141b42ee768a459971e41d"
+    }
+  ]
+}

@@ -1,4 +1,8 @@
-"""사이클 9 몬스터/전투 에셋 빌드.
+"""보관용 사이클 9 2D 몬스터/전투 에셋 빌드.
+
+현재 3D 블록 몬스터 원본과 빌드는 assets/_src/voxel_mob/ 이다.
+이 과거 빌드를 실행하면 현재 runtime 몬스터를 2D 버전으로 덮어쓰므로
+현재 아트 재생성에는 voxel_mob/build.py 를 사용한다.
 
 python3 assets/_src/art2d_mob/build.py            # 전체
 python3 assets/_src/art2d_mob/build.py snail bat  # 일부 몬스터만(manifest는 항상 갱신)
@@ -20,6 +24,7 @@ FX_DIR = os.path.join(ROOT, 'assets', 'fx')
 
 from vec import Canvas, puff, sparkle, twinkle  # noqa: E402
 from mobs import MOBS  # noqa: E402
+from pixel import pixel_frames  # noqa: E402
 import extras  # noqa: E402
 sys.path.insert(0, os.path.join(HERE, '..', 'fx'))
 import spec as fxspec  # noqa: E402
@@ -112,8 +117,8 @@ def build_mob(mid):
     frames += die_frames(spec)
     fw, fh = spec['frame']
     sheet = Image.new('RGBA', (fw * len(frames), fh), (0, 0, 0, 0))
-    for i, f in enumerate(frames):
-        sheet.paste(f.image(), (i * fw, 0))
+    for i, im in enumerate(pixel_frames([f.image() for f in frames])):
+        sheet.paste(im, (i * fw, 0))
     sheet.save(os.path.join(MOB_DIR, f'{mid}.png'), optimize=True)
     return dict(move=list(range(n)), hit=[n], die=list(range(n + 1, n + 5))), len(frames)
 
@@ -129,6 +134,7 @@ def manifest():
             'anchor': {'x': spec['anchor'][0], 'y': spec['anchor'][1]},
             'frame': {'w': spec['frame'][0], 'h': spec['frame'][1]},
             'sheet': f'assets/mob/{mid}.png',
+            'pixelArt': True,
             'frames': n + 5,
             'animations': {'move': list(range(n)), 'hit': [n], 'die': list(range(n + 1, n + 5))},
             'fps': spec['fps'],
@@ -138,6 +144,7 @@ def manifest():
         if mid in fxspec.BUFF_DROP_COUNT:
             mobs[mid]['buffDropCount'] = fxspec.BUFF_DROP_COUNT[mid]
     m = {
+        'revision': 'fine-pixel-20261029-v1',
         'density': 1.5,
         'note': 'frame/anchor = 에셋 px(시트 좌표), size = 월드 단위 판정 상자(기준점 = 상자 아래 중앙). 기본 방향은 오른쪽, 왼쪽은 좌우 반전. hop은 뜀 높이가 프레임에 들어 있다.',
         'mobs': mobs,

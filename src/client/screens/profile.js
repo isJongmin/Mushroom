@@ -75,6 +75,13 @@ export function mount(root, app, opts = {}) {
 
   // 프리셋, 탭, 슬롯
   const presetGrid = h('div', { class: 'bk-presets', role: 'group', 'aria-label': '추천 조합' });
+  const extraPresetGrid = h('div', { class: 'bk-presets', role: 'group', 'aria-label': '추가 추천 조합' });
+  const morePresetLabel = h('span');
+  const presetMore = h('details', { class: 'preset-more', testid: 'more-presets', hidden: true },
+    h('summary', { class: 'bk-btn' }, morePresetLabel,
+      h('span', { class: 'preset-more__expand' }, '펼치기'),
+      h('span', { class: 'preset-more__collapse' }, '접기')),
+    extraPresetGrid);
   const tabBtns = {};
   for (const part of CATEGORY_ORDER) {
     tabBtns[part] = h('button', {
@@ -87,7 +94,7 @@ export function mount(root, app, opts = {}) {
   const currentLine = h('p', { class: 'bk-help', testid: 'current-part', 'aria-live': 'polite' });
   const partsBanner = h('div', { class: 'bk-banner bk-banner--error', role: 'alert', testid: 'manifest-error', hidden: true }, M.MANIFEST);
   const partsBody = h('div', {},
-    h('h2', { class: 'section-title' }, '추천 조합'), presetGrid,
+    h('h2', { class: 'section-title' }, '추천 조합'), presetGrid, presetMore,
     h('h2', { class: 'section-title' }, '꾸미기'), tabList, slotGrid, currentLine);
   const partsArea = h('div', { class: 'create-parts' }, partsBanner, partsBody);
 
@@ -252,18 +259,24 @@ export function mount(root, app, opts = {}) {
 
   let presetCanvases = [];
   function paintPresets() {
-    presetCanvases.forEach((cv, i) => paintThumb(cv, renderer.thumb(assets.presets[i].avatar, PART_KEYS), PRESET_CROP));
+    presetCanvases.forEach((cv, i) => {
+      if (i < 6 || presetMore.open) paintThumb(cv, renderer.thumb(assets.presets[i].avatar, PART_KEYS), PRESET_CROP);
+    });
   }
+  on(presetMore, 'toggle', () => { if (ready && presetMore.open) paintPresets(); });
   function buildPresets() {
     presetGrid.replaceChildren();
+    extraPresetGrid.replaceChildren();
+    presetMore.hidden = assets.presets.length <= 6;
+    setText(morePresetLabel, `다른 코디 ${Math.max(0, assets.presets.length - 6)}개`);
     presetCanvases = [];
     assets.presets.forEach((p, i) => {
       const cv = thumbCanvas(THUMB_SIZE);
       presetCanvases.push(cv);
-      paintThumb(cv, renderer.thumb(p.avatar, PART_KEYS), PRESET_CROP);
+      if (i < 6 || presetMore.open) paintThumb(cv, renderer.thumb(p.avatar, PART_KEYS), PRESET_CROP);
       const btn = h('button', { type: 'button', class: 'bk-btn', testid: `preset-${i}`, 'data-label': p.label, disabled: creating }, cv, h('span', {}, p.label));
       on(btn, 'click', () => applyPreset(i));
-      presetGrid.appendChild(btn);
+      (i < 6 ? presetGrid : extraPresetGrid).appendChild(btn);
     });
   }
 

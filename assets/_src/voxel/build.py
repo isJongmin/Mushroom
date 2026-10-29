@@ -4,6 +4,7 @@ python3 assets/_src/voxel/build.py                     # assets/avatar/** 전체
 python3 assets/_src/voxel/build.py --preview DIR       # + 미리보기 (presets, parts_*, walk.gif, compare, ingame_scale)
 python3 assets/_src/voxel/build.py --out DIR --src-out DIR   # 다른 폴더로 (check.py 결정성 검사용)
 python3 assets/_src/voxel/build.py --manifest-only     # PNG는 건드리지 않고 manifest.json만 다시 씀 (files 는 디스크의 PNG 기준)
+옵션: --only hair:espresso-crop,top:varsity-burgundy (선택한 새 파츠만 증분 렌더, 기존 PNG 보존)
 옵션: --jobs N (기본 2), --no-truth (정답 렌더 생략)
 
 레이어 분리 규칙
@@ -19,6 +20,7 @@ import json
 import time
 import shutil
 import hashlib
+import io
 import numpy as np
 from multiprocessing import Pool
 from PIL import Image
@@ -33,7 +35,7 @@ W, H = 144, 192
 ANCHOR = (72, 180)
 DENSITY = 1.5
 SCALE = 1.82 / UNIT     # 시트 px / 복셀 1칸 (사이클 7: 2.75 -> 1.82, 사이클 10: 0.91)
-PITCH = 15
+PITCH = 10  # Lower camera: less exposed crown, more readable eyes and outfit.
 FRAMES = ['front', 'front_b', 'side', 'walk0', 'walk1', 'walk2', 'walk3', 'back', 'jump', 'fall', 'prone', 'attack0', 'attack1']
 YAW = {'front': -25, 'front_b': -25, 'back': 160}   # 사이클 7: 정면은 시안처럼 캐릭터 왼쪽에서 (25 -> -25)
 SIDE_YAW = 62
@@ -55,8 +57,8 @@ LAYER_ORDER = [
 ]
 SPLIT = {'hair': ('body', 'hair_back', 'hair_front'), 'top': ('legs', 'top_back', 'top'), 'hat': ('hairshell', 'hat_back', 'hat')}
 SHADE = {'hair': 'man', 'top': 'man', 'hat': 'man+shell'}
-SHADE_RGB = (34, 26, 48)
-SHADE_GAIN = {'hair': 0.65, 'top': 0.6, 'hat': 0.7}   # 사이클 7: 파츠별 (겹치는 그림자가 곱해져 과하게 어두워지는 것 보정, 0.9 -> 파츠별)
+SHADE_RGB = (52, 31, 33)  # Warm contact shadows, without the previous violet face cast.
+SHADE_GAIN = {'hair': 0.65, 'top': 0.4, 'hat': 0.7}
 TOL_MEAN = 6.0          # 레이어 합성 vs 전체 렌더 허용치 (프리멀티 RGB 평균 절대차, /255)
 TOL_ALPHA = 2.0
 
@@ -192,7 +194,17 @@ def diff_stats(a, b):
 
 def save_png(arr, path):
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    Image.fromarray(arr, 'RGBA').save(path, optimize=True)
+    # Encode before touching the installed file; an interrupted write must not
+    # leave an empty runtime sprite behind.
+    encoded = io.BytesIO()
+    Image.fromarray(arr, 'RGBA').save(encoded, format='PNG', optimize=True)
+    data = encoded.getvalue()
+    if not data.startswith(b'\x89PNG\r\n\x1a\n'):
+        raise ValueError('PNG encoding failed: ' + path)
+    temp = path + '.tmp'
+    with open(temp, 'wb') as fh:
+        fh.write(data)
+    os.replace(temp, path)
 
 
 def layer_files(avatar_dir):
@@ -206,6 +218,7 @@ def layer_files(avatar_dir):
 
 def manifest(files):
     return {
+        'revision': 'fine-pixel-variety-20261029-v2',
         'frame': {'w': W, 'h': H},
         'anchor': {'x': ANCHOR[0], 'y': ANCHOR[1]},
         'density': DENSITY,
@@ -228,15 +241,29 @@ def write_manifest(out_dir):
         fh.write('\n')
 
 
-def build(out_dir, src_out, jobs=2, truth=True, log=print):
+def parse_only(value):
+    """Validate a comma-separated list before doing any rendering or writing."""
+    if not value:
+        return None
+    selected = set()
+    for token in value.split(','):
+        cat, sep, pid = token.strip().partition(':')
+        if not sep or cat not in CATS or pid not in PARTS[cat] or pid == 'none':
+            raise ValueError('Unknown render selection: ' + token)
+        selected.add((cat, pid))
+    return selected
+
+
+def build(out_dir, src_out, jobs=2, truth=True, log=print, only=None):
     t0 = time.time()
     timing = {}
-    tasks_irr = [(fr, recv) for fr in FRAMES for recv in ('man', 'man+shell')]
+    needed_recv = set(SHADE[cat] for cat, _ in only if cat in SHADE) if only else {'man', 'man+shell'}
+    tasks_irr = [(fr, recv) for fr in FRAMES for recv in sorted(needed_recv)]
     with Pool(jobs) as p:
         for k, v in p.imap(t_irr0, tasks_irr):
             IRR0[k] = v
     timing['irr0_s'] = round(time.time() - t0, 1)
-    tasks = [(cat, pid, fr) for cat in CATS for pid, _ in LABELS[cat] if pid != 'none' for fr in FRAMES]
+    tasks = [(cat, pid, fr) for cat in CATS for pid, _ in LABELS[cat] if pid != 'none' and (only is None or (cat, pid) in only) for fr in FRAMES]
     per = {}
     lt = []
     t1 = time.time()
@@ -256,29 +283,42 @@ def build(out_dir, src_out, jobs=2, truth=True, log=print):
             arr = np.concatenate([frs[fr].get(L, empty) for fr in FRAMES], axis=1)
             if arr[..., 3].any():
                 sheets[(L, pid)] = arr
-    if os.path.isdir(out_dir):
+    if only is None and os.path.isdir(out_dir):
         shutil.rmtree(out_dir)
-    os.makedirs(out_dir)
+    os.makedirs(out_dir, exist_ok=True)
     for (L, pid), arr in sorted(sheets.items()):
         save_png(arr, os.path.join(out_dir, L, pid + '.png'))
+    if only is not None:
+        # Clean obsolete empty layers only after atomic replacement of new sheets.
+        for L, cat, _ in LAYER_ORDER:
+            for c, pid in only:
+                path = os.path.join(out_dir, L, pid + '.png')
+                if c == cat and (L, pid) not in sheets and os.path.exists(path):
+                    os.remove(path)
     write_manifest(out_dir)
 
-    report = {}
+    sheets = load_sheets(out_dir)
+    report_path = os.path.join(src_out, 'build_report.json')
+    report = json.load(open(report_path)).get('layer_vs_full', {}) if only and os.path.isfile(report_path) else {}
+    truth_presets = [(i, lab, av) for i, (lab, av) in enumerate(PRESETS)
+                     if only is None or any((cat, pid) in only for cat, pid in av.items())]
     if truth:
         t2 = time.time()
-        ft = [(av, fr) for _, av in PRESETS for fr in FRAMES]
+        ft = [(av, fr) for _, _, av in truth_presets for fr in FRAMES]
         full = {}
         with Pool(jobs) as p:
             for (av, fr), im, dt in p.imap(t_full, ft, chunksize=1):
                 full.setdefault(json.dumps(av, sort_keys=True), {})[fr] = im
         timing['truth_s'] = round(time.time() - t2, 1)
         os.makedirs(os.path.join(src_out, 'truth'), exist_ok=True)
-        for i, (lab, av) in enumerate(PRESETS):
+        for i, lab, av in truth_presets:
             tr = np.concatenate([full[json.dumps(av, sort_keys=True)][fr] for fr in FRAMES], axis=1)
             save_png(tr, os.path.join(src_out, 'truth', 'preset%d.png' % (i + 1)))
             report['preset%d' % (i + 1)] = diff_stats(composite(sheets, av), tr)
     timing['total_s'] = round(time.time() - t0, 1)
     timing['jobs'] = jobs
+    timing['only'] = sorted('%s:%s' % k for k in only) if only else None
+    timing['truth_presets'] = [i + 1 for i, _, _ in truth_presets] if truth else []
     os.makedirs(src_out, exist_ok=True)
     with open(os.path.join(src_out, 'build_report.json'), 'w') as fh:
         json.dump({'timing': timing, 'layer_vs_full': report}, fh, indent=2)
@@ -298,7 +338,7 @@ def main():
         write_manifest(out_dir)
         print('manifest.json 갱신:', os.path.join(out_dir, 'manifest.json'))
         return
-    sheets = build(out_dir, src_out, jobs, truth='--no-truth' not in a)
+    sheets = build(out_dir, src_out, jobs, truth='--no-truth' not in a, only=parse_only(opt('--only')))
     pv = opt('--preview')
     if pv:
         import preview

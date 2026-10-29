@@ -16,7 +16,7 @@
 - 호스팅: GitHub Pages (정적)
 - 백엔드: Supabase (DB, 인증, Realtime)
 - 프런트: 바닐라 JS + Canvas 2D, 빌드 도구 없음 (docs/ARCHITECTURE.md)
-- 아트: 3D 복셀 모델 조명 렌더 PNG/WebP (원본은 assets/_src/voxel/, assets/_src/voxel_map/ 생성 스크립트)
+- 아트: 3D 복셀 모델 조명 렌더 PNG/WebP. 캐릭터는 assets/_src/voxel/(variety.py 포함), 현재 몬스터는 assets/_src/voxel_mob/. assets/_src/art2d_mob/는 과거 2D 원본이며 현재 몬스터 빌드에 사용하지 않는다.
 
 ## 공통 규칙
 - 비밀 키(service_role 등)는 저장소와 프런트 코드에 넣지 않는다.

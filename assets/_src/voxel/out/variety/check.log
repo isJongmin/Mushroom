@@ -1,0 +1,59 @@
+[1] manifest
+  ok   frame 144x192
+  ok   anchor (72,180)
+  ok   density 1.5
+  ok   frames 13개 순서 (8 jump, 9 fall, 10 prone, 11 attack0, 12 attack1)
+  ok   animations idle_front/idle/walk
+  ok   animations jump [8] / fall [9] / prone [10] 200ms (crouch 없음)
+  ok   animations attack [11,12] 120ms (사이클 10)
+  ok   layerOrder {layer,part,blend}
+  ok   shade_* = source-atop
+  ok   shoes_under(part shoes) 가 bottom 바로 앞
+  ok   parts 개수 {'skin': 3, 'face': 4, 'hair': 15, 'top': 12, 'bottom': 10, 'shoes': 7, 'hat': 9}
+  ok   사이클 5 id 전부 유지 (저장된 프로필 호환) {}
+  ok   hat 첫 항목 none
+  ok   presets 12종 (기존 6 + 신규 6)
+  ok   새 revision으로 캐시 갱신
+  ok   새 추천: 피부 3톤과 표정 4종 모두 사용
+  ok   추천 순서와 모델 원본 일치
+  ok   사이클 10 기존 id도 전부 유지
+  ok   presets 의 id 가 parts 에 있음
+[2] manifest <-> 파일
+  ok   알 수 없는 파일 없음 []
+  ok   필수 레이어 파일 존재 (없음: [])
+  ok   hat/none 파일 없음
+  ok   files 키 = layerOrder 레이어 전부 (같은 순서)
+  ok   files id 정렬, 중복 없음
+  ok   files 목록 = 실제 파일 (레이어: [목록에만], [파일에만]) {}
+  ok   files 필수 레이어가 모든 id 포함 (hat 은 none 제외) []
+    files: {'hair_back': 14, 'top_back': 12, 'skin': 3, 'face': 4, 'shoes_under': 3, 'bottom': 10, 'shoes': 7, 'shade_top': 12, 'top': 12, 'shade_hair': 15, 'hat_back': 8, 'hair_front': 15, 'shade_hat': 8, 'hat': 8}
+[3] 시트 크기
+  ok   131장 모두 1872x192 RGBA (13프레임 1872x192) []
+[4] 기준점
+  ok   기준점 프레임 안
+[5] 합성 범위
+  ok   불투명(a>8) 범위 x 6..136, y 15..183 (프리셋 12 + 무작위 40, 13프레임)
+  ok   측면/걷기/엎드리기/공격 발 끝이 기준선 y=180 근처 (최대 차 3px)
+  ok   jump/fall 발 끝 y: jump 169..171, fall 180..182 (기준선 위로 뜰 수 있음, 아래로 190 이하)
+  ok   jump/fall 몸 중심(알파 가중 평균 y)이 side 와 비슷 (최대 차 6.4px <= 8)
+  ok   prone 키 / side 키 (모자 없음) = 0.41..0.44 (0.35~0.45)
+  ok   prone 키 / side 키 (모자 있음) = 0.42..0.45 (0.35~0.50)
+  ok   prone 몸 가로 중심 x = 67.5..74.1 (72 +-10)
+[6] 레이어 합성 vs 전체 렌더
+  ok   preset1 라벤더 후드: 평균 5.89 (<=6.0), p95 26.3, 알파 0.10 (<=2.0)
+  ok   preset2 가디건 걸: 평균 4.14 (<=6.0), p95 23.0, 알파 0.19 (<=2.0)
+  ok   preset3 바시티 캡: 평균 3.95 (<=6.0), p95 23.0, 알파 0.09 (<=2.0)
+  ok   preset4 민트 패딩: 평균 2.65 (<=6.0), p95 10.7, 알파 0.06 (<=2.0)
+  ok   preset5 분홍 소녀: 평균 4.96 (<=6.0), p95 27.7, 알파 0.20 (<=2.0)
+  ok   preset6 버섯 꼬마: 평균 5.35 (<=6.0), p95 31.3, 알파 0.11 (<=2.0)
+  ok   preset7 버건디 크롭: 평균 2.93 (<=6.0), p95 12.3, 알파 0.07 (<=2.0)
+  ok   preset8 코퍼 가든: 평균 3.17 (<=6.0), p95 13.3, 알파 0.07 (<=2.0)
+  ok   preset9 실버 스트리트: 평균 3.40 (<=6.0), p95 13.3, 알파 0.06 (<=2.0)
+  ok   preset10 민트 데이: 평균 3.46 (<=6.0), p95 15.8, 알파 0.06 (<=2.0)
+  ok   preset11 세이지 산책: 평균 5.14 (<=6.0), p95 26.9, 알파 0.09 (<=2.0)
+  ok   preset12 트윈 리본: 평균 4.08 (<=6.0), p95 21.1, 알파 0.09 (<=2.0)
+    build_report: {"preset1": {"mean_abs_rgb": 5.887, "p95": 26.33, "alpha_mae": 0.099}, "preset2": {"mean_abs_rgb": 4.142, "p95": 23.0, "alpha_mae": 0.192}, "preset3": {"mean_abs_rgb": 3.952, "p95": 23.0, "alpha_mae":
+[7] 결정적 빌드 (임시 폴더에 다시 빌드)
+  ok   132개 파일 해시 동일 []
+
+결과: 통과

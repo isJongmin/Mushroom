@@ -79,6 +79,7 @@ const DEFAULT_SIZE = { snail: [40, 30], mushroom: [44, 44], slime: [46, 38], bat
 export function normalizeMobManifest(raw) {
   if (!raw || typeof raw !== 'object' || !raw.mobs || typeof raw.mobs !== 'object') return null;
   const density = clampN(raw.density, 0.25, 8, 1.5);
+  const revision = typeof raw.revision === 'string' ? raw.revision.slice(0, 64) : '';
   const kinds = new Map();
   for (const [id, m] of Object.entries(raw.mobs).slice(0, 32)) {
     if (!KIND_RE.test(id) || !m || typeof m !== 'object') continue;
@@ -92,6 +93,8 @@ export function normalizeMobManifest(raw) {
     const buffDrop = clampN(m.buffDrop, 0, 1, BUFF_DROP_DEFAULT[id] ?? 0.35);
     const buffDropCount = Math.round(clampN(m.buffDropCount, 1, 4, BUFF_COUNT_DEFAULT[id] ?? 1));
     const frame = { w: clampN(m.frame && m.frame.w, 1, 1024, 0), h: clampN(m.frame && m.frame.h, 1, 1024, 0) };
+    const sheet = resolveSrc(m.sheet);
+    if (sheet && revision) sheet.searchParams.set('v', revision);
     kinds.set(id, Object.freeze({
       id,
       name: typeof m.name === 'string' ? m.name.slice(0, 20) : id,
@@ -101,11 +104,12 @@ export function normalizeMobManifest(raw) {
       size: { w: clampN(m.size && m.size.w, 8, 400, ds[0]), h: clampN(m.size && m.size.h, 8, 400, ds[1]) },
       anchor: { x: fin(m.anchor && m.anchor.x) ? m.anchor.x : null, y: fin(m.anchor && m.anchor.y) ? m.anchor.y : null },
       frame,
-      sheet: resolveSrc(m.sheet),
+      sheet,
       animations: anims,
       fps: clampN(m.fps, 1, 30, 8),
       behavior,
       facingLeft: m.facing === 'left',
+      pixelArt: m.pixelArt === true,
       buffDrop,
       buffDropCount,
     }));
@@ -465,6 +469,9 @@ export function drawMob(ctx, v, img, x, y, k, now, density, alpha = 1) {
   ctx.save();
   ctx.globalAlpha = alpha * (v.s === 'die' ? Math.max(0, 1 - t / (DIE_MS / 1000)) : 1);
   if (img && anim.length) {
+    // Pixel sheets keep their small clusters crisp at every display scale.
+    // save/restore confines this to the monster; avatar and map retain their own filtering.
+    if (spec.pixelArt) ctx.imageSmoothingEnabled = false;
     const fw = spec.frame.w || img.naturalHeight;
     const fh = spec.frame.h || img.naturalHeight;
     let i = Math.floor(t * spec.fps);

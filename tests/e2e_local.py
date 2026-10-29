@@ -1819,7 +1819,7 @@ def t25(browser, col):
     return verdict(checks)
 
 
-@case(26, "꾸미기 화면(1280x800): 탭 7개, 슬롯 반영, 프리셋 6종, 앞(숨쉬기 0/1)/옆(2)/뒤(7), 걷기(3..6), 탭/슬롯 키보드")
+@case(26, "꾸미기 화면(1280x800): 탭 7개, 슬롯 반영, 기본6+추가6 프리셋 펼치기, 앞/옆/뒤/걷기, 탭/슬롯 키보드")
 def t26(browser, col):
     ctx = new_ctx(browser)
     checks = []
@@ -1840,11 +1840,22 @@ def t26(browser, col):
             pick_slot(page, p, v)
         got = state(page)["create"]["avatar"]
         checks.append(("슬롯 선택 7파츠가 미리보기 상태에 반영", got == PICK))
+        more = page.get_by_test_id("more-presets")
+        checks.append(("첫 화면은 기본6개만 노출, 추가 코디는 접힘",
+                       len(MANIFEST["presets"]) == 12 and more.is_visible()
+                       and page.get_by_test_id("preset-5").is_visible()
+                       and not page.get_by_test_id("preset-6").is_visible()))
         for i, pr in enumerate(MANIFEST["presets"]):
+            if i == 6:
+                more.locator("summary").click()
             page.get_by_test_id(f"preset-{i}").click()
             got = state(page)["create"]["avatar"]
             checks.append((f"프리셋 {i} '{pr['label']}' 적용 (7파츠 일치)", got == pr["avatar"]))
-        checks.append(("프리셋 6종", len(MANIFEST["presets"]) == 6 and page.get_by_test_id("preset-6").count() == 0))
+        checks.append(("프리셋12개 모두 적용 가능", len(MANIFEST["presets"]) == 12
+                       and page.get_by_test_id("preset-11").count() == 1
+                       and page.get_by_test_id("preset-12").count() == 0))
+        more.locator("summary").click()
+        checks.append(("추가 코디를 다시 접을 수 있음", not page.get_by_test_id("preset-6").is_visible()))
         page.get_by_test_id("view-side").click()
         cs = state(page)["create"]
         checks.append((f"옆: view=side, frame={cs.get('frame')} (기대 2), 걷기 꺼짐",
@@ -2189,7 +2200,7 @@ def t33(browser, col):
     return verdict(checks)
 
 
-@case(34, "(c) 프리셋 6종: 프런트 합성 시트 vs 아트 정답(assets/_src/voxel/out/truth/presetN.png) 근사 일치 (art check.py 허용치: 프리멀티 RGB 평균 <= 6.0, 알파 MAE <= 2.0)")
+@case(34, "(c) 프리셋12종: 프런트 합성 시트 vs 독립3D렌더(out/variety/truth) 근사 일치 (평균 <=6.0, 알파 <=2.0)")
 def t34(browser, col):
     import numpy as np
     from PIL import Image
@@ -2205,7 +2216,7 @@ def t34(browser, col):
         ctx.close()
     for i, (pr, res) in enumerate(zip(MANIFEST["presets"], out)):
         tag = f"preset{i + 1} {pr['label']}"
-        truth_path = ROOT / "assets/_src/voxel/out/truth" / f"preset{i + 1}.png"
+        truth_path = ROOT / "assets/_src/voxel/out/variety/truth" / f"preset{i + 1}.png"
         if res is None or not truth_path.exists():
             checks.append((f"{tag}: 프런트 합성 또는 정답 파일 없음", False))
             continue

@@ -1,0 +1,62 @@
+[
+  {
+    "kind": "snail",
+    "frame": 0,
+    "boxes": 32,
+    "seconds": 0.74,
+    "bbox": [
+      11,
+      20,
+      81,
+      68
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 0,
+    "boxes": 29,
+    "seconds": 1.25,
+    "bbox": [
+      5,
+      46,
+      94,
+      121
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 0,
+    "boxes": 21,
+    "seconds": 0.88,
+    "bbox": [
+      18,
+      55,
+      90,
+      110
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 0,
+    "boxes": 32,
+    "seconds": 0.93,
+    "bbox": [
+      12,
+      6,
+      106,
+      72
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 0,
+    "boxes": 49,
+    "seconds": 5.43,
+    "bbox": [
+      43,
+      25,
+      176,
+      194
+    ]
+  }
+]

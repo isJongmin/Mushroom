@@ -1,0 +1,590 @@
+[
+  {
+    "kind": "snail",
+    "frame": 0,
+    "boxes": 32,
+    "seconds": 0.97,
+    "bbox": [
+      11,
+      20,
+      81,
+      68
+    ]
+  },
+  {
+    "kind": "snail",
+    "frame": 1,
+    "boxes": 32,
+    "seconds": 0.93,
+    "bbox": [
+      11,
+      20,
+      81,
+      68
+    ]
+  },
+  {
+    "kind": "snail",
+    "frame": 2,
+    "boxes": 32,
+    "seconds": 0.86,
+    "bbox": [
+      11,
+      20,
+      81,
+      68
+    ]
+  },
+  {
+    "kind": "snail",
+    "frame": 3,
+    "boxes": 32,
+    "seconds": 0.94,
+    "bbox": [
+      11,
+      20,
+      81,
+      68
+    ]
+  },
+  {
+    "kind": "snail",
+    "frame": 4,
+    "boxes": 32,
+    "seconds": 0.44,
+    "bbox": [
+      9,
+      26,
+      84,
+      68
+    ]
+  },
+  {
+    "kind": "snail",
+    "frame": 5,
+    "boxes": 32,
+    "seconds": 0.58,
+    "bbox": [
+      11,
+      28,
+      82,
+      68
+    ]
+  },
+  {
+    "kind": "snail",
+    "frame": 6,
+    "boxes": 32,
+    "seconds": 0.33,
+    "bbox": [
+      10,
+      37,
+      83,
+      69
+    ]
+  },
+  {
+    "kind": "snail",
+    "frame": 7,
+    "boxes": 32,
+    "seconds": 0.41,
+    "bbox": [
+      9,
+      45,
+      84,
+      69
+    ]
+  },
+  {
+    "kind": "snail",
+    "frame": 8,
+    "boxes": 32,
+    "seconds": 0.21,
+    "bbox": [
+      8,
+      54,
+      84,
+      70
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 0,
+    "boxes": 29,
+    "seconds": 1.12,
+    "bbox": [
+      5,
+      46,
+      94,
+      121
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 1,
+    "boxes": 29,
+    "seconds": 1.15,
+    "bbox": [
+      6,
+      39,
+      93,
+      117
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 2,
+    "boxes": 29,
+    "seconds": 1.1,
+    "bbox": [
+      9,
+      26,
+      91,
+      108
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 3,
+    "boxes": 29,
+    "seconds": 1.0,
+    "bbox": [
+      10,
+      19,
+      90,
+      103
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 4,
+    "boxes": 29,
+    "seconds": 0.86,
+    "bbox": [
+      9,
+      26,
+      91,
+      107
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 5,
+    "boxes": 29,
+    "seconds": 1.01,
+    "bbox": [
+      6,
+      39,
+      93,
+      116
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 6,
+    "boxes": 29,
+    "seconds": 0.82,
+    "bbox": [
+      5,
+      52,
+      95,
+      121
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 7,
+    "boxes": 29,
+    "seconds": 0.86,
+    "bbox": [
+      7,
+      56,
+      93,
+      121
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 8,
+    "boxes": 29,
+    "seconds": 0.78,
+    "bbox": [
+      6,
+      71,
+      94,
+      121
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 9,
+    "boxes": 29,
+    "seconds": 0.58,
+    "bbox": [
+      5,
+      86,
+      95,
+      121
+    ]
+  },
+  {
+    "kind": "mushroom",
+    "frame": 10,
+    "boxes": 29,
+    "seconds": 0.31,
+    "bbox": [
+      4,
+      99,
+      96,
+      121
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 0,
+    "boxes": 21,
+    "seconds": 0.72,
+    "bbox": [
+      18,
+      55,
+      90,
+      110
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 1,
+    "boxes": 21,
+    "seconds": 0.75,
+    "bbox": [
+      20,
+      46,
+      89,
+      104
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 2,
+    "boxes": 21,
+    "seconds": 0.57,
+    "bbox": [
+      23,
+      30,
+      86,
+      93
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 3,
+    "boxes": 21,
+    "seconds": 0.68,
+    "bbox": [
+      24,
+      22,
+      84,
+      88
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 4,
+    "boxes": 21,
+    "seconds": 0.6,
+    "bbox": [
+      22,
+      30,
+      85,
+      93
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 5,
+    "boxes": 21,
+    "seconds": 0.71,
+    "bbox": [
+      19,
+      47,
+      88,
+      104
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 6,
+    "boxes": 21,
+    "seconds": 0.6,
+    "bbox": [
+      19,
+      56,
+      89,
+      110
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 7,
+    "boxes": 21,
+    "seconds": 0.54,
+    "bbox": [
+      21,
+      60,
+      87,
+      110
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 8,
+    "boxes": 21,
+    "seconds": 0.43,
+    "bbox": [
+      21,
+      71,
+      88,
+      110
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 9,
+    "boxes": 21,
+    "seconds": 0.43,
+    "bbox": [
+      21,
+      82,
+      88,
+      110
+    ]
+  },
+  {
+    "kind": "slime",
+    "frame": 10,
+    "boxes": 21,
+    "seconds": 0.29,
+    "bbox": [
+      22,
+      91,
+      89,
+      111
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 0,
+    "boxes": 32,
+    "seconds": 0.81,
+    "bbox": [
+      12,
+      6,
+      106,
+      72
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 1,
+    "boxes": 32,
+    "seconds": 0.83,
+    "bbox": [
+      11,
+      8,
+      106,
+      74
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 2,
+    "boxes": 32,
+    "seconds": 0.91,
+    "bbox": [
+      12,
+      9,
+      106,
+      76
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 3,
+    "boxes": 32,
+    "seconds": 0.95,
+    "bbox": [
+      11,
+      8,
+      106,
+      74
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 4,
+    "boxes": 32,
+    "seconds": 0.82,
+    "bbox": [
+      8,
+      18,
+      109,
+      76
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 5,
+    "boxes": 32,
+    "seconds": 0.7,
+    "bbox": [
+      11,
+      24,
+      107,
+      77
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 6,
+    "boxes": 32,
+    "seconds": 0.55,
+    "bbox": [
+      10,
+      40,
+      108,
+      81
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 7,
+    "boxes": 32,
+    "seconds": 0.4,
+    "bbox": [
+      9,
+      56,
+      109,
+      84
+    ]
+  },
+  {
+    "kind": "bat",
+    "frame": 8,
+    "boxes": 32,
+    "seconds": 0.27,
+    "bbox": [
+      8,
+      71,
+      111,
+      87
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 0,
+    "boxes": 49,
+    "seconds": 5.55,
+    "bbox": [
+      43,
+      25,
+      176,
+      194
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 1,
+    "boxes": 49,
+    "seconds": 5.06,
+    "bbox": [
+      43,
+      24,
+      176,
+      192
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 2,
+    "boxes": 49,
+    "seconds": 5.29,
+    "bbox": [
+      43,
+      23,
+      176,
+      193
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 3,
+    "boxes": 49,
+    "seconds": 5.53,
+    "bbox": [
+      43,
+      24,
+      176,
+      190
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 4,
+    "boxes": 49,
+    "seconds": 4.34,
+    "bbox": [
+      38,
+      47,
+      181,
+      194
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 5,
+    "boxes": 49,
+    "seconds": 3.73,
+    "bbox": [
+      42,
+      58,
+      177,
+      194
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 6,
+    "boxes": 49,
+    "seconds": 2.9,
+    "bbox": [
+      42,
+      92,
+      178,
+      194
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 7,
+    "boxes": 49,
+    "seconds": 1.77,
+    "bbox": [
+      41,
+      126,
+      179,
+      195
+    ]
+  },
+  {
+    "kind": "golem",
+    "frame": 8,
+    "boxes": 49,
+    "seconds": 0.91,
+    "bbox": [
+      40,
+      159,
+      180,
+      195
+    ]
+  }
+]

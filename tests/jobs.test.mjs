@@ -38,10 +38,10 @@ console.log('PASS all 12 skills: cooldowns, canonical damage, wire round-trip, r
 
 for(const job of ['archer','thief']) {
   const a=abilityStats(job,0),def=abilityDefinition(job,0),shots=createJobProjectiles();
-  assert.equal(a.hits,1);assert.equal(def.shots,1);assert.equal(a.animMs,360);
+  assert.equal(a.hits,2);assert.equal(def.shots,2);assert.equal(a.animMs,360);
   shots.add({...a,user_id:'basic',seq:1,x:0,y:100,dir:'right'},0,true);
-  assert.equal(shots.count,1);assert.equal(shots.snapshot().shots[0].hits,1);
-  assert.equal(clampAttack({...a,hits:2}).hits,1);
+  assert.equal(shots.count,2);assert.ok(shots.snapshot().shots.every(p=>p.hits===1));
+  assert.equal(clampAttack({...a,hits:1}).hits,2);
   assert.equal(abilityStats(job,1).hits,3);
 }
-console.log('PASS archer/thief basics launch one projectile and deal one hit; former two-hit claims are normalized; triple skills remain unchanged');
+console.log('PASS archer/thief basics launch two one-hit projectiles; damage claims normalize to two hits; 360ms cadence and triple skills remain unchanged');

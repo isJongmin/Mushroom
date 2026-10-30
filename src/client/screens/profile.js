@@ -4,6 +4,7 @@ import { drawAbilityEffect } from '../game/skill-visuals.js';
 // - 모드: first(최초, "입장하기") / edit(로비 "꾸미기"에서, "취소" + "저장").
 // - 카테고리 탭 7개 + 아이템 슬롯 그리드(썸네일) + 프리셋 + 회전 미리보기(앞/옆/뒤 + 걷기)는 v3 그대로.
 // - 탭/슬롯/프리셋은 assets/avatar/manifest.json 의 parts/presets 로만 만든다(하드코딩 없음).
+import { pageIntro } from '../ui/page-intro.js';
 import { h, setText } from '../dom.js';
 import { NICK_RE, NICK_MAX, PART_KEYS, CATEGORY_ORDER, PART_LABELS, HAT_NONE } from '../constants.js';
 import { PROFILE_MESSAGES as M } from '../errors.js';
@@ -104,7 +105,7 @@ export function mount(root, app, opts = {}) {
 
   // 닉네임 (5장)
   const nickInput = h('input', {
-    id: 'nickname', class: 'bk-input bk-input--with-end', type: 'text', testid: 'nickname-input', maxlength: String(NICK_MAX),
+    id: 'nickname', class: 'bk-input bk-input--with-end', type: 'text', testid: 'nickname-input', placeholder: '마을에서 불릴 이름', maxlength: String(NICK_MAX),
     autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'done', 'aria-describedby': 'nickname-status',
   });
   const nickCounter = h('span', { class: 'bk-counter', testid: 'nickname-counter', 'aria-hidden': 'true', hidden: true });
@@ -146,15 +147,17 @@ export function mount(root, app, opts = {}) {
 
   const modeSlot = h('span', { class: 'mode-slot' });
   const footRow = h('div', { class: 'card-foot', testid: 'profile-note' }, app.mode === 'local' ? modeSlot : null, h('span', {}, M.NOTE));
-  const title = h('h2', { class: 'card-title', tabindex: '-1', testid: 'profile-title' }, editMode ? '프로필 수정' : '프로필 만들기');
+  const title = h('h2', { class: 'card-title', tabindex: '-1', testid: 'profile-title' }, editMode ? '나의 캐릭터 꾸미기' : '첫 모험을 준비해요');
   const card = h('section', { class: 'bk-panel card-create', 'aria-labelledby': 'profile-title', testid: 'profile-card' },
-    h('div', { class: 'card-head' }, title),
+    h('div', { class: 'card-head' }, h('div', {}, h('p', { class: 'ui-eyebrow' }, 'CHARACTER STUDIO'), title), h('span', { class: 'ui-step' }, '나만의 모험가')),
     h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, jobArea, ctaArea),
     footRow);
   title.id = 'profile-title';
-  const logo = editMode ? null
-    : h('h1', { class: 'bk-logo bk-logo--sm' }, h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), '버섯마을');
-  root.append(h('main', { class: 'scr-auth', 'data-mode': editMode ? 'edit' : 'first' }, logo, card));
+  const logo = h('h1', { class: 'bk-logo bk-logo--sm' }, h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), '버섯마을');
+  const backBtn = editMode ? h('button', { type: 'button', class: 'bk-btn', testid: 'profile-back' }, '로비로 돌아가기') : null;
+  if (backBtn) on(backBtn, 'click', () => doCancel());
+  root.append(h('main', { class: 'scr-auth', 'data-mode': editMode ? 'edit' : 'first' },
+    h('header', { class: 'ui-profile-header' }, logo, backBtn), pageIntro('profile'), card));
   if (app.mode === 'local') app.placeModeBadge(modeSlot);
 
   // --- 미리보기 그리기 ---------------------------------------------------------

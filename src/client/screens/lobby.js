@@ -2,6 +2,7 @@
 // - 방 목록: listRooms 5초 폴링(응답 후 setTimeout 사슬, 숨김 탭/입장·만들기 요청 중 정지) + 수동 새로고침
 // - 행은 방 id 키로 DOM 재사용(스크롤/포커스 유지). 사용자 문자열(방 이름, 닉네임)은 textContent로만.
 // - 모달: 방 만들기 / 비밀번호 / 닉네임 겹침 (ui/modal.js: focus trap, Esc 취소, 딤 클릭 무시, 포커스 복귀)
+import { pageIntro } from '../ui/page-intro.js';
 import { h, setText } from '../dom.js';
 import {
   NICK_RE, NICK_MAX, ROOM_NAME_MAX, ROOM_PW_MIN, ROOM_PW_MAX, ROOM_CAPACITY, PART_KEYS, LOBBY_POLL_MS, RATE_LOCK_MS,
@@ -78,7 +79,7 @@ export function mount(root, app, opts = {}) {
   const panel = h('section', { class: 'bk-panel lobby-panel', 'aria-labelledby': 'lobby-title' },
     h('div', { class: 'lobby-tools' }, title, countEl, refreshBtn, createBtn),
     banner, wrap, note, srStatus);
-  const main = h('main', { class: 'scr-lobby', id: 'lobby' }, header, panel);
+  const main = h('main', { class: 'scr-lobby', id: 'lobby' }, header, pageIntro('lobby'), panel, h('footer', { class: 'ui-footer' }, 'MUSHROOM VILLAGE', h('span', {}, '작은 마을, 함께 만드는 모험.')));
   root.append(main);
   if (app.mode === 'local') app.placeModeBadge(modeSlot);
 

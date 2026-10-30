@@ -1,0 +1,102 @@
+/* Page design v5. Scoped to the surrounding pages; combat HUD keeps its game skin. */
+body:not([data-screen="room"]) { --text:#253e34; --text-strong:#344e42; --text-muted:#68766d; --focus:#28624e; background:#f5f4ed; color:var(--text); font-weight:500; }
+body:not([data-screen="room"])::before, body:not([data-screen="room"])::after { display:none; }
+body:not([data-screen="room"]) :is(.bk-panel,.bk-well,.bk-room,.bk-me,.bk-thumb,.bk-chip,.bk-input,.bk-slot,.bk-modal__room) { box-shadow:none; border:1px solid #dde3d8; border-radius:16px; background:#fffef9; }
+body:not([data-screen="room"]) .bk-panel { padding:28px; box-shadow:0 12px 40px #233c3007; border-radius:24px; }
+body:not([data-screen="room"]) .bk-btn { border:1px solid #dce3d9; border-radius:11px; box-shadow:none; background:#f5f6f0; color:#3e5146; font-size:13px; font-weight:650; min-height:44px; padding:8px 16px; transition:background .16s, border-color .16s, transform .16s; }
+body:not([data-screen="room"]) .bk-btn:hover { background:#eaf0e4; border-color:#b5c8ae; }
+body:not([data-screen="room"]) .bk-btn:active { transform:translateY(1px); box-shadow:none; }
+body:not([data-screen="room"]) .bk-btn--primary { background:#284f3e; color:#fffdf4; border-color:#284f3e; }
+body:not([data-screen="room"]) .bk-btn--primary:hover { background:#3c6751; border-color:#3c6751; }
+body:not([data-screen="room"]) .bk-btn--danger { background:#fff3ee; color:#a44336; border-color:#ecd3cb; }
+body:not([data-screen="room"]) .bk-btn:disabled, body:not([data-screen="room"]) .bk-btn[aria-disabled="true"] { background:#e9ece5; color:#758074; border-color:#e0e5dc; transform:none; box-shadow:none; }
+body:not([data-screen="room"]) .bk-btn::after { display:none; }
+body:not([data-screen="room"]) .bk-input { min-height:48px; border-radius:12px; padding-left:14px; background:#fafbf7; color:#253e34; font-weight:500; }
+body:not([data-screen="room"]) .bk-input:focus { background:#fff; box-shadow:0 0 0 3px #3b705318; border-color:#578367; }
+body:not([data-screen="room"]) .bk-input::placeholder { color:#899187; }
+body:not([data-screen="room"]) .bk-label-text { color:#435548; font-size:13px; }
+body:not([data-screen="room"]) .bk-help { font-weight:450; line-height:1.6; }
+body:not([data-screen="room"]) .bk-logo { color:#284a39; text-shadow:none; font-size:23px; letter-spacing:-1px; padding:0; line-height:40px; }
+body:not([data-screen="room"]) .bk-logo .bk-ico { color:#d88351; }
+.scr-auth, .scr-lobby { width:min(1120px,100%); margin:auto; padding:32px 28px 40px; gap:28px; height:auto; min-height:100dvh; justify-content:flex-start; }
+.scr-auth .bk-logo--sm, .lobby-head, .lobby-panel { width:100%; }
+.ui-intro { width:100%; display:grid; grid-template-columns:1.1fr 1fr; background:#e9eedf; border:1px solid #dce4d1; border-radius:28px; overflow:hidden; min-height:280px; flex:none; }
+.ui-intro__copy { padding:38px 42px; position:relative; z-index:1; }
+.ui-eyebrow { color:#6d8066; font-size:10px; line-height:1.5; font-weight:750; letter-spacing:2px; margin:0 0 12px; }
+.ui-intro h2 { font-size:clamp(28px,3vw,39px); line-height:1.35; letter-spacing:-1.8px; margin:0 0 16px; font-weight:780; color:#2d4837; }
+.ui-intro__desc { white-space:pre-line; color:#62735f; font-size:13px; line-height:1.9; margin:0; font-weight:450; }
+.ui-tags { display:flex; gap:8px; flex-wrap:wrap; margin-top:22px; }
+.ui-tags span { font-size:10px; color:#586f50; border:1px solid #cdd8c2; border-radius:20px; padding:5px 10px; background:#f6f8ee; }
+.ui-intro__scene { position:relative; min-height:260px; background:#d4e5bc url('../../assets/map/ground.webp') 47% 55% / auto 360px no-repeat; }
+.ui-intro__scene::before { content:''; position:absolute; inset:0; background:linear-gradient(90deg,#e9eedf,transparent 30%),linear-gradient(0deg,#adc29335,transparent); }
+.ui-scene-label { position:absolute; right:20px; bottom:18px; font-size:8px; letter-spacing:2px; color:#29452e; padding:7px 10px; background:#ffffeecc; border-radius:20px; }
+.ui-scene-dot { position:absolute; top:26px; right:26px; width:8px; height:8px; border-radius:50%; background:#f7f6d5; box-shadow:0 0 0 7px #f7f6d52b; }
+.lobby-head { padding:0 2px; }
+body:not([data-screen="room"]) .bk-me { padding:6px 8px; gap:10px; border-radius:16px; margin:0; background:#ffffffa6; }
+body:not([data-screen="room"]) .bk-thumb { background:#e6eddb; padding:1px; border-radius:11px; overflow:hidden; }
+body:not([data-screen="room"]) .bk-thumb canvas { width:40px; height:40px; }
+.bk-me__label { font-size:10px; font-weight:500; }.bk-me__nick { font-size:13px; }
+body:not([data-screen="room"]) .bk-me .bk-btn { min-height:36px; }
+body:not([data-screen="room"]) .bk-chip { background:#edf1e5; padding:4px 10px; color:#5a6e50; font-size:10px; }
+.lobby-panel { flex:initial; min-height:300px; gap:20px; }
+.lobby-tools { padding:0 0 18px; border-bottom:1px solid #edf0e7; gap:12px; }
+.lobby-tools h2 { font-size:19px; letter-spacing:-.6px; }.lobby-tools__count { font-size:12px; font-weight:500; }
+body:not([data-screen="room"]) .bk-roomwrap { background:transparent; box-shadow:none; padding:0; max-height:540px; }
+.bk-roomlist { padding:0; gap:10px; }
+body:not([data-screen="room"]) .bk-room { padding:18px; background:#f9faf4; border-radius:15px; gap:14px; }
+body:not([data-screen="room"]) .bk-room:hover { border-color:#a8bea0; background:#f2f6ea; }
+.bk-room__name { font-size:15px; }.bk-room__meta { font-size:11px; font-weight:450; margin-top:5px; }
+body:not([data-screen="room"]) .bk-count.is-full { color:#995c4e; background:#f5e8e0; box-shadow:none; }
+.bk-empty { min-height:210px; padding:30px 16px; gap:14px; }.bk-empty__text { font-weight:450; color:#798171; }
+.ui-footer { display:flex; justify-content:space-between; width:100%; font-size:9px; letter-spacing:2px; color:#849080; padding:0 8px; }.ui-footer span { font-size:11px; letter-spacing:0; }
+.card-create { width:100%; }
+.card-head { padding-bottom:22px; margin-bottom:26px; border-bottom:1px solid #e9ede3; }.card-head .card-title { font-size:23px; letter-spacing:-.8px; line-height:1.4; }.card-head .ui-eyebrow { margin-bottom:7px; }
+.ui-step { font-size:11px; color:#77836c; background:#f0f3e8; padding:7px 12px; border-radius:30px; white-space:nowrap; }
+.card-create .create-grid { grid-template-columns:260px minmax(0,1fr); grid-template-areas:'prev parts' 'nick parts' 'jobs jobs' 'cta cta'; gap:24px 34px; }
+.create-prev { background:#f0f3e8; padding:14px; border:1px solid #e1e8d8; border-radius:20px; }
+body:not([data-screen="room"]) .bk-well { padding:0; overflow:hidden; border-radius:14px; }
+.bk-preview__stage::after { display:none; }.bk-preview__ctrl { width:100%; gap:5px; margin-top:10px; padding:0; }
+body:not([data-screen="room"]) .bk-preview__ctrl .bk-btn { padding:4px 8px; font-size:11px; min-height:36px; }
+body:not([data-screen="room"]) .bk-tabs .bk-btn[aria-selected="true"], body:not([data-screen="room"]) .bk-tabs .bk-btn[aria-checked="true"], body:not([data-screen="room"]) .bk-btn[aria-pressed="true"] { background:#dce8d0; color:#305038; border-color:#8ea781; box-shadow:none; transform:none; }
+.section-title { font-size:14px; letter-spacing:-.3px; margin-bottom:12px; }
+.bk-presets { gap:8px; }.bk-presets .bk-btn { min-width:0; padding:4px 8px; font-size:11px; }.preset-more { margin-top:8px; }
+body:not([data-screen="room"]) .bk-tabs--cat { display:flex; gap:4px; flex-wrap:wrap; padding:5px; background:#eef1e9; border-radius:12px; }
+body:not([data-screen="room"]) .bk-tabs--cat .bk-btn { flex:1; min-width:54px; min-height:36px; background:transparent; border:1px solid transparent; padding:4px 6px; font-size:12px; }
+body:not([data-screen="room"]) .bk-tabs--cat .bk-btn[aria-selected="true"] { background:#fffef9; border-color:#dfe5d8; color:#2d563d; box-shadow:0 2px 4px #253e3408; }
+.bk-slots { grid-template-columns:repeat(auto-fill,minmax(82px,1fr)); gap:8px; }
+body:not([data-screen="room"]) .bk-slot { width:100%; min-height:96px; border-radius:13px; background:#f8f9f2; }
+body:not([data-screen="room"]) .bk-slot[aria-checked="true"] { background:#eaf1de; border:2px solid #71965d; box-shadow:none; }
+body:not([data-screen="room"]) .bk-slot[aria-checked="true"]::after { display:none; }
+.bk-slot__name { font-size:10px; font-weight:500; bottom:5px; }.bk-slot__check { right:5px; top:5px; color:#3c653c; }
+.card-create .job-picker { border-top:1px solid #e3e9dc; padding-top:20px; }.card-create .job-picker legend { font-size:14px; }
+.card-create .job-grid { gap:10px; margin-top:14px; }
+.job-card { border:1px solid #e0e6d8; border-radius:16px; background:#f8faf4; padding:18px 14px; gap:8px; transition:border-color .16s,background .16s; }
+.job-card:has(input:checked) { background:#eaf1df; border-color:#739260; box-shadow:inset 0 0 0 1px #739260; }.job-card input { accent-color:#426740; }
+.job-card strong { color:#35523b; }.job-card__skill { color:#7c876e; font-size:10px; }.job-card__description { color:#6b7966; font-size:11px; font-weight:450; }
+.card-create .create-cta { padding-top:18px; border-top:1px solid #e9ede3; }.create-cta .bk-btn { min-height:50px; }.card-foot { font-size:11px; font-weight:450; line-height:1.7; }
+body:not([data-screen="room"]) .bk-dim { background:#20342dd0; backdrop-filter:blur(6px); padding:24px; }
+body:not([data-screen="room"]) .bk-modal { width:440px; padding:30px; border-radius:24px; }.bk-modal__head { margin-bottom:26px; }.bk-modal__head h2 { letter-spacing:-.6px; }.bk-modal .bk-field { margin-bottom:20px; }.bk-modal__foot { margin-top:28px; }
+body:not([data-screen="room"]) .bk-banner { box-shadow:none; border-radius:12px; border:1px solid #d3ddc6; background:#edf3e3; color:#46623d; font-weight:500; }
+body:not([data-screen="room"]) .bk-banner--error { background:#fff0eb; border-color:#eacbc0; color:#9c4939; }
+@media(max-width:850px) {
+  .scr-auth,.scr-lobby { padding:22px 18px 30px; gap:20px; }.ui-intro__copy { padding:28px; }.ui-intro { grid-template-columns:1.2fr 1fr; }.ui-intro__scene { background-size:auto 320px; }
+  .card-create .create-grid { grid-template-columns:240px minmax(0,1fr); gap:22px; }.bk-presets { grid-template-columns:repeat(2,minmax(0,1fr)); }.card-create .job-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+}
+@media(max-width:719px) {
+  .scr-auth,.scr-lobby { padding:20px 16px 28px; gap:18px; }.scr-auth .bk-logo--sm { width:100%; }.lobby-head { gap:14px; }
+  .ui-intro { grid-template-columns:1fr; border-radius:22px; min-height:0; }.ui-intro__copy { padding:27px 24px 22px; }.ui-intro h2 { font-size:29px; }.ui-intro__desc { font-size:12px; }.ui-tags { margin-top:16px; }
+  .ui-intro__scene { min-height:150px; background-size:auto 260px; background-position:47% 60%; }.ui-intro__scene::before { background:linear-gradient(180deg,#e9eedf,transparent 40%); }.ui-intro--profile .ui-intro__scene { display:none; }
+  body:not([data-screen="room"]) .bk-panel { padding:20px 16px; border-radius:20px; }.lobby-tools { flex-wrap:wrap; gap:8px; }.lobby-tools h2 { font-size:17px; }.lobby-tools__count { min-width:45px; }.lobby-tools .bk-btn { padding:8px 10px; font-size:11px; }
+  .lobby-panel { min-height:280px; }.bk-empty { padding:24px 6px; }.ui-footer { letter-spacing:1px; gap:12px; font-size:8px; }.ui-footer span { font-size:9px; }
+  .card-head { align-items:flex-start; gap:8px; margin-bottom:20px; padding-bottom:18px; }.card-head .card-title { font-size:20px; }.ui-step { display:none; }
+  .card-create .create-grid { grid-template-columns:minmax(0,1fr); grid-template-areas:'prev' 'nick' 'jobs' 'parts' 'cta'; gap:22px; }.create-prev { width:100%; }.bk-preview__ctrl { max-width:280px; }.bk-preview { --pv:3; }.create-prev .bk-preview { margin:auto; }
+  .bk-slots { grid-template-columns:repeat(auto-fill,minmax(80px,1fr)); }.bk-presets { grid-template-columns:repeat(2,minmax(0,1fr)); }.card-create .job-grid { gap:8px; }.job-card { padding:14px 10px; }
+  .card-create .create-cta { position:static; }.card-foot { flex-wrap:wrap; text-align:center; }.bk-room__meta { display:block; }.bk-room__acts { gap:6px; }.bk-room__go { min-width:62px; }
+  body:not([data-screen="room"]) .bk-room { padding:12px; gap:8px; }.bk-room__name { font-size:13px; }.bk-room__meta { font-size:10px; }.bk-room .bk-count { height:24px; font-size:10px; }
+  body:not([data-screen="room"]) .bk-modal { padding:24px 20px; }
+}
+@media(prefers-reduced-motion:reduce) { body:not([data-screen="room"]) .bk-btn,.job-card { transition:none; } }
+body:not([data-screen="room"]) .bk-world { display:none; }
+.ui-profile-header { width:100%; display:flex; align-items:center; justify-content:space-between; gap:16px; }
+.ui-profile-header .bk-logo--sm { width:auto; }
+@media(max-width:719px) { body:not([data-screen="room"]) .bk-preview__ctrl .bk-btn, body:not([data-screen="room"]) .bk-tabs--cat .bk-btn { min-height:44px; } .ui-profile-header .bk-logo--sm { width:auto; font-size:20px; } .ui-profile-header .bk-btn { font-size:11px; padding:8px 10px; } }

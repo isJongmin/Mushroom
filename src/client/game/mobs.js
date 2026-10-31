@@ -247,7 +247,7 @@ export function createMobSim(o) {
 
   /** 처음 시작(받은 상태 없음): 모든 구역을 채운다 */
   function fill(now) {
-    for (const z of zones) while (aliveIn(z.i) + pending[z.i].length < z.max && aliveIn(z.i) < z.max) {
+    for (const z of zones.filter(z => !z.event)) while (aliveIn(z.i) + pending[z.i].length < z.max && aliveIn(z.i) < z.max) {
       if (mobs.size >= MOB_LIMITS.total) return;
       if (!spawn(z, now)) pending[z.i].push(now + 1000);
     }
@@ -262,8 +262,8 @@ export function createMobSim(o) {
       const spec = kinds.get(v.kind);
       if (!z || !spec || mobs.size >= MOB_LIMITS.total) continue;
       if (aliveIn(z.i) + pending[z.i].length >= z.max) continue;
-      if (v.s === 'die' || v.hp <= 0) { pending[z.i].push(now + RESPAWN_MS); continue; }
-      const x = safePosition(z, spec, Math.min(z.x2, Math.max(z.x1, v.x)));
+      if (v.s === 'die' || v.hp <= 0) { if (!z.event) pending[z.i].push(now + RESPAWN_MS); continue; }
+      const x = z.event ? Math.min(z.x2, Math.max(z.x1, v.x)) : safePosition(z, spec, Math.min(z.x2, Math.max(z.x1, v.x)));
       if (x == null) { pending[z.i].push(now + 1000); continue; }
       mobs.set(v.id, {
         id: v.id, kind: v.kind, z: z.i, x, y: spec.behavior === 'fly' ? v.y : z.y, base: z.y,
@@ -271,7 +271,7 @@ export function createMobSim(o) {
         turnT: 2 + rnd() * 4, hopT: 0.4 + rnd(), pauseT: 0, phase: rnd() * Math.PI * 2,
       });
     }
-    for (const z of zones) {
+    for (const z of zones.filter(z => !z.event)) {
       const missing = z.max - aliveIn(z.i) - pending[z.i].length;
       for (let i = 0; i < missing; i++) pending[z.i].push(now + RESPAWN_MS);
     }
@@ -284,10 +284,11 @@ export function createMobSim(o) {
       if (!z || !spec) { mobs.delete(m.id); continue; }
       if (m.s === 'die') {
         m.dieT -= dt;
-        if (m.dieT <= 0) { mobs.delete(m.id); pending[z.i].push(now + RESPAWN_MS); }
+        if (m.dieT <= 0) { mobs.delete(m.id); if (!z.event) pending[z.i].push(now + RESPAWN_MS); }
         continue;
       }
       if (m.hitT > 0) { m.hitT -= dt; m.s = m.hitT > 0 ? 'hit' : 'move'; }
+      if (z.event) { m.dir = m.x < (z.x1+z.x2)/2 ? 1 : -1; m.pauseT=0; }
       const moving = m.hitT <= 0;
       m.phase += dt;
       if (spec.behavior === 'fly') {
@@ -301,7 +302,7 @@ export function createMobSim(o) {
       if (m.x <= z.x1) { m.x = z.x1; m.dir = 1; }
       if (m.x >= z.x2) { m.x = z.x2; m.dir = -1; }
       m.turnT -= dt;
-      if (m.turnT <= 0) {
+      if (!z.event && m.turnT <= 0) {
         m.turnT = 2 + rnd() * 4;
         const r = rnd();
         if (r < 0.35) m.dir = -m.dir;
@@ -376,6 +377,16 @@ export function createMobSim(o) {
 
   return {
     fill, load, step, hit, snapshot,
+    spawnGarden(count, now) {
+      const z=zones.find(z=>z.event);if(!z)return 0;
+      let n=0;for(let i=0;i<count && mobs.size<MOB_LIMITS.total;i++) {
+        const side=i%2 ? 1 : -1, center=(z.x1+z.x2)/2;
+        const lane={...z,x1:center+side*540-85,x2:center+side*540+85};
+        if(spawn(lane,now))n++;
+      }return n;
+    },
+    gardenMobs() { return [...mobs.values()].filter(m=>zones[m.z]?.event && m.s!=='die'); },
+    removeGarden(ids=null) { const selected=ids && new Set(ids);for(const [id,m] of mobs)if(zones[m.z]?.event && (!selected || selected.has(id)))mobs.delete(id); },
     get size() { return mobs.size; },
     get stats() { return { ...stats, pending: pending.reduce((n, p) => n + p.length, 0) }; },
     clear() { mobs.clear(); for (const p of pending) p.length = 0; },

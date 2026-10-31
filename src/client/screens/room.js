@@ -1,3 +1,7 @@
+import { createGarden, gardenZones, gardenPoint, gardenActive, gardenEligible, GARDEN_TITLE, GARDEN_LABEL } from '../game/garden.js';
+import { drawGarden, drawGardenTitle, drawGardenInvader } from '../game/garden-visuals.js';
+import { createGardenPanel } from '../ui/garden-panel.js';
+import { readRewards, saveRewards, grantGarden, equippedTitle } from '../rewards.js';
 import { createSkillAttacks } from '../game/attack-patterns.js';
 import { drawSkillIcon } from '../game/skill-visuals.js';
 import { AREA_IDS, AREA_NAMES, normalizeMapId, areaMap, areaPortals, nearbyPortal, sameArea, drawBiomeMap, drawPortals, drawMinimap } from '../game/areas.js';
@@ -136,6 +140,12 @@ export function mount(root, app, opts = {}) {
   let mobDefs = null; // normalizeMobManifest 결과 | null (몬스터 없음)
   let mobFetched = false; // manifest 요청을 이미 했는지 (없을 때 404를 한 번만)
   let zones = [];
+  const garden = createGarden();
+  let rewardMemory = readRewards(app.profileKey);
+  const grantedRuns = new Set();
+  let gardenRewardSaved = true;
+  let gardenRequestAt = -Infinity;
+  let lastGardenPaint = 0;
   let sim = null; // 호스트일 때만
   let mobView = null;
   let mobSprites = null;
@@ -226,7 +236,8 @@ export function mount(root, app, opts = {}) {
     return { btn, timer, slot, ability: a };
   });
   const touchFloat = h('div', { class: 'touch-float skill-hotbar' }, attackBtn, ...skillButtons.map(s => s.btn));
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap);
+  const gardenPanel = createGardenPanel({onStart:requestGarden,onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true})});
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -398,7 +409,7 @@ export function mount(root, app, opts = {}) {
   // --- 플레이어 -------------------------------------------------------------
   function makePlayer(uid, nickname, avatar, x, isSelf) {
     return {
-      user_id: uid, nickname, avatar, mapId: isSelf ? currentArea : 'village', x, targetX: x, y: world.groundY, dir: 1,
+      user_id: uid, nickname, avatar, title: isSelf ? equippedTitle(app.profileKey) : null, mapId: isSelf ? currentArea : 'village', x, targetX: x, y: world.groundY, dir: 1,
       moving: false, lastMoveAt: 0, lastMovedAt: -Infinity, anim: 'idle', animSince: performance.now(),
       bubble: null, lastChat: null, isSelf,
       s: 'idle', // 이동 상태 idle | walk | jump | fall | prone (원격은 받은 값, 없으면 null → 추정)
@@ -489,12 +500,12 @@ export function mount(root, app, opts = {}) {
           const existing = players.get(s.user_id);
           if (existing) {
             existing.nickname = nickname;
-            existing.avatar = avatar;
+            existing.avatar = avatar; existing.title = s.title;
           } else {
             // Presence x는 입장 시점 값. 그 사람이 내 입장(presence join)을 보고 move로 현재 위치를 1회 보내 준다.
             const x = isNum(s.x) ? clampX(s.x) : WORLD.minX;
             const pl = makePlayer(s.user_id, nickname, avatar, x, false);
-            pl.mapId = normalizeMapId(s.mapId);
+            pl.mapId = normalizeMapId(s.mapId); pl.title = s.title;
             players.set(s.user_id, pl);
             const early = earlyMoves.get(s.user_id);
             if (early) { applyMove(pl, { ...early, fx: null }); pl.x = pl.targetX; pl.y = pl.yTo; pl.yBuf.length = 0; } // 늦은 fx는 재생하지 않는다
@@ -554,7 +565,7 @@ export function mount(root, app, opts = {}) {
       join: () => app.backend.joinRoom({ roomId, password: null, nickname: myNick }),
       open: (sink, signal) => {
         const token = ++openSeq;
-        const self = { nickname: me.nickname, avatar: me.avatar, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
+        const self = { nickname: me.nickname, avatar: me.avatar, title: me.title, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
         return app.backend.connectRoom(roomId, { ...handlersFor(token), onDrop: sink.onDrop }, self, { signal });
       },
       heartbeat: async () => {
@@ -823,6 +834,38 @@ export function mount(root, app, opts = {}) {
     pl.dead = p.dead;
   }
 
+  function startGarden(uid) {
+    const p=players.get(uid),point=gardenPoint(world);
+    if(currentArea!=='village'||!sim||!p||p.dead||!sameArea(p,me)||Math.abs(p.x-point.x)>260||Math.abs(p.y-point.y)>100)return false;
+    const started=garden.start(`g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,Date.now(),[...players.values()].filter(p=>sameArea(p,me)).map(p=>p.user_id));
+    if(started){sim.removeGarden();lastMobsSent=-Infinity;}
+    return started;
+  }
+  function requestGarden() {
+    if(!me||me.dead||connection!=='connected'||performance.now()-gardenRequestAt<1000)return;
+    gardenRequestAt=performance.now();
+    if(isHost())startGarden(me.user_id);else send('garden-start',{});
+    canvas.focus({preventScroll:true});
+  }
+  function equipGardenTitle() {
+    if(!rewardMemory.unlocked)return;
+    const latestRewards=readRewards(app.profileKey);
+    if(latestRewards.unlocked)rewardMemory=latestRewards;
+    rewardMemory.equipped=true;gardenRewardSaved=saveRewards(app.profileKey,rewardMemory);
+    me.title=GARDEN_TITLE;link?.updateSelf?.({title:me.title}).catch(()=>{});
+  }
+  function paintGardenPanel(now) {
+    if(!me||now-lastGardenPaint<100)return;lastGardenPaint=now;
+    const s=garden.snapshot(),eligible=gardenEligible(s,me.user_id);
+    if(eligible&&!grantedRuns.has(s.id)) {
+      grantedRuns.add(s.id);if(grantedRuns.size>64)grantedRuns.delete(grantedRuns.values().next().value);const grant=grantGarden(app.profileKey,s.id,s.hp);rewardMemory=grant.rewards;gardenRewardSaved=grant.saved;
+    }
+    const point=gardenPoint(world),near=!me.dead&&Math.abs(me.x-point.x)<=260&&Math.abs(me.y-point.y)<=100;
+    const zi=zones.find(z=>z.event)?.i;
+    gardenPanel.paint(s,{village:currentArea==='village',connected:connection==='connected',near,uid:me.user_id,host:!!hostId && !!mobView && (!isHost()||!!sim),eligible,rewardSaved:gardenRewardSaved,
+      alive:[...(isHost()&&sim?sim.gardenMobs():mobView?.list||[])].filter(m=>(zi==null||m.z===zi)&&m.s!=='die').length});
+  }
+
   // --- (사이클 9) 호스트와 몬스터 ------------------------------------------------
   const isHost = () => !!me && hostId === me.user_id;
 
@@ -845,10 +888,11 @@ export function mount(root, app, opts = {}) {
     platforms = map.platforms || []; ropes = map.ropes || [];
     world = worldFromMap(map);
     Object.assign(BODY_OPT, { platforms, ropes, groundY: world.groundY, minX: world.minX, maxX: world.maxX });
-    zones = mobDefs ? normalizeZones(map.spawns || [], platforms, world, mobDefs.kinds) : [];
+    zones = mobDefs ? gardenZones(normalizeZones(map.spawns || [], platforms, world, mobDefs.kinds), world, currentArea) : [];
     sim = null; mobView?.clear();
     if (mobDefs) mobView = createMobView({ kinds: mobDefs.kinds, onDamage: (v, dms) => showHits(dms, v.x, v.y - v.spec.size.h, 'hit', performance.now()) });
     const cached = areaSnapshots.get(currentArea);
+    garden.load(cached && performance.now()-cached.at<30000 ? cached.garden : null);
     if (cached && performance.now() - cached.at < 30000 && mobView) mobView.apply(cached.list, performance.now(), true);
     camY = null; camRef = world.groundY;
     setText(miniName, AREA_NAMES[currentArea]); lastMiniPaint = -Infinity;
@@ -860,7 +904,7 @@ export function mount(root, app, opts = {}) {
     if (!portal) return false;
     portalReadyAt = now + 1600;
     input.clear(); pendingFx = null; sentKey = '';
-    if (mobView) areaSnapshots.set(currentArea, { list: sim ? sim.snapshot() : mobView.latest(), at: now });
+    if (mobView) areaSnapshots.set(currentArea, { list: sim ? sim.snapshot() : mobView.latest(), garden: garden.snapshot(), at: now });
     currentArea = portal.to; me.mapId = currentArea;
     configureArea(areaCatalog.get(currentArea));
     const x = portal.entry === 'left' ? 230 : world.width - 230;
@@ -889,8 +933,9 @@ export function mount(root, app, opts = {}) {
   }
 
   /** 호스트: atk(상한으로 자른 값)를 몬스터에. 타별 피해, 처치되면 버프 드롭 (golem 2개) */
-  function applyMobHit(r, now) {
+  function applyMobHit(r, now, uid) {
     if (!r) return;
+    if (zones[r.mob.z]?.event) garden.record(uid, r.dmgs.reduce((a,b)=>a+b,0), r.killed);
     cstats.mobHits++;
     showHits(r.dmgs, r.mob.x, r.mob.y - kindsH(r.mob.kind), 'hit', now);
     if (r.killed) {
@@ -905,7 +950,7 @@ export function mount(root, app, opts = {}) {
     for (let n = 0; n < targets; n++) {
       const r = sim.hit(box, a.x, a.dir === 'left' ? -1 : 1, rollHits(c), excluded);
       if (!r) break;
-      excluded.add(r.mob.id); first ||= r; applyMobHit(r, now);
+      excluded.add(r.mob.id); first ||= r; applyMobHit(r, now, a.user_id);
     }
     return first;
   }
@@ -947,12 +992,18 @@ export function mount(root, app, opts = {}) {
     // 맵에 들어온 직후 호스트가 되더라도 이전 몬스터 상태를 이어 받는다.
     if (event === 'mobs') {
       const occupants = [...players.values()].filter((v) => normalizeMapId(v.mapId) === packetArea).map((v) => v.user_id).sort();
-      if (occupants[0] === p.host && p.list) areaSnapshots.set(packetArea, { list: p.list, at: performance.now() });
+      if (occupants[0] === p.host && p.list) {
+        const old=areaSnapshots.get(packetArea);
+        if (!old || !p.t || p.t>=old.t) areaSnapshots.set(packetArea, {list:p.list,garden:p.garden,at:performance.now(),t:p.t});
+      }
     }
     if (packetArea !== currentArea) return;
     if (p.host && p.host !== hostId) return;
     const now = performance.now();
     switch (event) {
+      case 'garden-start':
+        if (isHost()) startGarden(p.user_id);
+        return;
       case 'atk': {
         cstats.atkRecv++;
         const pl = players.get(p.user_id);
@@ -984,6 +1035,7 @@ export function mount(root, app, opts = {}) {
       }
       case 'mobs':
         if (!mobView || isHost()) return; // 호스트는 자기 시뮬레이션만 믿는다
+        if(p.garden) garden.accept(p.garden);
         cstats.mobsRecv++;
         mobView.apply(p.list.filter((m) => mobDefs.kinds.has(m.kind)), now, false);
         break;
@@ -1194,10 +1246,18 @@ export function mount(root, app, opts = {}) {
       if (isHost() && connection === 'connected' && now - Math.max(connectedAt, hostSince) >= HOST_START_MS) startSim(now);
       if (sim && isHost()) {
         sim.step(dt, now);
+        const gs=garden.snapshot();
+        if(gardenActive(gs) && connection==='connected') {
+          const point=gardenPoint(world),invaders=sim.gardenMobs();
+          const breached=invaders.filter(m=>Math.abs(m.x-point.x)<65);
+          sim.removeGarden(breached.map(m=>m.id));
+          garden.tick(Date.now(),{alive:invaders.length-breached.length,breaches:breached.length,players:[...players.values()].filter(p=>sameArea(p,me)).length,
+            spawn:n=>sim.spawnGarden(n,now),clear:()=>sim.removeGarden()});
+        } else if(!gardenActive(gs)) sim.removeGarden();
         mobView.apply(sim.snapshot(), now, true);
         if (now - lastMobsSent >= MOBS_SEND_MS && connection === 'connected') {
           lastMobsSent = now;
-          if (send('mobs', { t: Date.now(), list: sim.snapshot(true) })) cstats.mobsSent++; // 타별 피해 dm 포함
+          if (send('mobs', { t: Date.now(), list: sim.snapshot(true), garden: garden.snapshot() })) cstats.mobsSent++; // 타별 피해 dm 포함
         }
       }
       mobView.update(now);
@@ -1237,6 +1297,7 @@ export function mount(root, app, opts = {}) {
     slashes.update(now);
     stones.update(dt, now);
     while (atkBoxes.length && now - atkBoxes[0].at > ATTACK_BOX_SHOW_MS) atkBoxes.shift();
+    paintGardenPanel(now);
     paintSkills(now);
     buffs.update(now);
     const nAtkKey = buffs.size;
@@ -1316,6 +1377,7 @@ export function mount(root, app, opts = {}) {
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
+    if(currentArea==='village') drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now);
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
       drawMinimap(miniCanvas.getContext('2d'), map, players.values(), mobView?.list || [], me, { x: camX, y: cy, w: viewW, h: viewH });
@@ -1347,7 +1409,10 @@ export function mount(root, app, opts = {}) {
         drawFootShadow(ctx, sx * k, Math.round((sy - cy) * k), k, sy - v.y);
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      for (const v of mobsVis) drawMob(ctx, v, mobSprites.get(v.kind), Math.round((v.x - camX) * k), Math.round((v.y - cy) * k), k, now, mobDefs.density);
+      for (const v of mobsVis) {
+        if(zones[v.z]?.event && v.s!=='die') drawGardenInvader(ctx,v,camX,cy,k);
+        drawMob(ctx, v, mobSprites.get(v.kind), Math.round((v.x - camX) * k), Math.round((v.y - cy) * k), k, now, mobDefs.density);
+      }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
     for (const [p, sx] of visible) {
@@ -1378,7 +1443,10 @@ export function mount(root, app, opts = {}) {
 
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     const u = P / 2; // CSS px / 월드
-    for (const [p, sx, pyD] of visible) drawLabel(ctx, p.nickname, sx * u, pyD / dpr, p.isSelf, cssW);
+    for (const [p, sx, pyD] of visible) {
+      drawLabel(ctx, p.nickname, sx * u, pyD / dpr, p.isSelf, cssW);
+      if(p.title===GARDEN_TITLE) drawGardenTitle(ctx,GARDEN_LABEL,sx*u,pyD/dpr-avatarR.headTop(p.avatar)*u-29);
+    }
     // (사이클 9) HP 바: 머리(모자) 맨 위 바로 위 1px (말풍선 꼬리 끝은 그 위라 위치 그대로). 유령은 없음
     for (const [p, sx, pyD] of visible) {
       if (p.anim === 'ghost') continue;
@@ -1758,6 +1826,7 @@ export function mount(root, app, opts = {}) {
     chatLog: chatLog.snapshot(50),
     log: chatLog.ui(),
     connection,
+    garden: garden.snapshot(),
     assets: assets ? {
       source: assets.source, images: assets.imageCount, imageTotal: assets.imageTotal, background: !!(map && map.layerCount),
       mapLayers: map ? map.layerCount : 0, sheets: avatarR ? avatarR.cacheSize : 0,
@@ -1810,6 +1879,7 @@ export function mount(root, app, opts = {}) {
     mobSprites?.clear();
     earlyHp.clear();
     if (delModal) { const m = delModal; delModal = null; m.close({ restoreFocus: false }); }
+    gardenPanel.destroy(); garden.clear();
     chatLog.destroy();
     link = null;
     // 채널 removeChannel까지 기다리되 화면 전환을 오래 막지 않는다. 그 뒤의 순서는 어댑터가 보장한다(chanIdle, leaveInFlight).
@@ -1851,7 +1921,7 @@ export function mount(root, app, opts = {}) {
       mobDefs = await loadMobManifest();
       if (!alive) return;
       if (mobDefs) {
-        zones = normalizeZones(map.spawns, platforms, world, mobDefs.kinds);
+        zones = gardenZones(normalizeZones(map.spawns, platforms, world, mobDefs.kinds), world, currentArea);
         if (zones.length) {
           mobView = createMobView({
             kinds: mobDefs.kinds,

@@ -224,6 +224,7 @@ function getState() {
     // (사이클 9~10) 전투: { world, hp, max, dead, host, isHost, simulating, mobs, mobKinds, zones, drops, tombstones, buffs, attack,
     //   reviveVisible, numbers, slashes, sprites, stats }
     combat: r ? r.combat : null,
+    garden: r ? r.garden : null,
   };
   return deepFreeze(JSON.parse(JSON.stringify(snapshot)));
 }

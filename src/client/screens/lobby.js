@@ -1,3 +1,4 @@
+import { readRewards } from '../rewards.js';
 // 로비: 방 목록 + 방 만들기 + 입장 (docs/design/screens/lobby.md v4, style-guide 11장, ui-kit 14~23절)
 // - 방 목록: listRooms 5초 폴링(응답 후 setTimeout 사슬, 숨김 탭/입장·만들기 요청 중 정지) + 수동 새로고침
 // - 행은 방 id 키로 DOM 재사용(스크롤/포커스 유지). 사용자 문자열(방 이름, 닉네임)은 textContent로만.
@@ -79,7 +80,9 @@ export function mount(root, app, opts = {}) {
   const panel = h('section', { class: 'bk-panel lobby-panel', 'aria-labelledby': 'lobby-title' },
     h('div', { class: 'lobby-tools' }, title, countEl, refreshBtn, createBtn),
     banner, wrap, note, srStatus);
-  const main = h('main', { class: 'scr-lobby', id: 'lobby' }, header, pageIntro('lobby'), panel, h('footer', { class: 'ui-footer' }, 'MUSHROOM VILLAGE', h('span', {}, '작은 마을, 함께 만드는 모험.')));
+  const gardenRecord=readRewards(app.profileKey);
+  const gardenCard=h('section',{class:'lobby-garden','aria-label':'마을 협동 이벤트'},h('div',{},h('strong',{},'NEW · 버섯밭 지키기'),h('p',{},'방에 입장한 뒤 마을 중앙에서 시작하세요. 3번의 습격을 막으면 전용 칭호가 열려요.')),h('span',{class:'lobby-garden__record'},gardenRecord.unlocked?`방어 성공 ${gardenRecord.clears}회 · 새싹 수호자`:'첫 방어에 도전하세요'));
+  const main = h('main', { class: 'scr-lobby', id: 'lobby' }, header, pageIntro('lobby'), gardenCard, panel, h('footer', { class: 'ui-footer' }, 'MUSHROOM VILLAGE', h('span', {}, '작은 마을, 함께 만드는 모험.')));
   root.append(main);
   if (app.mode === 'local') app.placeModeBadge(modeSlot);
 

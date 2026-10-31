@@ -1,3 +1,5 @@
+import { readRewards, saveRewards } from '../rewards.js';
+import { GARDEN_LABEL } from '../game/garden.js';
 import { drawAbilityEffect } from '../game/skill-visuals.js';
 // 프로필 화면: 닉네임 + 캐릭터 꾸미기 (docs/design/screens/profile.md v4, character-create.md v3 3·5장, style-guide 5.12~5.14)
 // - 서버와 통신하지 않는다. 저장 = localStorage `mushroom:profile` = { nickname, avatar(7키) } (ARCHITECTURE 결정 3).
@@ -145,13 +147,17 @@ export function mount(root, app, opts = {}) {
   const cancelBtn = editMode ? h('button', { type: 'button', class: 'bk-btn', testid: 'profile-cancel' }, '취소') : null;
   const ctaArea = h('div', { class: 'create-cta' }, editMode ? h('div', { class: 'cta-pair' }, cancelBtn, submit) : submit);
 
+  const rewards=readRewards(app.profileKey);
+  const titleBtn=h('button',{type:'button',class:'bk-btn',testid:'garden-title-toggle','aria-pressed':String(rewards.equipped),disabled:!rewards.unlocked},rewards.unlocked?(rewards.equipped?'칭호 착용 중':'칭호 착용'):'아직 잠겨 있어요');
+  on(titleBtn,'click',()=>{rewards.equipped=!rewards.equipped;titleBtn.setAttribute('aria-pressed',String(rewards.equipped));setText(titleBtn,rewards.equipped?'칭호 착용 중':'칭호 착용');});
+  const rewardArea=h('section',{class:'reward-studio','aria-label':'모험 보상'},h('div',{},h('h3',{},GARDEN_LABEL),h('p',{},rewards.unlocked?`버섯밭 지키기 ${rewards.clears}회 성공 · 최고 내구도 ${rewards.bestHp}%`:'마을 중앙의 버섯밭 지키기에 성공하면 해금돼요.')),titleBtn);
   const modeSlot = h('span', { class: 'mode-slot' });
   const footRow = h('div', { class: 'card-foot', testid: 'profile-note' }, app.mode === 'local' ? modeSlot : null, h('span', {}, M.NOTE));
   const title = h('h2', { class: 'card-title', tabindex: '-1', testid: 'profile-title' }, editMode ? '나의 캐릭터 꾸미기' : '첫 모험을 준비해요');
   const card = h('section', { class: 'bk-panel card-create', 'aria-labelledby': 'profile-title', testid: 'profile-card' },
     h('div', { class: 'card-head' }, h('div', {}, h('p', { class: 'ui-eyebrow' }, 'CHARACTER STUDIO'), title), h('span', { class: 'ui-step' }, '나만의 모험가')),
     h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, jobArea, ctaArea),
-    footRow);
+    rewardArea, footRow);
   title.id = 'profile-title';
   const logo = h('h1', { class: 'bk-logo bk-logo--sm' }, h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), '버섯마을');
   const backBtn = editMode ? h('button', { type: 'button', class: 'bk-btn', testid: 'profile-back' }, '로비로 돌아가기') : null;
@@ -416,6 +422,9 @@ export function mount(root, app, opts = {}) {
     done = true;
     const profile = { nickname: nick.value, avatar: pickAvatar(avatar), job: selectedJob };
     app.profile = profile;
+    const latestRewards=readRewards(app.profileKey);
+    latestRewards.equipped=latestRewards.unlocked && rewards.equipped;
+    if (!saveRewards(app.profileKey,latestRewards)) app.storageFailed = true;
     if (!writeProfile(app.profileKey, profile)) app.storageFailed = true; // 막지 않고 메모리로 진행 (6.1)
     app.go('lobby');
   }

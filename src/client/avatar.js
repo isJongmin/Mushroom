@@ -324,13 +324,12 @@ export function createAvatarRenderer(assets, opts = {}) {
       ctx.drawImage(facingLeft ? e.flipped : e.normal, f * fw, 0, fw, fh, x - ox * s, y - ay * s, fw * s, fh * s);
       return true;
     },
-    /** 뒷모습 로프 자세. 몸통/다리를 보존하고 팔을 줄 쪽으로 올려 교대로 움직인다. */
+    /** 뒷모습 로프 자세. 손은 머리 뒤로 숨기고 몸통/다리와 작은 등반 흔들림만 유지한다. */
     drawClimb(ctx, avatar, x, y, k, now, moving) {
       const e = request(avatar);
       if (!e.normal || e.state !== 'ready') return false;
       const frame = assets.frameIndex.back ?? 7;
       const sc = k / density;
-      const phase = moving ? Math.floor(now / 220) % 2 : 0;
       const bob = moving ? Math.sin(now / 110) * .8 * k : 0;
       ctx.save();
       ctx.translate(x - ax * sc, y - ay * sc + bob);
@@ -342,19 +341,16 @@ export function createAvatarRenderer(assets, opts = {}) {
       ctx.clip(); smooth(ctx);
       ctx.drawImage(e.normal, frame * fw, 0, fw, fh, 0, 0, fw * sc, fh * sc);
       ctx.restore();
-      let sleeve = '#8b91ac';
-      try { const d = e.normal.getContext('2d').getImageData(frame * fw + 64, 117, 1, 1).data; if (d[3]) sleeve = `rgb(${d[0]},${d[1]},${d[2]})`; } catch { /* 기본 소매 */ }
-      const skin = avatar.skin === 'deep' ? '#9b674b' : avatar.skin === 'medium' ? '#d29a74' : '#f4ceb0';
-      for (const side of [-1, 1]) {
-        const high = (side < 0 ? phase : 1 - phase) * 7;
-        ctx.fillStyle = sleeve;
-        ctx.beginPath(); ctx.moveTo((72 + side * 15) * sc, 111 * sc);
-        ctx.lineTo((72 + side * 8) * sc, (99 - high) * sc);
-        ctx.lineTo((72 + side * 2) * sc, (103 - high) * sc);
-        ctx.lineTo((72 + side * 9) * sc, 120 * sc); ctx.closePath(); ctx.fill();
-        ctx.fillStyle = skin; ctx.fillRect((side < 0 ? 66 : 72) * sc, (98 - high) * sc, 6 * sc, 7 * sc);
-      }
+      // Raised hands are behind the head/rope: never paint synthetic skin over the neck.
       ctx.restore(); return true;
+    },
+    /** Restore hair/hat over a back-worn cape, leaving the crown's top band visible. */
+    drawBackHair(ctx,avatar,x,y,k,frame,facingLeft=false){
+      const src=this.thumb(avatar,['hair','hat'],frame);if(!src)return false;
+      const fit=this.costumeFit(avatar,frame),sc=k/density;
+      ctx.save();ctx.translate(x,y);if(facingLeft)ctx.scale(-1,1);
+      ctx.beginPath();ctx.rect(-fw*sc,(-fit.headTop+15)*k,fw*sc*2,(fit.headTop+30)*k);ctx.clip();smooth(ctx);
+      ctx.drawImage(src,0,0,fw,fh,-ax*sc,-ay*sc,fw*sc,fh*sc);ctx.restore();return true;
     },
     /**
      * 썸네일용: front 프레임에 지정 파츠 레이어만 합성한 fw x fh 캔버스 (캐시). 아직이면 합성을 시작하고 null.

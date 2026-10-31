@@ -1,4 +1,4 @@
-import {questNpcPoint,drawQuestNpc} from '../game/quest-npc.js';
+import {questNpcPoint,drawQuestNpc,NPC_AVATAR} from '../game/quest-npc.js';
 import {BOSS_KIND,bossPoint,bossPose,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
 import {drawBoss,drawBossTelegraph} from '../game/boss-visuals.js';
 import {eventDamage} from '../game/event-balance.js';
@@ -101,6 +101,7 @@ export function mount(root, app, opts = {}) {
 
   let assets = null;
   let avatarR = null;
+  let npcAvatar = null;
   let currentArea = 'village';
   let villageMap = null;
   const areaCatalog = new Map();
@@ -1394,7 +1395,7 @@ export function mount(root, app, opts = {}) {
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
     npcQuest.hidden=currentArea!=='village';
-    if(currentArea==='village'){const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}drawQuestNpc(ctx,np,camX,cy,k);}
+    if(currentArea==='village'){const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}drawQuestNpc(ctx,np,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now});}
     if(currentArea==='village') {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
@@ -1456,6 +1457,7 @@ export function mount(root, app, opts = {}) {
       if(p.anim==='climb')avatarR.drawClimb(ctx,shown,Math.round(sx*k),pyD,k,now,p.climbMoving);
       else avatarR.draw(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(outfitReady)drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{...outfit,rear:p.anim==='climb'});
+      if(outfitReady&&p.costume&&p.anim==='climb')avatarR.drawBackHair(ctx,dressed,Math.round(sx*k),pyD,k,frameOf(p,now));
       ctx.globalAlpha = 1;
     }
     slashes.draw(ctx, camX, cy, k, now);
@@ -1957,6 +1959,9 @@ export function mount(root, app, opts = {}) {
       }
     }
     avatarR = createAvatarRenderer(assets);
+    npcAvatar=assets.sanitizeAvatar(NPC_AVATAR);
+    await avatarR.ready(npcAvatar);
+    if(!alive)return;
     const sp = spawnPoint();
     me = makePlayer(app.userId || 'me', myNick, assets.sanitizeAvatar(profile.avatar), sp.x, true);
     me.body = createBody(sp.x, sp.y, world.groundY);

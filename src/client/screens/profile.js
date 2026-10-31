@@ -227,7 +227,7 @@ export function mount(root, app, opts = {}) {
       if (ok) drawFootShadow(c, fx, fy, k);
       if(!ok)renderer.ready(dressed);
       const outfit={fit:renderer.costumeFit(dressed,fr),side:view==='side',rear:view==='back',time:now,moving:walking};
-      if(ok)drawCostume(c,rewards.costume,fx,fy,k,{...outfit,back:true});renderer.draw(c,ok?dressed:avatar,fx,fy,k,fr,false);if(ok)drawCostume(c,rewards.costume,fx,fy,k,outfit);
+      if(ok)drawCostume(c,rewards.costume,fx,fy,k,{...outfit,back:true});renderer.draw(c,ok?dressed:avatar,fx,fy,k,fr,false);if(ok)drawCostume(c,rewards.costume,fx,fy,k,outfit);if(ok&&view==='back'&&rewards.costume)renderer.drawBackHair(c,dressed,fx,fy,k,fr);
       drawAbilityEffect(c, selectedJob, 0, fx, fy, k, now-previewAttackAt);
     }
     if (ok && !shownOnce) { shownOnce = true; stageDots.hidden = true; }

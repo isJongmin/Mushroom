@@ -14,17 +14,16 @@ export function drawCostume(c,id,x,y,k,{back=false,rear=false,prone=false,left=f
  const s=COSTUMES.find(s=>s.id===id);if(!s||prone)return;
  const {headTop=86,headX=0,neck=46,shoulder=13,bodyX=0,hem=18}=fit;
  c.save();c.translate(x,y);c.scale(left?-k:k,k);
- const sway=moving?Math.sin(time/140)*2:0,half=side?shoulder*.7:shoulder;
- // Sewn neckline, narrow shoulder fold and hem above the boots; arms stay in front.
+ const sway=moving?Math.sin(time/140)*2:0,half=side?shoulder*.65:shoulder;
+ const capeX=bodyX+(side&&!rear?-shoulder*.65:0);
+ // Cape is a back garment. The front pass adds no collar, bib or shoulder pads.
  if(back||rear){
-   c.fillStyle=s.color;c.beginPath();c.moveTo(bodyX-half,-neck);c.lineTo(bodyX+half,-neck);c.lineTo(bodyX+half+3+sway,-hem);c.lineTo(bodyX+sway,-hem+3);c.lineTo(bodyX-half-3+sway,-hem);c.closePath();c.fill();
-   c.fillStyle='#172f3424';c.beginPath();c.moveTo(bodyX+half-3,-neck);c.lineTo(bodyX+half+3+sway,-hem);c.lineTo(bodyX+half-2+sway,-hem);c.lineTo(bodyX+half-7,-neck);c.closePath();c.fill();
-   c.strokeStyle=s.trim;c.lineWidth=1;c.beginPath();c.moveTo(bodyX-half-2+sway,-hem-1);c.lineTo(bodyX+sway,-hem+2);c.lineTo(bodyX+half+2+sway,-hem-1);c.stroke();
-   if(rear){c.strokeStyle=s.trim;c.beginPath();c.moveTo(bodyX,-neck+10);c.lineTo(bodyX,-hem-7);c.moveTo(bodyX-4,-neck+16);c.lineTo(bodyX+4,-neck+21);c.stroke();}
+   c.fillStyle=s.color;c.beginPath();c.moveTo(capeX-half,-neck);c.lineTo(capeX+half,-neck);c.lineTo(capeX+half+3+sway,-hem);c.lineTo(capeX+sway,-hem+3);c.lineTo(capeX-half-3+sway,-hem);c.closePath();c.fill();
+   c.fillStyle='#172f3424';c.beginPath();c.moveTo(capeX+half-3,-neck);c.lineTo(capeX+half+3+sway,-hem);c.lineTo(capeX+half-2+sway,-hem);c.lineTo(capeX+half-7,-neck);c.closePath();c.fill();
+   c.strokeStyle=s.trim;c.lineWidth=1;c.beginPath();c.moveTo(capeX-half-2+sway,-hem-1);c.lineTo(capeX+sway,-hem+2);c.lineTo(capeX+half+2+sway,-hem-1);c.stroke();
+   if(rear){c.strokeStyle=s.trim;c.beginPath();c.moveTo(capeX,-neck+10);c.lineTo(capeX,-hem-7);c.moveTo(capeX-4,-neck+16);c.lineTo(capeX+4,-neck+21);c.stroke();}
  }
  if(!back){
-   // The front is only a fabric collar and clasp, rather than detached shoulder pads.
-   if(!rear){c.fillStyle=s.color;c.beginPath();c.moveTo(bodyX-half,-neck);c.lineTo(bodyX-half+2,-neck+5);c.lineTo(bodyX,-neck+7);c.lineTo(bodyX+half-2,-neck+5);c.lineTo(bodyX+half,-neck);c.lineTo(bodyX,-neck+3);c.closePath();c.fill();c.fillStyle=s.trim;c.fillRect(bodyX-2,-neck+4,4,3);}
    if(id==='royal-guardian'){
      const y0=-headTop+8,hw=side?10:15;
      c.fillStyle='#9b743c';c.fillRect(headX-hw,y0,hw*2,3);c.fillStyle='#dfb864';c.fillRect(headX-hw,y0-1,hw*2,2);

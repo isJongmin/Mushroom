@@ -17,8 +17,8 @@ const zones=gardenZones([],{spawn:{x:1540},groundY:800},'village');const sim=cre
 assert.equal(costumeAvatar({hat:'mage-hat',hair:'x'},'royal-guardian').hat,'none');assert.equal(costumeAvatar({hat:'mage-hat'},'sprout-cape').hat,'mage-hat');
 for(const pattern of ['stomp','spores','ring','exposed'])for(const t of [0,500,1100,1800,2200,4000]){
  const rec=recordingContext(),phase={...b,pattern},p=bossPose(phase,point,1000+t);
- drawBoss(rec.context,{s:'move',dir:1},300,400,1.5,1000+t,p);drawBossTelegraph(rec.context,phase,point,1400,300,1.5,1000+t);drawQuestNpc(rec.context,{x:1500,y:800},1400,300,1.5);rec.balanced();
- assert.equal(rec.commands.some(x=>x[0]==='ellipse'||x[0]==='roundRect'||x[0]==='arc'),false,'boss and NPC silhouettes must stay block-based');
+ drawBoss(rec.context,{s:'move',dir:1},300,400,1.5,1000+t,p);drawBossTelegraph(rec.context,phase,point,1400,300,1.5,1000+t);rec.balanced();
+ assert.equal(rec.commands.some(x=>x[0]==='ellipse'||x[0]==='roundRect'||x[0]==='arc'),false,'boss silhouettes must stay block-based');
 }
 for(const costume of COSTUMES)for(const left of [true,false])for(const rear of [true,false]){
  const rec=recordingContext();for(const back of [true,false])drawCostume(rec.context,costume.id,200,300,2,{left,rear,back,side:!rear,moving:true,time:240,fit:{headTop:82,headX:2,neck:45,shoulder:13,bodyX:0,hem:18}});rec.balanced();

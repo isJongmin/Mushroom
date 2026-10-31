@@ -167,7 +167,7 @@ export function createSupabaseBackend(url, anonKey) {
 
     const me = userId;
     // Presence records entry/portal arrival; regular movement uses broadcast.
-    const myState = { nickname: self.nickname, avatar: self.avatar, title: self.title, x: self.x, y: self.y, mapId: normalizeMapId(self.mapId), user_id: me };
+    const myState = { nickname: self.nickname, avatar: self.avatar, title: self.title, costume:self.costume, x: self.x, y: self.y, mapId: normalizeMapId(self.mapId), user_id: me };
     const seenChat = new Set();
     let closed = false;
     let synced = false;
@@ -301,7 +301,7 @@ export function createSupabaseBackend(url, anonKey) {
       /** Appearance changes and portal arrivals only; queued Presence updates coalesce. */
       async updateSelf(partial) {
         if (closed) throw new AppError('NETWORK');
-        for (const k of ['nickname', 'avatar', 'title', 'mapId', 'x', 'y']) if (partial && Object.prototype.hasOwnProperty.call(partial, k)) myState[k] = k === 'mapId' ? normalizeMapId(partial[k]) : partial[k];
+        for (const k of ['nickname', 'avatar', 'costume', 'title', 'mapId', 'x', 'y']) if (partial && Object.prototype.hasOwnProperty.call(partial, k)) myState[k] = k === 'mapId' ? normalizeMapId(partial[k]) : partial[k];
         const r = await track();
         if (r !== 'ok' && r !== 'cancelled') throw new AppError('NETWORK', r);
       },

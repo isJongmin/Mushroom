@@ -267,7 +267,7 @@ export function createMobSim(o) {
       if (x == null) { pending[z.i].push(now + 1000); continue; }
       mobs.set(v.id, {
         id: v.id, kind: v.kind, z: z.i, x, y: spec.behavior === 'fly' ? v.y : z.y, base: z.y,
-        dir: v.dir < 0 ? -1 : 1, hp: Math.min(spec.hp, v.hp), max: spec.hp, s: 'move', vy: 0, air: false, hitT: 0, dieT: 0,
+        dir: v.dir < 0 ? -1 : 1, hp: Math.min(spec.hp, v.hp), max: z.boss ? (v.max||spec.hp) : spec.hp, s: 'move', vy: 0, air: false, hitT: 0, dieT: 0,
         turnT: 2 + rnd() * 4, hopT: 0.4 + rnd(), pauseT: 0, phase: rnd() * Math.PI * 2,
       });
     }
@@ -288,8 +288,8 @@ export function createMobSim(o) {
         continue;
       }
       if (m.hitT > 0) { m.hitT -= dt; m.s = m.hitT > 0 ? 'hit' : 'move'; }
-      if (z.event) { m.dir = m.x < (z.x1+z.x2)/2 ? 1 : -1; m.pauseT=0; }
-      const moving = m.hitT <= 0;
+      if (z.event && !z.boss) { m.dir = m.x < (z.x1+z.x2)/2 ? 1 : -1; m.pauseT=0; }
+      const moving = m.hitT <= 0 && !z.boss;
       m.phase += dt;
       if (spec.behavior === 'fly') {
         if (moving) m.x += m.dir * spec.speed * dt;
@@ -327,7 +327,7 @@ export function createMobSim(o) {
    * @param dmgs 타별 피해 [n..] (multi 버프면 여러 개)
    * @returns null | { mob, dmgs(실제로 들어간 타), killed, buffs(드롭할 버프 id 목록) }
    */
-  function hit(box, ax, dir, dmgs, excluded = new Set()) {
+  function hit(box, ax, dir, dmgs, excluded = new Set(), modify = (_,d)=>d) {
     let best = null;
     let bestD = Infinity;
     for (const m of mobs.values()) {
@@ -343,13 +343,13 @@ export function createMobSim(o) {
     const applied = [];
     for (const d of dmgs) {
       if (best.hp <= 0) break;
-      best.hp = Math.max(0, best.hp - d);
-      applied.push(d);
+      const actual=Math.min(best.hp,modify(best,d));best.hp-=actual;
+      applied.push(actual);
     }
     (best.dm || (best.dm = [])).push(...applied); // 다음 mobs 송신에 타별 피해를 싣는다 (비호스트 피해 숫자)
     best.dir = dir < 0 ? 1 : -1; // 공격자 쪽을 본다
     const z = zones[best.z];
-    best.x = Math.min(z.x2, Math.max(z.x1, best.x + (dir < 0 ? -14 : 14)));
+    best.x = Math.min(z.x2, Math.max(z.x1, best.x + (z.boss?0:(dir < 0 ? -14 : 14))));
     const buffs = [];
     if (best.hp <= 0) {
       best.s = 'die';
@@ -368,7 +368,7 @@ export function createMobSim(o) {
   function snapshot(withDamage = false) {
     const list = [];
     for (const m of mobs.values()) {
-      const o = { id: m.id, kind: m.kind, x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, hp: Math.round(m.hp), s: m.s, z: m.z };
+      const o = { id: m.id, kind: m.kind, x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, hp: Math.round(m.hp), s: m.s, z: m.z, ...(zones[m.z]?.boss?{max:m.max}:{}) };
       if (withDamage && m.dm && m.dm.length) { o.dm = m.dm.slice(-12); m.dm.length = 0; }
       list.push(o);
     }
@@ -378,14 +378,16 @@ export function createMobSim(o) {
   return {
     fill, load, step, hit, snapshot,
     spawnGarden(count, now) {
-      const z=zones.find(z=>z.event);if(!z)return 0;
+      const z=zones.find(z=>z.event&&!z.boss);if(!z)return 0;
       let n=0;for(let i=0;i<count && mobs.size<MOB_LIMITS.total;i++) {
         const side=i%2 ? 1 : -1, center=(z.x1+z.x2)/2;
         const lane={...z,x1:center+side*540-85,x2:center+side*540+85};
         if(spawn(lane,now))n++;
       }return n;
     },
-    gardenMobs() { return [...mobs.values()].filter(m=>zones[m.z]?.event && m.s!=='die'); },
+    spawnBoss(max,now){const z=zones.find(z=>z.boss);if(!z)return false;const m=spawn(z,now,(z.x1+z.x2)/2);if(!m)return false;if(m.x!==(z.x1+z.x2)/2){mobs.delete(m.id);return false;}m.hp=m.max=max;return true;},
+    bossMob(){return [...mobs.values()].find(m=>zones[m.z]?.boss&&m.s!=='die');},
+    gardenMobs() { return [...mobs.values()].filter(m=>zones[m.z]?.event && !zones[m.z]?.boss && m.s!=='die'); },
     removeGarden(ids=null) { const selected=ids && new Set(ids);for(const [id,m] of mobs)if(zones[m.z]?.event && (!selected || selected.has(id)))mobs.delete(id); },
     get size() { return mobs.size; },
     get stats() { return { ...stats, pending: pending.reduce((n, p) => n + p.length, 0) }; },
@@ -408,7 +410,7 @@ export function createMobView({ kinds, onDamage, onDie }) {
       seen.add(m.id);
       let v = map.get(m.id);
       if (!v) {
-        v = { id: m.id, kind: m.kind, spec, x: m.x, y: m.y, dir: m.dir, hp: m.hp, max: spec.hp, s: m.s, z: m.z, buf: [], animAt: now, hpUntil: 0, hitAt: 0, goneAt: 0 };
+        v = { id: m.id, kind: m.kind, spec, x: m.x, y: m.y, dir: m.dir, hp: m.hp, max: m.max||spec.hp, s: m.s, z: m.z, buf: [], animAt: now, hpUntil: 0, hitAt: 0, goneAt: 0 };
         map.set(m.id, v);
       }
       v.goneAt = 0;
@@ -463,7 +465,7 @@ export function createMobView({ kinds, onDamage, onDie }) {
   function latest() {
     return [...map.values()].map((v) => {
       const l = v.buf[v.buf.length - 1];
-      return { id: v.id, kind: v.kind, x: l ? l.x : v.x, y: l ? l.y : v.y, dir: v.dir, hp: v.hp, s: v.s, z: v.z };
+      return { id: v.id, kind: v.kind, x: l ? l.x : v.x, y: l ? l.y : v.y, dir: v.dir, hp: v.hp, s: v.s, z: v.z, ...(v.kind==='garden-king'?{max:v.max}:{}) };
     });
   }
   return {

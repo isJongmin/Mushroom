@@ -186,7 +186,7 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
     members.set(st.user_id, { state: st, lastSeen: Date.now() });
     if (!prev) return 'new';
     const p = prev.state;
-    return p.title !== st.title || p.mapId !== st.mapId || p.nickname !== st.nickname || JSON.stringify(p.avatar) !== JSON.stringify(st.avatar) ? 'changed' : 'same';
+    return p.costume !== st.costume || p.title !== st.title || p.mapId !== st.mapId || p.nickname !== st.nickname || JSON.stringify(p.avatar) !== JSON.stringify(st.avatar) ? 'changed' : 'same';
   };
 
   const deliver = (raw) => {
@@ -310,7 +310,7 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
     /** Appearance changes and portal arrivals only (minimum 2-second Presence interval). */
     async updateSelf(partial) {
       if (closed) throw new AppError('NETWORK');
-      for (const k of ['nickname', 'avatar', 'title', 'mapId', 'x', 'y']) if (partial && own(partial, k)) myState[k] = k === 'mapId' ? normalizeMapId(partial[k]) : partial[k];
+      for (const k of ['nickname', 'avatar', 'costume', 'title', 'mapId', 'x', 'y']) if (partial && own(partial, k)) myState[k] = k === 'mapId' ? normalizeMapId(partial[k]) : partial[k];
       await track('presence-heartbeat');
     },
     healthy() {

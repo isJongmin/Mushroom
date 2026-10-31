@@ -1,7 +1,11 @@
+import {BOSS_KIND,bossPoint,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
+import {drawBoss,drawBossTelegraph} from '../game/boss-visuals.js';
+import {eventDamage} from '../game/event-balance.js';
+import {drawCostume} from '../game/reward-costumes.js';
 import { createGarden, gardenZones, gardenPoint, gardenActive, gardenEligible, GARDEN_TITLE, GARDEN_LABEL } from '../game/garden.js';
 import { drawGarden, drawGardenTitle, drawGardenInvader } from '../game/garden-visuals.js';
 import { createGardenPanel } from '../ui/garden-panel.js';
-import { readRewards, saveRewards, grantGarden, equippedTitle } from '../rewards.js';
+import { readRewards, saveRewards, grantGarden, equippedCostume, equippedTitle } from '../rewards.js';
 import { createSkillAttacks } from '../game/attack-patterns.js';
 import { drawSkillIcon } from '../game/skill-visuals.js';
 import { AREA_IDS, AREA_NAMES, normalizeMapId, areaMap, areaPortals, nearbyPortal, sameArea, drawBiomeMap, drawPortals, drawMinimap } from '../game/areas.js';
@@ -146,6 +150,7 @@ export function mount(root, app, opts = {}) {
   let gardenRewardSaved = true;
   let gardenRequestAt = -Infinity;
   let lastGardenPaint = 0;
+  let lastBossImpact='';
   let sim = null; // 호스트일 때만
   let mobView = null;
   let mobSprites = null;
@@ -236,7 +241,7 @@ export function mount(root, app, opts = {}) {
     return { btn, timer, slot, ability: a };
   });
   const touchFloat = h('div', { class: 'touch-float skill-hotbar' }, attackBtn, ...skillButtons.map(s => s.btn));
-  const gardenPanel = createGardenPanel({onStart:requestGarden,onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true})});
+  const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true})});
   const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
@@ -409,7 +414,7 @@ export function mount(root, app, opts = {}) {
   // --- 플레이어 -------------------------------------------------------------
   function makePlayer(uid, nickname, avatar, x, isSelf) {
     return {
-      user_id: uid, nickname, avatar, title: isSelf ? equippedTitle(app.profileKey) : null, mapId: isSelf ? currentArea : 'village', x, targetX: x, y: world.groundY, dir: 1,
+      user_id: uid, nickname, avatar, costume:isSelf?equippedCostume(app.profileKey):null,title: isSelf ? equippedTitle(app.profileKey) : null, mapId: isSelf ? currentArea : 'village', x, targetX: x, y: world.groundY, dir: 1,
       moving: false, lastMoveAt: 0, lastMovedAt: -Infinity, anim: 'idle', animSince: performance.now(),
       bubble: null, lastChat: null, isSelf,
       s: 'idle', // 이동 상태 idle | walk | jump | fall | prone (원격은 받은 값, 없으면 null → 추정)
@@ -500,12 +505,12 @@ export function mount(root, app, opts = {}) {
           const existing = players.get(s.user_id);
           if (existing) {
             existing.nickname = nickname;
-            existing.avatar = avatar; existing.title = s.title;
+            existing.avatar = avatar; existing.title = s.title;existing.costume=s.costume;
           } else {
             // Presence x는 입장 시점 값. 그 사람이 내 입장(presence join)을 보고 move로 현재 위치를 1회 보내 준다.
             const x = isNum(s.x) ? clampX(s.x) : WORLD.minX;
             const pl = makePlayer(s.user_id, nickname, avatar, x, false);
-            pl.mapId = normalizeMapId(s.mapId); pl.title = s.title;
+            pl.mapId = normalizeMapId(s.mapId); pl.title = s.title;pl.costume=s.costume;
             players.set(s.user_id, pl);
             const early = earlyMoves.get(s.user_id);
             if (early) { applyMove(pl, { ...early, fx: null }); pl.x = pl.targetX; pl.y = pl.yTo; pl.yBuf.length = 0; } // 늦은 fx는 재생하지 않는다
@@ -565,7 +570,7 @@ export function mount(root, app, opts = {}) {
       join: () => app.backend.joinRoom({ roomId, password: null, nickname: myNick }),
       open: (sink, signal) => {
         const token = ++openSeq;
-        const self = { nickname: me.nickname, avatar: me.avatar, title: me.title, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
+        const self = { nickname: me.nickname, avatar: me.avatar, title: me.title,costume:me.costume, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
         return app.backend.connectRoom(roomId, { ...handlersFor(token), onDrop: sink.onDrop }, self, { signal });
       },
       heartbeat: async () => {
@@ -834,35 +839,35 @@ export function mount(root, app, opts = {}) {
     pl.dead = p.dead;
   }
 
-  function startGarden(uid) {
+  function startGarden(uid,mode='defense') {
     const p=players.get(uid),point=gardenPoint(world);
     if(currentArea!=='village'||!sim||!p||p.dead||!sameArea(p,me)||Math.abs(p.x-point.x)>260||Math.abs(p.y-point.y)>100)return false;
-    const started=garden.start(`g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,Date.now(),[...players.values()].filter(p=>sameArea(p,me)).map(p=>p.user_id));
+    const started=garden.start(`g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,Date.now(),[...players.values()].filter(p=>sameArea(p,me)).map(p=>p.user_id),mode);
     if(started){sim.removeGarden();lastMobsSent=-Infinity;}
     return started;
   }
-  function requestGarden() {
+  function requestGarden(mode='defense') {
     if(!me||me.dead||connection!=='connected'||performance.now()-gardenRequestAt<1000)return;
     gardenRequestAt=performance.now();
-    if(isHost())startGarden(me.user_id);else send('garden-start',{});
+    if(isHost())startGarden(me.user_id,mode);else send(mode==='boss'?'boss-start':'garden-start',{});
     canvas.focus({preventScroll:true});
   }
-  function equipGardenTitle() {
+  function equipGardenTitle(mode='defense') {
     if(!rewardMemory.unlocked)return;
     const latestRewards=readRewards(app.profileKey);
     if(latestRewards.unlocked)rewardMemory=latestRewards;
-    rewardMemory.equipped=true;gardenRewardSaved=saveRewards(app.profileKey,rewardMemory);
-    me.title=GARDEN_TITLE;link?.updateSelf?.({title:me.title}).catch(()=>{});
+    rewardMemory.equipped=true;if(mode==='boss'&&rewardMemory.bossClears>0){rewardMemory.costume='royal-guardian';me.costume=rewardMemory.costume;}gardenRewardSaved=saveRewards(app.profileKey,rewardMemory);
+    me.title=GARDEN_TITLE;link?.updateSelf?.({title:me.title,costume:me.costume}).catch(()=>{});
   }
   function paintGardenPanel(now) {
     if(!me||now-lastGardenPaint<100)return;lastGardenPaint=now;
     const s=garden.snapshot(),eligible=gardenEligible(s,me.user_id);
     if(eligible&&!grantedRuns.has(s.id)) {
-      grantedRuns.add(s.id);if(grantedRuns.size>64)grantedRuns.delete(grantedRuns.values().next().value);const grant=grantGarden(app.profileKey,s.id,s.hp);rewardMemory=grant.rewards;gardenRewardSaved=grant.saved;
+      grantedRuns.add(s.id);if(grantedRuns.size>64)grantedRuns.delete(grantedRuns.values().next().value);const grant=grantGarden(app.profileKey,s.id,s.hp,s.mode);rewardMemory=grant.rewards;gardenRewardSaved=grant.saved;
     }
     const point=gardenPoint(world),near=!me.dead&&Math.abs(me.x-point.x)<=260&&Math.abs(me.y-point.y)<=100;
     const zi=zones.find(z=>z.event)?.i;
-    gardenPanel.paint(s,{village:currentArea==='village',connected:connection==='connected',near,uid:me.user_id,host:!!hostId && !!mobView && (!isHost()||!!sim),eligible,rewardSaved:gardenRewardSaved,
+    gardenPanel.paint(s,{village:currentArea==='village',connected:connection==='connected',near,bossHp:[...(mobView?.list||[])].find(m=>m.kind===BOSS_KIND)?.hp??0,uid:me.user_id,host:!!hostId && !!mobView && (!isHost()||!!sim),eligible,rewardSaved:gardenRewardSaved,
       alive:[...(isHost()&&sim?sim.gardenMobs():mobView?.list||[])].filter(m=>(zi==null||m.z===zi)&&m.s!=='die').length});
   }
 
@@ -935,7 +940,7 @@ export function mount(root, app, opts = {}) {
   /** 호스트: atk(상한으로 자른 값)를 몬스터에. 타별 피해, 처치되면 버프 드롭 (golem 2개) */
   function applyMobHit(r, now, uid) {
     if (!r) return;
-    if (zones[r.mob.z]?.event) garden.record(uid, r.dmgs.reduce((a,b)=>a+b,0), r.killed);
+    if (zones[r.mob.z]?.event) garden.record(uid, r.dmgs.reduce((a,b)=>a+b,0), r.killed,players.get(uid)?.attackJob||job.id,r.mob.kind===BOSS_KIND);
     cstats.mobHits++;
     showHits(r.dmgs, r.mob.x, r.mob.y - kindsH(r.mob.kind), 'hit', now);
     if (r.killed) {
@@ -948,7 +953,7 @@ export function mount(root, app, opts = {}) {
     const c = a; // already canonical; projectile hit counts may be split
     let first = null;
     for (let n = 0; n < targets; n++) {
-      const r = sim.hit(box, a.x, a.dir === 'left' ? -1 : 1, rollHits(c), excluded);
+      const r = sim.hit(box, a.x, a.dir === 'left' ? -1 : 1, rollHits(c), excluded, (m,d)=>zones[m.z]?.event?eventDamage(a.job,d,m.kind===BOSS_KIND&&garden.snapshot()?.boss?.pattern==='exposed'):d);
       if (!r) break;
       excluded.add(r.mob.id); first ||= r; applyMobHit(r, now, a.user_id);
     }
@@ -1001,6 +1006,8 @@ export function mount(root, app, opts = {}) {
     if (p.host && p.host !== hostId) return;
     const now = performance.now();
     switch (event) {
+      case 'boss-start':
+        if(isHost())startGarden(p.user_id,'boss');return;
       case 'garden-start':
         if (isHost()) startGarden(p.user_id);
         return;
@@ -1249,10 +1256,10 @@ export function mount(root, app, opts = {}) {
         const gs=garden.snapshot();
         if(gardenActive(gs) && connection==='connected') {
           const point=gardenPoint(world),invaders=sim.gardenMobs();
-          const breached=invaders.filter(m=>Math.abs(m.x-point.x)<65);
+          const breached=gs.phase==='boss'?[]:invaders.filter(m=>Math.abs(m.x-point.x)<65);
           sim.removeGarden(breached.map(m=>m.id));
           garden.tick(Date.now(),{alive:invaders.length-breached.length,breaches:breached.length,players:[...players.values()].filter(p=>sameArea(p,me)).length,
-            spawn:n=>sim.spawnGarden(n,now),clear:()=>sim.removeGarden()});
+            spawn:n=>sim.spawnGarden(n,now),spawnBoss:max=>sim.spawnBoss(max,now),bossAlive:!!sim.bossMob(),targetX:[...players.values()].filter(p=>sameArea(p,me)&&!p.dead)[(gs.boss?.seq??0)%Math.max(1,[...players.values()].filter(p=>sameArea(p,me)&&!p.dead).length)]?.x??point.x,clear:()=>sim.removeGarden()});
         } else if(!gardenActive(gs)) sim.removeGarden();
         mobView.apply(sim.snapshot(), now, true);
         if (now - lastMobsSent >= MOBS_SEND_MS && connection === 'connected') {
@@ -1297,6 +1304,11 @@ export function mount(root, app, opts = {}) {
     slashes.update(now);
     stones.update(dt, now);
     while (atkBoxes.length && now - atkBoxes[0].at > ATTACK_BOX_SHOW_MS) atkBoxes.shift();
+    const bossState=garden.snapshot();
+    if(connection==='connected'&&bossState?.phase==='boss'&&me&&!me.dead){
+      const b=bossState.boss,key=`${bossState.id}:${b.seq}`,age=Date.now()-bossImpactAt(b);
+      if(key!==lastBossImpact&&age>=0&&age<800){lastBossImpact=key;if(now>=me.invulnUntil&&bossDanger(b,me,bossPoint(world)))takeDamage([b.pattern==='spores'?24:20],me.x<gardenPoint(world).x?-1:1,'garden-boss',now);}
+    }
     paintGardenPanel(now);
     paintSkills(now);
     buffs.update(now);
@@ -1377,7 +1389,7 @@ export function mount(root, app, opts = {}) {
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
-    if(currentArea==='village') drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now);
+    if(currentArea==='village') {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
       drawMinimap(miniCanvas.getContext('2d'), map, players.values(), mobView?.list || [], me, { x: camX, y: cy, w: viewW, h: viewH });
@@ -1410,6 +1422,7 @@ export function mount(root, app, opts = {}) {
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       for (const v of mobsVis) {
+        if(v.kind===BOSS_KIND){drawBoss(ctx,v,(v.x-camX)*k,(v.y-cy)*k,k,now);continue;}
         if(zones[v.z]?.event && v.s!=='die') drawGardenInvader(ctx,v,camX,cy,k);
         drawMob(ctx, v, mobSprites.get(v.kind), Math.round((v.x - camX) * k), Math.round((v.y - cy) * k), k, now, mobDefs.density);
       }
@@ -1432,7 +1445,7 @@ export function mount(root, app, opts = {}) {
       if (a < 1) ctx.globalAlpha = a;
       const left = p.anim === 'climb' ? false : p.dir < 0;
       if (p.anim === 'climb') avatarR.drawClimb(ctx, p.avatar, Math.round(sx * k), pyD, k, now, p.climbMoving);
-      else avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), left);
+      else {drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{back:true,prone:p.anim==='prone'});avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), left);drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{prone:p.anim==='prone'});}
       ctx.globalAlpha = 1;
     }
     slashes.draw(ctx, camX, cy, k, now);
@@ -1921,6 +1934,7 @@ export function mount(root, app, opts = {}) {
       mobDefs = await loadMobManifest();
       if (!alive) return;
       if (mobDefs) {
+        installBoss(mobDefs.kinds);
         zones = gardenZones(normalizeZones(map.spawns, platforms, world, mobDefs.kinds), world, currentArea);
         if (zones.length) {
           mobView = createMobView({

@@ -3,6 +3,7 @@ import { cleanPresenceState, cleanGameEvent, GAME_EVENTS, stampGameEvent } from 
 import { cleanMove } from '../src/client/game/physics.js';
 
 const events = {
+  'boss-start': {user_id:'peer'},
   'garden-start': {user_id:'peer'},
   impact: { host: 'host', id: 'peer:2:0', x: 100, y: 170, job: 'archer' },
   atk: { user_id: 'peer', x: 100, y: 200, dir: 'left', seq: 2, job: 'mage' },
@@ -20,7 +21,7 @@ for (const mapId of [undefined, 'village', 'forest', 'quarry', '__proto__', '../
   const p = cleanPresenceState({ ...presence, mapId });
   assert.equal(p.mapId, expected);
   assert.equal(p.avatar, avatar);
-  assert.deepEqual({ ...p, mapId: undefined }, { ...presence, title:null, mapId: undefined });
+  assert.deepEqual({ ...p, mapId: undefined }, { ...presence, costume:null,title:null, mapId: undefined });
   assert.deepEqual(cleanMove({ ...move, mapId }), { ...move, mapId: expected });
   for (const event of GAME_EVENTS) {
     const legacy = cleanGameEvent(event, events[event]);

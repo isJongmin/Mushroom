@@ -1,3 +1,4 @@
+import {cleanCostume} from '../game/reward-costumes.js';
 import { cleanGarden, GARDEN_TITLE } from '../game/garden.js';
 import { normalizeMapId } from '../game/areas.js';
 import { normalizeJob } from '../game/jobs.js';
@@ -73,6 +74,7 @@ export function cleanPresenceState(s) {
     user_id: s.user_id,
     mapId: normalizeMapId(s.mapId),
     nickname: typeof s.nickname === 'string' ? s.nickname.slice(0, 32) : '',
+    costume: cleanCostume(s.costume),
     title: s.title === GARDEN_TITLE ? GARDEN_TITLE : null,
     avatar: s.avatar && typeof s.avatar === 'object' ? s.avatar : null,
     x: isNum(s.x) ? s.x : null,
@@ -143,7 +145,7 @@ export function createThrottle(intervalMs, send, { urgentMax = 4, urgentWindowMs
 // (사이클 9) 게임 broadcast 이벤트: atk, hp, mobs, drop, pick, picked (ARCHITECTURE "사이클 9 계약").
 // 두 어댑터가 같은 규칙으로 보내고(send) 받는다(onEvent). 형식이 틀리면 버린다.
 // 보낸 사람 표시: atk/hp/pick의 user_id와 mobs/drop/picked의 host는 어댑터가 자기 uid로 덮어쓴다(위장은 알려진 한계).
-export const GAME_EVENTS = Object.freeze(['atk', 'hp', 'mobs', 'drop', 'pick', 'picked', 'impact', 'garden-start']);
+export const GAME_EVENTS = Object.freeze(['atk', 'hp', 'mobs', 'drop', 'pick', 'picked', 'impact', 'garden-start', 'boss-start']);
 const GAME_EVENT_SET = new Set(GAME_EVENTS);
 export const isGameEvent = (e) => typeof e === 'string' && GAME_EVENT_SET.has(e);
 const UID_OK = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
@@ -159,7 +161,7 @@ const MOBS_MAX = 80;
 /** 보낸 쪽 표시를 붙인다 (어댑터 송신 직전) */
 export function stampGameEvent(event, payload, uid) {
   const p = { ...payload };
-  if (event === 'atk' || event === 'hp' || event === 'pick' || event === 'garden-start') p.user_id = uid;
+  if (event === 'atk' || event === 'hp' || event === 'pick' || event === 'garden-start' || event === 'boss-start') p.user_id = uid;
   else p.host = uid;
   return p;
 }
@@ -168,6 +170,7 @@ export function stampGameEvent(event, payload, uid) {
 function cleanGameEventPayload(event, p) {
   if (!isGameEvent(event) || !p || typeof p !== 'object') return null;
   switch (event) {
+    case 'boss-start':
     case 'garden-start':
       return UID_OK(p.user_id) ? { user_id:p.user_id } : null;
     case 'atk':
@@ -194,6 +197,7 @@ function cleanGameEventPayload(event, p) {
         if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !SID_RE.test(m.id) || typeof m.kind !== 'string' || !KIND_RE.test(m.kind)) continue;
         if (!numIn(m.x, -COORD, COORD) || !numIn(m.y, -COORD, COORD) || !numIn(m.hp, 0, 1e6)) continue;
         const o = { id: m.id, kind: m.kind, x: m.x, y: m.y, dir: m.dir < 0 ? -1 : 1, hp: m.hp, s: MOB_S.has(m.s) ? m.s : 'move', z: Number.isInteger(m.z) && m.z >= 0 && m.z < 64 ? m.z : -1 };
+        if(m.kind==='garden-king'&&Number.isInteger(m.max)&&m.max>=1&&m.max<=50000)o.max=m.max;
         if (DM_OK(m.dm)) o.dm = m.dm;
         list.push(o);
       }

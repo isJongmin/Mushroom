@@ -152,3 +152,6 @@ node tests/normal-skill-visuals.test.mjs
 12개 일반 연출을 양방향·다양한 시점으로 그려 유한 좌표/유효 알파/Canvas 상태 균형을 검사한다. 기본공격 360ms 간격과 수신 측의 이전 240ms 연사 거절, 스킬 쿨타임 유지도 확인한다.
 
 `node tests/garden.test.mjs`: cooperative garden lifecycle, host takeover, malformed/stale packet rejection, event spawn safety/no respawn, reward idempotency, equipment and storage failure.
+
+`node tests/garden-boss.test.mjs`: boss windups, jump/movement/safe-zone avoidance, host inheritance, scalable HP protocol, actual-HP contribution, costume milestones and bounded event DPS model.
+`node scripts/event-balance-report.mjs`: reproducible ideal single-target DPS ceiling comparison; not an empirical win-rate benchmark.

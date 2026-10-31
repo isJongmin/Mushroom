@@ -1,3 +1,4 @@
+import {COSTUMES,drawCostume} from '../game/reward-costumes.js';
 import { readRewards, saveRewards } from '../rewards.js';
 import { GARDEN_LABEL } from '../game/garden.js';
 import { drawAbilityEffect } from '../game/skill-visuals.js';
@@ -151,13 +152,22 @@ export function mount(root, app, opts = {}) {
   const titleBtn=h('button',{type:'button',class:'bk-btn',testid:'garden-title-toggle','aria-pressed':String(rewards.equipped),disabled:!rewards.unlocked},rewards.unlocked?(rewards.equipped?'칭호 착용 중':'칭호 착용'):'아직 잠겨 있어요');
   on(titleBtn,'click',()=>{rewards.equipped=!rewards.equipped;titleBtn.setAttribute('aria-pressed',String(rewards.equipped));setText(titleBtn,rewards.equipped?'칭호 착용 중':'칭호 착용');});
   const rewardArea=h('section',{class:'reward-studio','aria-label':'모험 보상'},h('div',{},h('h3',{},GARDEN_LABEL),h('p',{},rewards.unlocked?`버섯밭 지키기 ${rewards.clears}회 성공 · 최고 내구도 ${rewards.bestHp}%`:'마을 중앙의 버섯밭 지키기에 성공하면 해금돼요.')),titleBtn);
+  const costumeButtons=[];
+  const costumeList=h('div',{class:'costume-list'});
+  for(const costume of COSTUMES){
+    const unlocked=costume.unlocked(rewards),cv=h('canvas',{width:'180',height:'220','aria-hidden':'true'});
+    const c=cv.getContext('2d');drawCostume(c,costume.id,90,205,2,{back:true});drawCostume(c,costume.id,90,205,2);
+    const btn=h('button',{type:'button',class:'bk-btn costume-card',testid:`costume-${costume.id}`,disabled:!unlocked,'aria-pressed':String(rewards.costume===costume.id)},cv,h('strong',{},costume.name),h('span',{},unlocked?'선택하여 착용 / 해제':'미해금'),h('small',{},costume.need));
+    costumeButtons.push({btn,id:costume.id});on(btn,'click',()=>{rewards.costume=rewards.costume===costume.id?null:costume.id;for(const v of costumeButtons)v.btn.setAttribute('aria-pressed',String(v.id===rewards.costume));lastDrawn='';drawPreview();});costumeList.append(btn);
+  }
+  const costumeArea=h('section',{class:'reward-studio','aria-label':'해금 코스튬'},h('h3',{},'모험으로 얻는 코스튬'),h('p',{},`버섯밭 방어 ${rewards.clears}회 · 버섯왕 ${rewards.bossClears}회 처치`),costumeList);
   const modeSlot = h('span', { class: 'mode-slot' });
   const footRow = h('div', { class: 'card-foot', testid: 'profile-note' }, app.mode === 'local' ? modeSlot : null, h('span', {}, M.NOTE));
   const title = h('h2', { class: 'card-title', tabindex: '-1', testid: 'profile-title' }, editMode ? '나의 캐릭터 꾸미기' : '첫 모험을 준비해요');
   const card = h('section', { class: 'bk-panel card-create', 'aria-labelledby': 'profile-title', testid: 'profile-card' },
     h('div', { class: 'card-head' }, h('div', {}, h('p', { class: 'ui-eyebrow' }, 'CHARACTER STUDIO'), title), h('span', { class: 'ui-step' }, '나만의 모험가')),
     h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, jobArea, ctaArea),
-    rewardArea, footRow);
+    rewardArea,costumeArea, footRow);
   title.id = 'profile-title';
   const logo = h('h1', { class: 'bk-logo bk-logo--sm' }, h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), '버섯마을');
   const backBtn = editMode ? h('button', { type: 'button', class: 'bk-btn', testid: 'profile-back' }, '로비로 돌아가기') : null;
@@ -214,7 +224,7 @@ export function mount(root, app, opts = {}) {
       const fx = STAGE.ax * k;
       const fy = STAGE.ay * k;
       if (ok) drawFootShadow(c, fx, fy, k);
-      renderer.draw(c, avatar, fx, fy, k, fr, false);
+      drawCostume(c,rewards.costume,fx,fy,k,{back:true});renderer.draw(c, avatar, fx, fy, k, fr, false);drawCostume(c,rewards.costume,fx,fy,k,{rear:view==='back'});
       drawAbilityEffect(c, selectedJob, 0, fx, fy, k, now-previewAttackAt);
     }
     if (ok && !shownOnce) { shownOnce = true; stageDots.hidden = true; }
@@ -424,6 +434,7 @@ export function mount(root, app, opts = {}) {
     app.profile = profile;
     const latestRewards=readRewards(app.profileKey);
     latestRewards.equipped=latestRewards.unlocked && rewards.equipped;
+    latestRewards.costume=COSTUMES.some(c=>c.id===rewards.costume&&c.unlocked(latestRewards))?rewards.costume:null;
     if (!saveRewards(app.profileKey,latestRewards)) app.storageFailed = true;
     if (!writeProfile(app.profileKey, profile)) app.storageFailed = true; // 막지 않고 메모리로 진행 (6.1)
     app.go('lobby');

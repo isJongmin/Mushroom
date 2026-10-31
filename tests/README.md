@@ -161,3 +161,5 @@ node tests/normal-skill-visuals.test.mjs
 `node tests/appearance-layers.test.mjs`: climb rendering without exposed procedural hands, cape front/back layering, NPC manifest assets and shared avatar renderer integration.
 
 `node tests/progression.test.mjs`: equipment fusion/sale/class rules, real stage mob stats, persistent skill milestones, per-biome gacha guarantees and prices, pet bonuses/upgrade, malformed packets, concurrent spend and storage rollback. Browser QA covers IndexedDB commits and full UI flows.
+
+`node tests/inventory-ux.test.mjs`: atomic multi-sale, equipped protection, stale selection rollback, pet sale and refund policy, concurrent overlapping sales, single-card reveal state machine and skip without rerolls.

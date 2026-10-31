@@ -16,6 +16,7 @@ export const PET_PRICES = {1:200,5:950,10:1800};
 export const PET_ATK = [.02,.04,.07,.10,.15];
 export const PET_HP = [5,10,20,35,60];
 export const PET_ESSENCE = [1,2,5,12,30];
+export const PET_SELL = [20,60,180,600,2000];
 export const PET_UPGRADE = [5,10,20,35,55];
 export const stageOf = id => Object.hasOwn(STAGES,id)?STAGES[id]:STAGES.village;
 export const tierOK = n => Number.isInteger(n)&&n>=0&&n<5;
@@ -81,6 +82,20 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
  }
  else if(c.type==='equip') {const i=s.items.find(i=>i.id===c.id);if(!i)fail('장비가 없습니다.');if(i.kind==='shield'&&job==='warrior')s.shield=i.id;else if(i.kind===WEAPONS[job])s.equipped[job]=i.id;else fail('현재 직업이 사용할 수 없는 장비입니다.');}
  else if(c.type==='unequip-shield')s.shield=null;
+ else if(c.type==='sell-many') {
+ if(!Array.isArray(c.ids)||!c.ids.length||c.ids.length>200||new Set(c.ids).size!==c.ids.length)fail('판매할 장비를 선택해주세요.');
+ const equipped=new Set([...Object.values(s.equipped),s.shield]);
+ const items=c.ids.map(id=>s.items.find(i=>i.id===id));
+ if(items.some(i=>!i))fail('일부 장비가 이미 판매되었거나 없습니다.');
+ if(items.some(i=>equipped.has(i.id)))fail('착용 중인 장비는 판매할 수 없습니다.');
+ const ids=new Set(c.ids);result=items.reduce((sum,i)=>sum+SELL[i.tier],0);
+ s.items=s.items.filter(i=>!ids.has(i.id));s.gold=Math.min(1e9,s.gold+result);
+ }
+ else if(c.type==='pet-sell') {
+ const p=petSpec(c.id);if(!p||!s.pets[c.id])fail('이미 판매된 펫입니다.');
+ if(s.pet===c.id)fail('동행을 해제한 뒤 판매해주세요.');
+ result=PET_SELL[p.tier];delete s.pets[c.id];s.gold=Math.min(1e9,s.gold+result);
+ }
  else if(c.type==='sell') {
  const i=s.items.find(i=>i.id===c.id);if(!i)fail('이미 판매된 장비입니다.');if(Object.values(s.equipped).includes(i.id)||s.shield===i.id)fail('착용 중인 장비는 판매할 수 없습니다.');
  s.items=s.items.filter(x=>x.id!==i.id);s.gold=Math.min(1e9,s.gold+SELL[i.tier]);result=SELL[i.tier];

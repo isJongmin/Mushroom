@@ -224,7 +224,8 @@ export function createMobSim(o) {
   }
 
   function spawn(z, now, near) {
-    const kind = z.mobs[Math.floor(rnd() * z.mobs.length)];
+    const choices=z.mobs.filter(kind=>kinds.has(kind));if(!choices.length)return null;
+    const kind = choices[Math.floor(rnd() * choices.length)];
     const spec = kinds.get(kind);
     const x = safePosition(z, spec, near);
     if (x == null) return null;
@@ -266,7 +267,7 @@ export function createMobSim(o) {
       const x = z.event ? Math.min(z.x2, Math.max(z.x1, v.x)) : safePosition(z, spec, Math.min(z.x2, Math.max(z.x1, v.x)));
       if (x == null) { pending[z.i].push(now + 1000); continue; }
       mobs.set(v.id, {
-        id: v.id, kind: v.kind, z: z.i, x, y: spec.behavior === 'fly' ? v.y : z.y, base: z.y,
+        id: v.id, kind: v.kind, z: z.i, x, y: z.boss || spec.behavior === 'fly' ? v.y : z.y, base: z.y,
         dir: v.dir < 0 ? -1 : 1, hp: Math.min(spec.hp, v.hp), max: z.boss ? (v.max||spec.hp) : spec.hp, s: 'move', vy: 0, air: false, hitT: 0, dieT: 0,
         turnT: 2 + rnd() * 4, hopT: 0.4 + rnd(), pauseT: 0, phase: rnd() * Math.PI * 2,
       });
@@ -377,15 +378,16 @@ export function createMobSim(o) {
 
   return {
     fill, load, step, hit, snapshot,
-    spawnGarden(count, now) {
+    spawnGarden(count, now, wave=1) {
       const z=zones.find(z=>z.event&&!z.boss);if(!z)return 0;
-      let n=0;for(let i=0;i<count && mobs.size<MOB_LIMITS.total;i++) {
+      let n=0;const free=Math.max(0,12-this.gardenMobs().length);for(let i=0;i<Math.min(count,free) && mobs.size<MOB_LIMITS.total;i++) {
         const side=i%2 ? 1 : -1, center=(z.x1+z.x2)/2;
-        const lane={...z,x1:center+side*540-85,x2:center+side*540+85};
+        const lane={...z,mobs:wave>=2?(i%3===0?['garden-runner','slime']:i%3===1?['garden-guard','mushroom']:z.mobs):z.mobs.filter(k=>k!=='garden-guard'),x1:center+side*540-85,x2:center+side*540+85};
         if(spawn(lane,now))n++;
       }return n;
     },
     spawnBoss(max,now){const z=zones.find(z=>z.boss);if(!z)return false;const m=spawn(z,now,(z.x1+z.x2)/2);if(!m)return false;if(m.x!==(z.x1+z.x2)/2){mobs.delete(m.id);return false;}m.hp=m.max=max;return true;},
+    moveBoss(x,y,dir=1){const m=[...mobs.values()].find(m=>zones[m.z]?.boss&&m.s!=='die');if(m){const z=zones[m.z];m.x=Math.min(z.x2,Math.max(z.x1,x));m.y=y;m.dir=dir;}},
     bossMob(){return [...mobs.values()].find(m=>zones[m.z]?.boss&&m.s!=='die');},
     gardenMobs() { return [...mobs.values()].filter(m=>zones[m.z]?.event && !zones[m.z]?.boss && m.s!=='die'); },
     removeGarden(ids=null) { const selected=ids && new Set(ids);for(const [id,m] of mobs)if(zones[m.z]?.event && (!selected || selected.has(id)))mobs.delete(id); },

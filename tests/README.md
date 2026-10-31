@@ -155,3 +155,5 @@ node tests/normal-skill-visuals.test.mjs
 
 `node tests/garden-boss.test.mjs`: boss windups, jump/movement/safe-zone avoidance, host inheritance, scalable HP protocol, actual-HP contribution, costume milestones and bounded event DPS model.
 `node scripts/event-balance-report.mjs`: reproducible ideal single-target DPS ceiling comparison; not an empirical win-rate benchmark.
+
+`node tests/boss-motion-costume.test.mjs`: deterministic boss leap/run/landing motion, airborne collision snapshots, landing-centered hazard avoidance, reinforcement variants, block-only boss/NPC drawing, costume directions and hat replacement. Wardrobe anchors are measured/cached per actual composite frame; browser fitting QA covers attachment placement.

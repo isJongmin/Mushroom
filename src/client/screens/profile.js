@@ -1,4 +1,4 @@
-import {COSTUMES,drawCostume} from '../game/reward-costumes.js';
+import {COSTUMES,drawCostume,costumeAvatar} from '../game/reward-costumes.js';
 import { readRewards, saveRewards } from '../rewards.js';
 import { GARDEN_LABEL } from '../game/garden.js';
 import { drawAbilityEffect } from '../game/skill-visuals.js';
@@ -212,7 +212,8 @@ export function mount(root, app, opts = {}) {
 
   function drawPreview(now = performance.now(), force = true) {
     const fr = renderer && avatar ? previewFrame(now) : -1;
-    const ok = !!(renderer && avatar && renderer.isReady(avatar));
+    const dressed=avatar?costumeAvatar(avatar,rewards.costume):avatar;
+    const ok = !!(renderer && avatar && renderer.isReady(dressed));
     const key = `${ok ? PART_KEYS.map((p) => avatar[p]).join('|') : '-'}#${fr}#${now - previewAttackAt < 650 ? Math.floor(now / 16) : selectedJob}`;
     if (!force && key === lastDrawn) return;
     lastDrawn = key;
@@ -224,7 +225,9 @@ export function mount(root, app, opts = {}) {
       const fx = STAGE.ax * k;
       const fy = STAGE.ay * k;
       if (ok) drawFootShadow(c, fx, fy, k);
-      drawCostume(c,rewards.costume,fx,fy,k,{back:true});renderer.draw(c, avatar, fx, fy, k, fr, false);drawCostume(c,rewards.costume,fx,fy,k,{rear:view==='back'});
+      if(!ok)renderer.ready(dressed);
+      const outfit={fit:renderer.costumeFit(dressed,fr),side:view==='side',rear:view==='back',time:now,moving:walking};
+      if(ok)drawCostume(c,rewards.costume,fx,fy,k,{...outfit,back:true});renderer.draw(c,ok?dressed:avatar,fx,fy,k,fr,false);if(ok)drawCostume(c,rewards.costume,fx,fy,k,outfit);
       drawAbilityEffect(c, selectedJob, 0, fx, fy, k, now-previewAttackAt);
     }
     if (ok && !shownOnce) { shownOnce = true; stageDots.hidden = true; }

@@ -9,12 +9,13 @@ g.tick(5999,{spawn:()=>++count});assert.equal(count,0);
 let spawned=0;const spawn=n=>{spawned+=n;return n;};
 g.tick(6000,{spawn,players:2});assert.equal(g.snapshot().wave,1);assert.equal(g.snapshot().phase,'wave');assert.equal(spawned,5);
 g.record('a',25,true);g.record('b',10,false);assert.equal(g.snapshot().kills,1);
-g.tick(7000,{alive:0,players:2});assert.equal(g.snapshot().phase,'rest');
-g.tick(11000,{spawn,players:2});g.tick(12000,{alive:0,players:2});g.tick(16000,{spawn,players:2});
+g.tick(7000,{alive:0,players:2});assert.equal(g.snapshot().phase,'wave');assert.equal(g.snapshot().queued,2);
+g.tick(11000,{alive:0,spawn,players:2});assert.equal(g.snapshot().queued,0);g.tick(11001,{alive:0,players:2});assert.equal(g.snapshot().phase,'rest');
 const takeover=createGarden();takeover.load(g.snapshot());assert.deepEqual(takeover.snapshot(),g.snapshot());
-takeover.tick(17000,{alive:0,players:2});const done=takeover.snapshot();assert.equal(done.phase,'success');assert.equal(gardenEligible(done,'a'),true);assert.equal(gardenEligible(done,'observer'),false);
+let clock=15001;for(let n=0;n<20&&takeover.snapshot().phase!=='success';n++){const s=takeover.snapshot();clock=Math.max(clock,s.phase==='rest'?s.deadline:s.queued?s.reinforceAt:clock+1);takeover.tick(clock,{alive:0,spawn,players:2});}
+const done=takeover.snapshot();assert.equal(done.phase,'success');assert.equal(gardenEligible(done,'a'),true);assert.equal(gardenEligible(done,'observer'),false);
 assert.equal(takeover.accept({...done,rev:done.rev-1}),false);assert.equal(takeover.accept({...done,id:'old',started:0}),false);
-assert.equal(takeover.start('again',17001,['a']),false);assert.equal(takeover.start('again',22001,['a']),true);
+assert.equal(takeover.start('again',done.ended+1,['a']),false);assert.equal(takeover.start('again',done.ended+5001,['a']),true);
 const fail=createGarden();fail.start('failure',0,['a']);fail.tick(5000,{spawn});fail.tick(5001,{alive:3,breaches:5});assert.equal(fail.snapshot().phase,'failed');assert.equal(fail.snapshot().hp,0);
 const timeout=createGarden();timeout.start('timeout',0,['a']);timeout.tick(5000,{spawn});timeout.tick(45000,{alive:1});assert.equal(timeout.snapshot().phase,'failed');
 const crowded=createGarden();crowded.start('crowded',0,['a']);crowded.tick(5000,{spawn:()=>0});assert.equal(crowded.snapshot().phase,'ready');

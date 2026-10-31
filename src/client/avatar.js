@@ -257,6 +257,26 @@ export function createAvatarRenderer(assets, opts = {}) {
       if (v === undefined) { v = headTopOf(e.normal, f); e.tops.set(f, v); }
       return v;
     },
+    /** Attachment anchors measured once per composite frame, in world units. */
+    costumeFit(avatar,frame){
+      const e=sheetCache.get(keyOf(avatar)),f=Math.max(0,Math.min(frameCount-1,frame|0));
+      const fallback={headTop:86,headX:0,neck:46,shoulder:13,bodyX:0,hem:18};
+      if(!e?.normal||e.state!=='ready')return fallback;
+      e.costumeFits ||= new Map();if(e.costumeFits.has(f))return e.costumeFits.get(f);
+      let fit=fallback;
+      try{
+        const data=e.normal.getContext('2d').getImageData(f*fw,0,fw,fh).data;
+        const alpha=(x,y)=>data[(y*fw+x)*4+3]>ALPHA_TOP;
+        let top=fh,bottom=0,lo=fw,hi=0;
+        for(let y=0;y<fh;y++)for(let x=0;x<fw;x++)if(alpha(x,y)){top=Math.min(top,y);bottom=Math.max(bottom,y);}
+        for(let y=top;y<Math.min(top+14,fh);y++)for(let x=0;x<fw;x++)if(alpha(x,y)){lo=Math.min(lo,x);hi=Math.max(hi,x);}
+        const bob=Math.max(-3,Math.min(3,(ay-bottom)/density));
+        let bl=fw,br=0;
+        for(let y=110;y<=118&&y<fh;y++)for(let x=Math.max(0,ax-29);x<=Math.min(fw-1,ax+29);x++)if(alpha(x,y)){bl=Math.min(bl,x);br=Math.max(br,x);}
+        fit={headTop:(ay-top)/density,headX:hi>=lo?((lo+hi)/2-ax)/density:0,neck:(ay-111)/density+bob,shoulder:Math.max(11,Math.min(16,(br-bl)/density/2)),bodyX:br>=bl?((bl+br)/2-ax)/density:0,hem:18+bob};
+      }catch{/* tainted/unavailable canvas uses compatible anatomical defaults */}
+      e.costumeFits.set(f,fit);return fit;
+    },
     /**
      * (사이클 8) 캐릭터 대표 색 [r, g, b]: idle 프레임 몸통 부분(기준점 위 25~60 월드)의 불투명 픽셀 평균. 이펙트 색용.
      * 조합마다 1회 계산. 합성 전이거나 실패하면 null.

@@ -1,7 +1,8 @@
-import {BOSS_KIND,bossPoint,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
+import {questNpcPoint,drawQuestNpc} from '../game/quest-npc.js';
+import {BOSS_KIND,bossPoint,bossPose,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
 import {drawBoss,drawBossTelegraph} from '../game/boss-visuals.js';
 import {eventDamage} from '../game/event-balance.js';
-import {drawCostume} from '../game/reward-costumes.js';
+import {drawCostume,costumeAvatar} from '../game/reward-costumes.js';
 import { createGarden, gardenZones, gardenPoint, gardenActive, gardenEligible, GARDEN_TITLE, GARDEN_LABEL } from '../game/garden.js';
 import { drawGarden, drawGardenTitle, drawGardenInvader } from '../game/garden-visuals.js';
 import { createGardenPanel } from '../ui/garden-panel.js';
@@ -241,8 +242,10 @@ export function mount(root, app, opts = {}) {
     return { btn, timer, slot, ability: a };
   });
   const touchFloat = h('div', { class: 'touch-float skill-hotbar' }, attackBtn, ...skillButtons.map(s => s.btn));
+  const npcQuest=h('button',{type:'button',class:'quest-npc-marker',testid:'quest-npc','aria-label':'숲지기 모리와 대화: 퀘스트 선택',hidden:true},'!');
+  on(npcQuest,'click',()=>{if(!me||me.dead||connection!=='connected')return;const p=questNpcPoint(world);if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>110){setText(npcQuest,'가까이');return;}gardenPanel.open();lastGardenPaint=0;paintGardenPanel(performance.now());});
   const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true})});
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap, gardenPanel.el, gardenPanel.result);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -672,7 +675,7 @@ export function mount(root, app, opts = {}) {
   }
 
   // --- (사이클 9~10) 전투 ---------------------------------------------------------
-  const headOf = (p) => (avatarR ? avatarR.headTop(p.avatar) : 100);
+  const headOf = (p) => (avatarR ? avatarR.headTop(costumeAvatar(p.avatar,p.costume)) : 100);
   const groundAt = (x, y) => surfaceBelow(platforms, x, y, world.groundY);
   const send = (event, payload) => (link && connection === 'connected' && typeof link.send === 'function' ? link.send(event, { ...payload, mapId: currentArea }) : false);
 
@@ -840,8 +843,8 @@ export function mount(root, app, opts = {}) {
   }
 
   function startGarden(uid,mode='defense') {
-    const p=players.get(uid),point=gardenPoint(world);
-    if(currentArea!=='village'||!sim||!p||p.dead||!sameArea(p,me)||Math.abs(p.x-point.x)>260||Math.abs(p.y-point.y)>100)return false;
+    const p=players.get(uid),point=questNpcPoint(world);
+    if(currentArea!=='village'||!sim||!p||p.dead||!sameArea(p,me)||Math.abs(p.x-point.x)>230||Math.abs(p.y-point.y)>100)return false;
     const started=garden.start(`g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,Date.now(),[...players.values()].filter(p=>sameArea(p,me)).map(p=>p.user_id),mode);
     if(started){sim.removeGarden();lastMobsSent=-Infinity;}
     return started;
@@ -865,7 +868,7 @@ export function mount(root, app, opts = {}) {
     if(eligible&&!grantedRuns.has(s.id)) {
       grantedRuns.add(s.id);if(grantedRuns.size>64)grantedRuns.delete(grantedRuns.values().next().value);const grant=grantGarden(app.profileKey,s.id,s.hp,s.mode);rewardMemory=grant.rewards;gardenRewardSaved=grant.saved;
     }
-    const point=gardenPoint(world),near=!me.dead&&Math.abs(me.x-point.x)<=260&&Math.abs(me.y-point.y)<=100;
+    const point=questNpcPoint(world),near=!me.dead&&Math.abs(me.x-point.x)<=230&&Math.abs(me.y-point.y)<=100;
     const zi=zones.find(z=>z.event)?.i;
     gardenPanel.paint(s,{village:currentArea==='village',connected:connection==='connected',near,bossHp:[...(mobView?.list||[])].find(m=>m.kind===BOSS_KIND)?.hp??0,uid:me.user_id,host:!!hostId && !!mobView && (!isHost()||!!sim),eligible,rewardSaved:gardenRewardSaved,
       alive:[...(isHost()&&sim?sim.gardenMobs():mobView?.list||[])].filter(m=>(zi==null||m.z===zi)&&m.s!=='die').length});
@@ -1259,8 +1262,9 @@ export function mount(root, app, opts = {}) {
           const breached=gs.phase==='boss'?[]:invaders.filter(m=>Math.abs(m.x-point.x)<65);
           sim.removeGarden(breached.map(m=>m.id));
           garden.tick(Date.now(),{alive:invaders.length-breached.length,breaches:breached.length,players:[...players.values()].filter(p=>sameArea(p,me)).length,
-            spawn:n=>sim.spawnGarden(n,now),spawnBoss:max=>sim.spawnBoss(max,now),bossAlive:!!sim.bossMob(),targetX:[...players.values()].filter(p=>sameArea(p,me)&&!p.dead)[(gs.boss?.seq??0)%Math.max(1,[...players.values()].filter(p=>sameArea(p,me)&&!p.dead).length)]?.x??point.x,clear:()=>sim.removeGarden()});
+            spawn:(n,wave)=>sim.spawnGarden(n,now,wave),spawnBoss:max=>sim.spawnBoss(max,now),bossAlive:!!sim.bossMob(),bossX:bossPoint(world).x,targetX:[...players.values()].filter(p=>sameArea(p,me)&&!p.dead)[(gs.boss?.seq??0)%Math.max(1,[...players.values()].filter(p=>sameArea(p,me)&&!p.dead).length)]?.x??point.x,clear:()=>sim.removeGarden()});
         } else if(!gardenActive(gs)) sim.removeGarden();
+        const poseState=garden.snapshot();if(poseState?.phase==='boss'){const pose=bossPose(poseState.boss,bossPoint(world),Date.now());sim.moveBoss(pose.x,world.groundY-pose.height,pose.dir);}
         mobView.apply(sim.snapshot(), now, true);
         if (now - lastMobsSent >= MOBS_SEND_MS && connection === 'connected') {
           lastMobsSent = now;
@@ -1389,6 +1393,8 @@ export function mount(root, app, opts = {}) {
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
+    npcQuest.hidden=currentArea!=='village';
+    if(currentArea==='village'){const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}drawQuestNpc(ctx,np,camX,cy,k);}
     if(currentArea==='village') {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
@@ -1422,7 +1428,7 @@ export function mount(root, app, opts = {}) {
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       for (const v of mobsVis) {
-        if(v.kind===BOSS_KIND){drawBoss(ctx,v,(v.x-camX)*k,(v.y-cy)*k,k,now);continue;}
+        if(v.kind===BOSS_KIND){drawBoss(ctx,v,(v.x-camX)*k,(v.y-cy)*k,k,now,garden.snapshot()?.boss?bossPose(garden.snapshot().boss,bossPoint(world),Date.now()):null);continue;}
         if(zones[v.z]?.event && v.s!=='die') drawGardenInvader(ctx,v,camX,cy,k);
         drawMob(ctx, v, mobSprites.get(v.kind), Math.round((v.x - camX) * k), Math.round((v.y - cy) * k), k, now, mobDefs.density);
       }
@@ -1444,8 +1450,12 @@ export function mount(root, app, opts = {}) {
       const a = blinkAlpha(now, p.invulnUntil);
       if (a < 1) ctx.globalAlpha = a;
       const left = p.anim === 'climb' ? false : p.dir < 0;
-      if (p.anim === 'climb') avatarR.drawClimb(ctx, p.avatar, Math.round(sx * k), pyD, k, now, p.climbMoving);
-      else {drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{back:true,prone:p.anim==='prone'});avatarR.draw(ctx, p.avatar, Math.round(sx * k), pyD, k, frameOf(p, now), left);drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{prone:p.anim==='prone'});}
+      const dressed=costumeAvatar(p.avatar,p.costume),outfit={fit:avatarR.costumeFit(dressed,frameOf(p,now)),left,side:p.anim!=='climb',prone:p.anim==='prone',time:now,moving:p.anim==='walk'};
+      const outfitReady=avatarR.isReady(dressed);if(!outfitReady)avatarR.ready(dressed);const shown=outfitReady?dressed:p.avatar;
+      if(outfitReady)drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{...outfit,back:true});
+      if(p.anim==='climb')avatarR.drawClimb(ctx,shown,Math.round(sx*k),pyD,k,now,p.climbMoving);
+      else avatarR.draw(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
+      if(outfitReady)drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{...outfit,rear:p.anim==='climb'});
       ctx.globalAlpha = 1;
     }
     slashes.draw(ctx, camX, cy, k, now);
@@ -1458,12 +1468,12 @@ export function mount(root, app, opts = {}) {
     const u = P / 2; // CSS px / 월드
     for (const [p, sx, pyD] of visible) {
       drawLabel(ctx, p.nickname, sx * u, pyD / dpr, p.isSelf, cssW);
-      if(p.title===GARDEN_TITLE) drawGardenTitle(ctx,GARDEN_LABEL,sx*u,pyD/dpr-avatarR.headTop(p.avatar)*u-29);
+      if(p.title===GARDEN_TITLE) drawGardenTitle(ctx,GARDEN_LABEL,sx*u,pyD/dpr-avatarR.headTop(costumeAvatar(p.avatar,p.costume))*u-29);
     }
     // (사이클 9) HP 바: 머리(모자) 맨 위 바로 위 1px (말풍선 꼬리 끝은 그 위라 위치 그대로). 유령은 없음
     for (const [p, sx, pyD] of visible) {
       if (p.anim === 'ghost') continue;
-      const top = p.anim === 'prone' ? avatarR.headTopFrame(p.avatar, frameOf(p, now)) : avatarR.headTop(p.avatar);
+      const top = p.anim === 'prone' ? avatarR.headTopFrame(costumeAvatar(p.avatar,p.costume), frameOf(p, now)) : avatarR.headTop(costumeAvatar(p.avatar,p.costume));
       drawHpBar(ctx, sx * u, pyD / dpr - top * u - HPBAR.h - 1, p.hp, p.max);
     }
     for (const v of mobsVis) {
@@ -1476,7 +1486,7 @@ export function mount(root, app, opts = {}) {
     // (사이클 8) 엎드리면 그 프레임의 알파 bbox 맨 위(낮아진 키)를 쓴다
     const talking = visible.filter(([p]) => p.bubble).sort((a, b) => a[0].bubble.at - b[0].bubble.at);
     for (const [p, sx, pyD] of talking) {
-      const top = p.anim === 'prone' ? avatarR.headTopFrame(p.avatar, frameOf(p, now)) : avatarR.headTop(p.avatar);
+      const top = p.anim === 'prone' ? avatarR.headTopFrame(costumeAvatar(p.avatar,p.costume), frameOf(p, now)) : avatarR.headTop(costumeAvatar(p.avatar,p.costume));
       drawBubble(ctx, p.bubble.layout, sx * u, pyD / dpr, (top + HEAD.gap) * u, cssW, bubbleAlpha(now - p.bubble.at));
     }
   }
@@ -1502,7 +1512,7 @@ export function mount(root, app, opts = {}) {
     ctx.fillStyle = '#F7C948';
     ctx.strokeStyle = '#1A1626';
     ctx.lineWidth = 3;
-    const y = pyD / dpr - (avatarR.headTop(p.avatar) + 24) * u;
+    const y = pyD / dpr - (avatarR.headTop(costumeAvatar(p.avatar,p.costume)) + 24) * u;
     ctx.strokeText('HOST', sx * u, y);
     ctx.fillText('HOST', sx * u, y);
     ctx.restore();
@@ -1951,7 +1961,7 @@ export function mount(root, app, opts = {}) {
     me = makePlayer(app.userId || 'me', myNick, assets.sanitizeAvatar(profile.avatar), sp.x, true);
     me.body = createBody(sp.x, sp.y, world.groundY);
     me.y = sp.y;
-    await avatarR.ready(me.avatar); // 내 조합의 레이어만 받고 합성 (다른 사람 조합은 그릴 때 지연 로드)
+    await avatarR.ready(costumeAvatar(me.avatar,me.costume)); // 내 조합의 레이어만 받고 합성 (다른 사람 조합은 그릴 때 지연 로드)
     if (!alive) return;
     players.set(me.user_id, me);
     updateCount();

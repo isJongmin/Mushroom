@@ -24,6 +24,6 @@ export function drawGardenTitle(ctx,text,x,y) {
 }
 export function drawGardenInvader(ctx,m,camX,camY,k) {
   const x=(m.x-camX)*k,y=(m.y-camY)*k;
-  ctx.save();ctx.strokeStyle='#e7b85d';ctx.lineWidth=2*k;ctx.beginPath();ctx.ellipse(x,y-2*k,24*k,6*k,0,0,Math.PI*2);ctx.stroke();
-  ctx.fillStyle='#ffde8a';ctx.beginPath();ctx.moveTo(x-5*k,y-(m.spec.size.h+15)*k);ctx.lineTo(x+5*k,y-(m.spec.size.h+15)*k);ctx.lineTo(x,y-(m.spec.size.h+7)*k);ctx.closePath();ctx.fill();ctx.restore();
+  ctx.save();ctx.strokeStyle=m.kind==='garden-runner'?'#ed8b69':m.kind==='garden-guard'?'#9dc9d1':'#e7b85d';ctx.lineWidth=2*k;ctx.beginPath();ctx.ellipse(x,y-2*k,24*k,6*k,0,0,Math.PI*2);ctx.stroke();
+  ctx.fillStyle='#ffde8a';ctx.beginPath();ctx.moveTo(x-5*k,y-(m.spec.size.h+15)*k);ctx.lineTo(x+5*k,y-(m.spec.size.h+15)*k);ctx.lineTo(x,y-(m.spec.size.h+7)*k);ctx.closePath();ctx.fill();if(m.kind==='garden-runner'||m.kind==='garden-guard'){ctx.font=`700 ${9*k}px system-ui`;ctx.textAlign='center';ctx.fillStyle=m.kind==='garden-runner'?'#f6b097':'#c1e0e7';ctx.fillText(m.kind==='garden-runner'?'급습':'강화',x,y-(m.spec.size.h+22)*k);}ctx.restore();
 }

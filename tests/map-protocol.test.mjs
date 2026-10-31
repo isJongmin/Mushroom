@@ -3,6 +3,8 @@ import { cleanPresenceState, cleanGameEvent, GAME_EVENTS, stampGameEvent } from 
 import { cleanMove } from '../src/client/game/physics.js';
 
 const events = {
+  loot:{host:'host',owner:'peer',receipt:'kill1',area:'village',x:1,y:2,items:[{kind:'sword',tier:0}]},
+  'loot-ack':{user_id:'peer',receipt:'kill1'},
   'boss-start': {user_id:'peer'},
   'garden-start': {user_id:'peer'},
   impact: { host: 'host', id: 'peer:2:0', x: 100, y: 170, job: 'archer' },

@@ -1,6 +1,6 @@
 # Equipment progression proposal
 
-Status: design only, not implemented.
+Status: superseded by the first playable implementation. See [current balance and implementation](gameplay-20261031-equipment-pets.md). The proposal below is historical.
 
 Hunt → loot → equip or sell → fuse → unlock skills → challenge a stronger encounter.
 

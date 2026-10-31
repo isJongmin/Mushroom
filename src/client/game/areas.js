@@ -1,17 +1,17 @@
 // 세 맵은 같은 방의 채팅을 공유하며 사냥/위치/호스트는 mapId로 분리한다.
-export const AREA_IDS = Object.freeze(['forest', 'village', 'quarry']);
+export const AREA_IDS = Object.freeze(['village', 'quarry', 'forest']);
 export const normalizeMapId = (id) => AREA_IDS.includes(id) ? id : 'village';
-export const AREA_NAMES = Object.freeze({ village: '버섯마을', forest: '바람결 이끼숲', quarry: '별빛 수정 채석장' });
+export const AREA_NAMES = Object.freeze({ village: '버섯마을', forest: '이끼마을', quarry: '광산마을' });
 export function areaMap(id, village) {
   id = normalizeMapId(id);
-  if (id === 'village') return { ...village, id, name: AREA_NAMES[id] };
+  if (id === 'village') return { ...village, id, name: AREA_NAMES[id], spawns:(village?.spawns||[]).map((z,i)=>({...z,mobs:[['snail','mushroom','slime'][i%3]],max:Math.min(3,z.max||2)})) };
   const platforms = [
     {id:'west-bough',x1:470,x2:1040,y:650}, {id:'high-bough',x1:1280,x2:1800,y:490},
     {id:'east-bough',x1:2050,x2:2500,y:640}, {id:'summit',x1:2740,x2:3140,y:450},
   ];
   const ropes = [{id:'west-rope',x:760,y1:650,y2:800},{id:'high-rope',x:1510,y1:490,y2:800},
     {id:'east-rope',x:2250,y1:640,y2:800},{id:'summit-rope',x:2920,y1:450,y2:800}];
-  const monsters = id === 'forest' ? ['forest-stump','mushroom','slime'] : ['crystal-crab','golem','bat'];
+  const monsters = id === 'forest' ? ['forest-stump','moss-slime','moss-guardian'] : ['crystal-crab','golem','bat'];
   return {id,name:AREA_NAMES[id],layers:[],width:3500,height:900,groundY:800,spawn:{x:240,y:800},platforms,ropes,
     spawns:[{id:'west-ground',platform:'ground',x1:420,x2:1450,mobs:monsters,max:4},
       {id:'east-ground',platform:'ground',x1:1850,x2:3050,mobs:monsters,max:4},
@@ -19,8 +19,8 @@ export function areaMap(id, village) {
 }
 export function areaPortals(map) {
   const i=AREA_IDS.indexOf(normalizeMapId(map.id));
-  return [{id:'left',x:100,y:map.groundY,to:AREA_IDS[(i+2)%3],entry:'right'},
-    {id:'right',x:map.width-100,y:map.groundY,to:AREA_IDS[(i+1)%3],entry:'left'}];
+  return [...(i>0?[{id:'left',x:100,y:map.groundY,to:AREA_IDS[i-1],entry:'right'}]:[]),
+    ...(i<AREA_IDS.length-1?[{id:'right',x:map.width-100,y:map.groundY,to:AREA_IDS[i+1],entry:'left'}]:[])];
 }
 export function nearbyPortal(map,player) {
   if (!player || player.dead) return null;

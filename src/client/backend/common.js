@@ -1,3 +1,4 @@
+import {cleanLoadout,itemOK,STAGES} from '../game/progression.js';
 import {cleanCostume} from '../game/reward-costumes.js';
 import { cleanGarden, GARDEN_TITLE } from '../game/garden.js';
 import { normalizeMapId } from '../game/areas.js';
@@ -145,7 +146,7 @@ export function createThrottle(intervalMs, send, { urgentMax = 4, urgentWindowMs
 // (사이클 9) 게임 broadcast 이벤트: atk, hp, mobs, drop, pick, picked (ARCHITECTURE "사이클 9 계약").
 // 두 어댑터가 같은 규칙으로 보내고(send) 받는다(onEvent). 형식이 틀리면 버린다.
 // 보낸 사람 표시: atk/hp/pick의 user_id와 mobs/drop/picked의 host는 어댑터가 자기 uid로 덮어쓴다(위장은 알려진 한계).
-export const GAME_EVENTS = Object.freeze(['atk', 'hp', 'mobs', 'drop', 'pick', 'picked', 'impact', 'garden-start', 'boss-start']);
+export const GAME_EVENTS = Object.freeze(['loot','loot-ack','atk', 'hp', 'mobs', 'drop', 'pick', 'picked', 'impact', 'garden-start', 'boss-start']);
 const GAME_EVENT_SET = new Set(GAME_EVENTS);
 export const isGameEvent = (e) => typeof e === 'string' && GAME_EVENT_SET.has(e);
 const UID_OK = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
@@ -161,7 +162,7 @@ const MOBS_MAX = 80;
 /** 보낸 쪽 표시를 붙인다 (어댑터 송신 직전) */
 export function stampGameEvent(event, payload, uid) {
   const p = { ...payload };
-  if (event === 'atk' || event === 'hp' || event === 'pick' || event === 'garden-start' || event === 'boss-start') p.user_id = uid;
+  if (event === 'loot-ack' || event === 'atk' || event === 'hp' || event === 'pick' || event === 'garden-start' || event === 'boss-start') p.user_id = uid;
   else p.host = uid;
   return p;
 }
@@ -170,6 +171,11 @@ export function stampGameEvent(event, payload, uid) {
 function cleanGameEventPayload(event, p) {
   if (!isGameEvent(event) || !p || typeof p !== 'object') return null;
   switch (event) {
+    case 'loot-ack':
+      return UID_OK(p.user_id)&&typeof p.receipt==='string'&&p.receipt.length<=150?{user_id:p.user_id,receipt:p.receipt}:null;
+    case 'loot':
+      if(!UID_OK(p.host)||!UID_OK(p.owner)||typeof p.receipt!=='string'||p.receipt.length>150||!Object.hasOwn(STAGES,p.area)||!numIn(p.x,-COORD,COORD)||!numIn(p.y,-COORD,COORD)||!Array.isArray(p.items)||p.items.length>2||p.items.some(i=>!itemOK({...i,id:'check'})))return null;
+      return {host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
     case 'boss-start':
     case 'garden-start':
       return UID_OK(p.user_id) ? { user_id:p.user_id } : null;
@@ -177,7 +183,7 @@ function cleanGameEventPayload(event, p) {
       if (!UID_OK(p.user_id) || !numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
       // (사이클 10) 강화 값 w, hits, dmin, dmax, el은 숫자만 넘기고 상한 자르기는 화면(buffs.clampAttack)이 한다
       return {
-        job: normalizeJob(p.job), skill: p.skill == null ? 0 : Number.isInteger(p.skill) && p.skill >= 0 && p.skill <= 3 ? p.skill : -1, cooldown: numIn(p.cooldown, 0, 15) ? p.cooldown : null,
+        ...(p.loadout?{loadout:cleanLoadout(p.loadout)}:{}), job: normalizeJob(p.job), skill: p.skill == null ? 0 : Number.isInteger(p.skill) && p.skill >= 0 && p.skill <= 3 ? p.skill : -1, cooldown: numIn(p.cooldown, 0, 15) ? p.cooldown : null,
         user_id: p.user_id, x: p.x, y: p.y, dir: p.dir === 'left' ? 'left' : 'right', seq: Number.isInteger(p.seq) ? p.seq : 0,
         w: isNum(p.w) ? p.w : null, hits: isNum(p.hits) ? p.hits : null, dmin: isNum(p.dmin) ? p.dmin : null, dmax: isNum(p.dmax) ? p.dmax : null, el: isNum(p.el) ? p.el : null,
       };
@@ -189,7 +195,7 @@ function cleanGameEventPayload(event, p) {
     case 'hp':
       if (!UID_OK(p.user_id) || !numIn(p.hp, 0, 100000) || !numIn(p.max, 1, 100000)) return null;
       // dm = (사이클 10 확장) 이번에 받은 타별 피해 (피해 숫자용)
-      return { user_id: p.user_id, hp: Math.min(p.hp, p.max), max: p.max, dead: p.dead === true, by: UID_OK(p.by) ? p.by : null, dm: DM_OK(p.dm) ? p.dm : null };
+      return { ...(p.loadout?{loadout:cleanLoadout(p.loadout)}:{}), user_id: p.user_id, hp: Math.min(p.hp, p.max), max: p.max, dead: p.dead === true, by: UID_OK(p.by) ? p.by : null, dm: DM_OK(p.dm) ? p.dm : null };
     case 'mobs': {
       if (!UID_OK(p.host) || !Array.isArray(p.list) || p.list.length > MOBS_MAX) return null;
       const list = [];

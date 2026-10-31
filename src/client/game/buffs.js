@@ -75,9 +75,9 @@ export function attackStats(st = {}, job = 'warrior') {
   return abilityStats(job);
 }
 
-/** 받은 atk의 강화 값 정리 (상한으로 자르고, 없으면 기본값) */
+/** Ignore packet damage numbers; derive fixed job damage from bounded equipment/pet descriptors. */
 export function clampAttack(p) {
-  return abilityStats(p?.job, p?.skill ?? 0);
+  return abilityStats(p?.job, p?.skill ?? 0, p?.loadout);
 }
 
 /** 한 번의 atk가 주는 타별 피해 목록 (속성 배율은 이미 dmin/dmax에 들어 있다) */

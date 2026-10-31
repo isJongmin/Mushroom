@@ -225,6 +225,7 @@ function getState() {
     //   reviveVisible, numbers, slashes, sprites, stats }
     combat: r ? r.combat : null,
     garden: r ? r.garden : null,
+    progression: r ? r.progression : null,
   };
   return deepFreeze(JSON.parse(JSON.stringify(snapshot)));
 }

@@ -558,6 +558,14 @@ export function drawMobFallback(ctx, kind, spec, u, t, s) {
   const sq = s === 'hit' ? 0.12 : Math.sin(t * 8) * 0.04;
   if (spec.behavior === 'hop' && s === 'move') ctx.translate(0, -Math.abs(Math.sin(t * 5)) * 14 * u); // 대체 그림만 통통
   ctx.scale(1 + sq, 1 - sq);
+  if(kind==='moss-slime'||kind==='moss-guardian') {
+    const r=(color,x,y,ww,hh)=>{ctx.fillStyle=color;ctx.fillRect(x*u,y*u,ww*u,hh*u);};
+    r('#2c4d43',-w/2,-h+5,w,h-5);r('#699768',-w/2+3,-h+2,w-6,h-5);r('#a5bf7c',-w/2+3,-h+2,w-6,7);r('#416c58',w/2-9,-h+9,6,h-14);
+    for(let n=0;n<5;n++)r(n%2?'#90b66b':'#456c50',-w/2+6+n*(w-14)/5,-h+14+(n%3)*9,7,5);
+    r('#1d3637',-10,-h*.55,5,7);r('#1d3637',5,-h*.55,5,7);r('#d6f5b4',-9,-h*.55,2,3);r('#d6f5b4',6,-h*.55,2,3);
+    if(kind==='moss-guardian'){r('#52735e',-w/2-8,-h*.68,10,h*.4);r('#52735e',w/2-2,-h*.68,10,h*.4);r('#c4db83',-6,-h-10,12,12);r('#e9f3b4',-3,-h-7,5,6);}
+    else{r('#5a925f',-5,-h-9,4,10);r('#b9cf79',-1,-h-10,10,5);}return;
+  }
   switch (kind) {
     case 'snail': {
       ell(ctx, 4 * u, -6 * u, w * 0.5 * u, 6 * u, '#9CC890', '#3E6A3A', lw);

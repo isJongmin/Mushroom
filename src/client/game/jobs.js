@@ -1,3 +1,4 @@
+import {combatStats,skillUnlocked} from './progression.js';
 // Shared job contract. IDs are persisted in profiles and sent with attacks.
 export const JOBS = Object.freeze([
   { id: 'warrior', name: '검사', label: '검사', skill: '검 베기', description: '넓은 검기로 가까운 몬스터를 함께 베어요.', color: '#ffb35c', cooldown: .52, range: 105, min: 15, max: 22, hits: 1, targets: 3, speed: 0 },
@@ -50,18 +51,18 @@ export function abilityDefinition(jobId, slot = 0) {
   const [name, multiplier, range, hits, targets, el] = SKILLS[j.id][slot - 1];
   return { slot, name, multiplier, range, hits, targets, el, cooldown: [0, 3, 7, 15][slot], splash: 0, ...PATTERNS[j.id][slot] };
 }
-export function abilityStats(jobId, slot = 0) {
+export function abilityStats(jobId, slot = 0, loadout = null) {
   const j = jobDefinition(jobId), a = abilityDefinition(j.id, slot);
   if (!a) return null;
   return { job: j.id, skill: slot, cooldown: a.cooldown, w: a.range, hits: a.hits,
-    dmin: Math.round(j.min * a.multiplier), dmax: Math.round(j.max * a.multiplier), el: a.el, animMs: slot ? Math.min(500, a.duration * .5) : BASIC_INTERVAL_MS };
+    dmin: Math.round(j.min * a.multiplier * (loadout ? combatStats(loadout).multiplier : 1)), dmax: Math.round(j.max * a.multiplier * (loadout ? combatStats(loadout).multiplier : 1)), el: a.el, animMs: slot ? Math.min(500, a.duration * .5) : BASIC_INTERVAL_MS };
 }
 export function acceptJobAttack(player, attack, now) {
   if (!player || player.dead || !Number.isSafeInteger(attack.seq) || attack.seq <= (player.acceptedAttackSeq || 0)) return false;
   if (player.job && normalizeJob(player.job) !== attack.job) return false;
   if (Math.abs(attack.x - (player.targetX ?? player.x)) > 230 || Math.abs(attack.y - (player.yTo ?? player.y)) > 210) return false;
   const slot = attack.skill ?? 0, a = abilityDefinition(attack.job, slot);
-  if (!a || attack.cooldown !== a.cooldown) return false;
+  if (!a || attack.cooldown !== a.cooldown || (attack.loadout && !skillUnlocked(attack.loadout,slot))) return false;
   const times = player.acceptedSkills || {};
   if (now - (times[slot] ?? -Infinity) < (slot ? a.cooldown * 1000 : BASIC_INTERVAL_MS) - 15) return false;
   player.acceptedAttackSeq = attack.seq;

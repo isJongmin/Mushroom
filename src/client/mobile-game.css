@@ -17,3 +17,20 @@
 @media(max-width:719px){.scr-room [data-testid=room-delete]{min-height:32px;font-size:9px;padding:4px 6px}}
 
 @media(max-width:719px){.scr-room .hud-room{min-width:0;flex-shrink:1}.scr-room [data-testid=room-title-text]{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:120px}.scr-room .hud-l{min-width:0}}
+/* Thumb zones: movement stays left; jump, attack and skills stay right. */
+@media(max-width:719px){
+ .mobile-combat-dock{display:grid;grid-template-columns:minmax(0,.39fr) minmax(0,.61fr);gap:14px;height:156px;padding:8px 10px 10px;align-items:end;touch-action:none}
+ .scr-room .touch-row{display:none!important}
+ .mobile-move-pad{height:132px;display:flex;flex-direction:column;justify-content:flex-end;gap:8px;align-items:center;min-width:0}
+ .mobile-move-directions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px;width:100%}
+ .mobile-move-pad button{width:100%;height:58px;min-height:58px;border-radius:16px;padding:5px!important;font-size:10px;touch-action:none;box-shadow:0 2px 0 #7f8e7b44}
+ .mobile-move-pad>[data-testid=crouch]{width:58px;height:50px;min-height:50px;font-size:9px}
+ .mobile-action-pad{min-width:0;height:132px}
+ .mobile-action-pad .skill-hotbar.touch-float{display:grid;height:132px;grid-template-columns:repeat(3,minmax(0,1fr));grid-template-rows:58px 66px;gap:8px}
+ .mobile-action-pad [data-testid=skill-1]{grid-column:1;grid-row:1}.mobile-action-pad [data-testid=skill-2]{grid-column:2;grid-row:1}.mobile-action-pad [data-testid=skill-3]{grid-column:3;grid-row:1}
+ .mobile-action-pad [data-testid=attack]{grid-column:2/span 2;grid-row:2;min-height:66px!important;font-size:17px;border-radius:20px;touch-action:none}
+ .mobile-action-pad [data-testid=jump]{grid-column:1;grid-row:2;border-radius:16px;font-size:10px;padding:4px!important;min-width:0;min-height:60px;touch-action:none}
+ .mobile-action-pad .skill-button{min-height:56px}.mobile-action-pad .skill-name{font-size:7px}.mobile-action-pad .skill-button canvas{width:29px;height:29px}
+}
+@media(max-width:719px){.mobile-move-pad button{min-width:0}.mobile-action-pad [data-testid=jump]{white-space:nowrap}}
+@media(max-width:719px){.mobile-combat-dock{width:100%;box-sizing:border-box}.mobile-move-directions button{white-space:nowrap;font-size:9px}}

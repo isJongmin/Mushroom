@@ -1,3 +1,4 @@
+import {handAnchor} from './game/avatar-hand-anchors.js';
 // 아바타 렌더러 (ARCHITECTURE "복셀 아트 계약", 사이클 5).
 // 파이프라인:
 //   1. 지연 로드: 조합(7개 id)이 처음 필요할 때 manifest layerOrder의 레이어 중 파일이 있는 것만
@@ -256,6 +257,14 @@ export function createAvatarRenderer(assets, opts = {}) {
       let v = e.tops.get(f);
       if (v === undefined) { v = headTopOf(e.normal, f); e.tops.set(f, v); }
       return v;
+    },
+    handFit(avatar,frame){const h=handAnchor(frame);return {near:{x:h.N[0],y:h.N[1]},far:{x:h.F[0],y:h.F[1]}};},
+    drawGrip(ctx,avatar,x,y,k,frame,left=false){
+      const e=sheetCache.get(keyOf(avatar));if(!e?.normal||e.state!=='ready')return;
+      const h=handAnchor(frame).N,r=3.5,px=ax+h[0]*density,py=ay+h[1]*density;
+      ctx.save();ctx.translate(x,y);if(left)ctx.scale(-1,1);
+      ctx.beginPath();ctx.rect((h[0]-r)*k,(h[1]-r)*k,r*2*k,r*2*k);ctx.clip();
+      smooth(ctx);ctx.drawImage(e.normal,(frame|0)*fw+px-r*density,py-r*density,r*2*density,r*2*density,(h[0]-r)*k,(h[1]-r)*k,r*2*k,r*2*k);ctx.restore();
     },
     /** Attachment anchors measured once per composite frame, in world units. */
     costumeFit(avatar,frame){

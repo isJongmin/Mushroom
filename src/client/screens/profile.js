@@ -16,7 +16,7 @@ import { drawFootShadow, drawMap } from '../game/world.js';
 import { pickAvatar } from '../avatar-data.js';
 import { writeProfile } from '../store.js';
 import { trimWs, charLength } from '../backend/common.js';
-import { JOBS, normalizeJob } from '../game/jobs.js';
+import { normalizeJob } from '../game/jobs.js';
 
 // 미리보기 무대 (사이클 5, 월드 단위): 112x144 = CSS 56x72 x --pv (데스크톱 4 → 224x288, 모바일 3 → 168x216).
 // 기준점 (56,128). 배경 = 맵 전체를 카메라 (mapX, mapY)로 그린 작은 장면 (지면선 440 → 무대 128). mapX는 소품이 적은 잔디 구간.
@@ -120,26 +120,7 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'bk-input-wrap' }, nickInput, h('span', { class: 'bk-input-end' }, nickCounter)),
     status);
 
-  const jobCards = JOBS.map((job) => {
-    const radio = h('input', { type: 'radio', name: 'character-job', value: job.id, testid: `job-${job.id}` });
-    radio.checked = selectedJob === job.id;
-    on(radio, 'change', () => {
-      if (!radio.checked) return;
-      selectedJob = job.id;
-      walking = false; walkBtn.setAttribute('aria-pressed', 'false');
-      setView('side');
-      previewAttackAt = performance.now();
-      lastDrawn = ''; drawPreview(previewAttackAt); startLoop();
-    });
-    return h('label', { class: 'job-card' }, radio,
-      h('span', { class: 'job-card__body' }, h('strong', {}, job.name),
-        h('span', { class: 'job-card__skill' }, job.skill),
-        h('span', { class: 'job-card__description' }, job.description)));
-  });
-  const jobArea = h('fieldset', { class: 'job-picker create-job', testid: 'job-picker' },
-    h('legend', { class: 'bk-label-text' }, '직업 선택'),
-    h('p', { class: 'bk-help' }, '공격 키는 같고, 직업마다 무기와 공격 방식이 달라요.'),
-    h('div', { class: 'job-grid' }, jobCards));
+  const weaponHint=h('p',{class:'create-job bk-help',testid:'weapon-hint'},'직업은 착용한 무기로 결정돼요. 가방에서 무기를 바꾸면 공격과 스킬도 바뀝니다.');
 
   // 버튼 (6장): 비활성은 aria-disabled (눌렀을 때 형식 오류를 보여 주기 위해 클릭은 받는다)
   const submit = h('button', {
@@ -166,7 +147,7 @@ export function mount(root, app, opts = {}) {
   const title = h('h2', { class: 'card-title', tabindex: '-1', testid: 'profile-title' }, editMode ? '나의 캐릭터 꾸미기' : '첫 모험을 준비해요');
   const card = h('section', { class: 'bk-panel card-create', 'aria-labelledby': 'profile-title', testid: 'profile-card' },
     h('div', { class: 'card-head' }, h('div', {}, h('p', { class: 'ui-eyebrow' }, 'CHARACTER STUDIO'), title), h('span', { class: 'ui-step' }, '나만의 모험가')),
-    h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, jobArea, ctaArea),
+    h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, weaponHint, ctaArea),
     rewardArea,costumeArea, footRow);
   title.id = 'profile-title';
   const logo = h('h1', { class: 'bk-logo bk-logo--sm' }, h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), '버섯마을');

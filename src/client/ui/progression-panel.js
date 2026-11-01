@@ -1,6 +1,6 @@
 import {h} from '../dom.js';
 import {openModal} from './modal.js';
-import {GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL} from '../game/progression.js';
+import {GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL,activeWeapon,activeJob,wornItem} from '../game/progression.js';
 import {drawItem,drawPet} from '../game/progression-visuals.js';
 import {createPetReveal} from './pet-reveal.js';
 
@@ -9,8 +9,8 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
  let busy=false,notice='',confirm=null,reveal=null,revealTimer=null,renderAc=null,destroyed=false;
  const body=h('div',{class:'growth-panel'});
  const reduced=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
- const worn=(s,id)=>Object.values(s.equipped).includes(id)||s.shield===id;
- const usable=i=>i.kind===WEAPONS[job]||i.kind==='shield'&&job==='warrior';
+ const worn=wornItem;
+ const usable=()=>true;
  const badge=(text,tier)=>h('span',{class:'gp-grade',style:{color:GRADE_COLORS[tier]}},text);
  function button(text,fn,{disabled=false,testid,kind='',focus}={}) {
   const b=h('button',{type:'button',class:`gp-button ${kind}`,disabled,testid,'data-focus':focus||testid||text},text);
@@ -56,8 +56,8 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
  function paintEquipment(s){
   selected=new Set([...selected].filter(id=>s.items.some(i=>i.id===id)&&!worn(s,id)));
   const items=[...s.items].sort((a,b)=>Number(worn(s,b.id))-Number(worn(s,a.id))||b.tier-a.tier||a.kind.localeCompare(b.kind));
-  body.append(h('div',{class:'gp-tools'},h('span',{class:'gp-muted'},bulk?'판매할 장비를 선택하세요. 착용 장비는 보호됩니다.':'장비를 누르면 착용·합성할 수 있어요.'),button(bulk?'선택 종료':'선택 판매',()=>{bulk=!bulk;resetSelection();paint();},{disabled:busy,testid:'gear-bulk-toggle'})));
-  if(bulk)body.append(h('div',{class:'gp-selection-tools'},button('전체 선택',()=>{selected=new Set(items.filter(i=>!worn(s,i.id)).map(i=>i.id));confirm=null;paint();},{disabled:busy,testid:'gear-select-all'}),button('다른 직업만',()=>{selected=new Set(items.filter(i=>!worn(s,i.id)&&!usable(i)).map(i=>i.id));confirm=null;paint();},{disabled:busy,testid:'gear-select-other'}),button('선택 해제',()=>{selected.clear();confirm=null;paint();},{disabled:busy||!selected.size})));
+  body.append(h('div',{class:'gp-tools'},h('span',{class:'gp-muted'},bulk?'판매할 장비를 선택하세요. 착용 장비는 보호됩니다.':'무기를 바꾸면 공격과 스킬도 바뀝니다.'),button(bulk?'선택 종료':'선택 판매',()=>{bulk=!bulk;resetSelection();paint();},{disabled:busy,testid:'gear-bulk-toggle'})));
+  if(bulk)body.append(h('div',{class:'gp-selection-tools'},button('전체 선택',()=>{selected=new Set(items.filter(i=>!worn(s,i.id)).map(i=>i.id));confirm=null;paint();},{disabled:busy,testid:'gear-select-all'}),button('다른 무기만',()=>{selected=new Set(items.filter(i=>!worn(s,i.id)&&i.kind!=='shield'&&i.kind!==activeWeapon(s)?.kind).map(i=>i.id));confirm=null;paint();},{disabled:busy,testid:'gear-select-other'}),button('선택 해제',()=>{selected.clear();confirm=null;paint();},{disabled:busy||!selected.size})));
   const grid=h('div',{class:'gp-grid',role:'group','aria-label':bulk?'판매할 장비 선택':'보유 장비'});
   for(const i of items){
    const isWorn=worn(s,i.id),active=bulk?selected.has(i.id):detail===i.id;
@@ -78,9 +78,9 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
   }
   const i=s.items.find(i=>i.id===detail);if(!i)return;
   const partner=i.tier<4?s.items.find(x=>x.id!==i.id&&x.kind===i.kind&&x.tier===i.tier&&!worn(s,x.id))||s.items.find(x=>x.id!==i.id&&x.kind===i.kind&&x.tier===i.tier):null;
-  const current=s.items.find(x=>x.id===(i.kind==='shield'?s.shield:s.equipped[job]));
+  const current=s.items.find(x=>x.id===(i.kind==='shield'?s.shield:s.activeWeapon));
   const value=i.kind==='shield'?[4,9,16,26,40][i.tier]:ATTACK[i.tier],prior=current?(i.kind==='shield'?[4,9,16,26,40][current.tier]:ATTACK[current.tier]):i.kind==='shield'?0:20;
-  const d=h('section',{class:'gp-detail','aria-label':'선택 장비 상세'},h('div',{},h('strong',{},itemName(i)),h('p',{class:'gp-muted'},usable(i)?`현재 장비 대비 ${value-prior>=0?'+':''}${value-prior} · ${i.kind==='shield'?'방어력':'공격력'} ${value}${i.kind==='shield'?'':` / 방어력 +${DEFENSE[i.tier]}`}`:'다른 직업 장비 · 판매하거나 합성할 수 있어요.')));
+  const d=h('section',{class:'gp-detail','aria-label':'선택 장비 상세'},h('div',{},h('strong',{},itemName(i)),h('p',{class:'gp-muted'},usable(i)?`현재 장비 대비 ${value-prior>=0?'+':''}${value-prior} · ${i.kind==='shield'?'방어력':'공격력'} ${value}${i.kind==='shield'?'':` / 방어력 +${DEFENSE[i.tier]}`}`:'무기를 착용하면 해당 무기의 공격과 스킬로 바뀝니다.')));
   if(confirm?.type==='fuse')d.append(h('p',{class:'gp-confirm'},`${itemName(i)} 2개를 사용해 ${GRADES[i.tier+1]} ${ITEM_NAMES[i.kind]} 1개로 합성합니다. 성공률 100%. 착용 재료는 결과 장비로 교체됩니다.`),h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button('합성 확정',()=>run({type:'fuse',a:i.id,b:confirm.partner}),{disabled:busy,kind:'gp-primary',testid:'growth-fuse'})));
   else d.append(h('div',{class:'gp-actions'},button(worn(s,i.id)?'착용 중':'착용',()=>run({type:'equip',id:i.id}),{disabled:busy||!usable(i)||worn(s,i.id),kind:'gp-primary'}),button(i.tier===4?'최고 등급':'합성',()=>{confirm={type:'fuse',partner:partner.id};paint();},{disabled:busy||!partner,testid:'gear-fuse-start'}),button('판매',()=>{bulk=true;selected=new Set([i.id]);confirm=null;paint();},{disabled:busy||worn(s,i.id)})),!partner&&i.tier<4?h('small',{class:'gp-muted'},'합성에는 같은 종류·등급의 장비가 하나 더 필요해요.'):null);
   body.append(d);

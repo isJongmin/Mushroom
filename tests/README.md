@@ -165,3 +165,5 @@ node tests/normal-skill-visuals.test.mjs
 `node tests/inventory-ux.test.mjs`: atomic multi-sale, equipped protection, stale selection rollback, pet sale and refund policy, concurrent overlapping sales, single-card reveal state machine and skip without rerolls.
 
 `node tests/appearance-motion.test.mjs`: five grade silhouettes, held weapon/shield and climbing suppression, 15 species motion transforms/reactions/reduced motion, K/L/semicolon and legacy skill keys. Mobile battle layout is checked in a real 390px iframe.
+
+`node tests/weapon-switch-scene.test.mjs`: legacy state migration, weapon-driven jobs/skills and retained slot cooldown, cross-map pet following, deterministic actor depth, rig hand anchors and independent left/right input.

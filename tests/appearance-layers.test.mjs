@@ -21,6 +21,7 @@ try{
   const rec=recordingContext();assert.ok(r.drawClimb(rec.context,NPC_AVATAR,100,200,2,now,moving));rec.balanced();
   assert.ok(rec.commands.some(c=>c[0]==='drawImage'));assert.equal(rec.commands.some(c=>c[0]==='fillRect'||c[0]==='fill'),false);
  }
+ for(let frame=0;frame<13;frame++)for(const left of [false,true]){const rec=recordingContext();r.drawGrip(rec.context,NPC_AVATAR,100,200,2,frame,left);rec.balanced();assert.ok(rec.commands.some(c=>c[0]==='drawImage'));}
  r.clear();
 }finally{if(oldCanvas===undefined)delete globalThis.OffscreenCanvas;else globalThis.OffscreenCanvas=oldCanvas;}
 const manifest=JSON.parse(readFileSync(new URL('../assets/avatar/manifest.json',import.meta.url)));

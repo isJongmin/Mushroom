@@ -1,7 +1,8 @@
+import {sortSceneActors,createCompanionFollower} from '../game/scene-order.js';
 import {SKILL_KEYS,SKILL_LABELS,drawEquippedGear,drawEquipBurst} from '../game/appearance-motion.js';
 import {createProgressionStore} from '../progression-store.js';
 import {createProgressionPanel} from '../ui/progression-panel.js';
-import {GRADES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,rollEquipment,itemName,petSpec} from '../game/progression.js';
+import {GRADES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,rollEquipment,itemName,petSpec,activeJob} from '../game/progression.js';
 import {drawEquipmentDrop,drawPet,petNpcPoint,drawPetMerchant,drawItem} from '../game/progression-visuals.js';
 import {questNpcPoint,drawQuestNpc,NPC_AVATAR} from '../game/quest-npc.js';
 import {BOSS_KIND,bossPoint,bossPose,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
@@ -112,7 +113,8 @@ export function mount(root, app, opts = {}) {
   const lootContributors = new Map(), lootOutbox = new Map();
   let lootAt=0, pickupAt=0, collecting=false, lastGrowthKey="";
   let growthErrorAt=0;
-  let petX=null,petY=null;
+  const companion=createCompanionFollower();
+  let companionPose=null;
   let lastEquipSignature=null,equipAt=-Infinity,equipPending=false,petHurtAt=-Infinity,petLootAt=-Infinity;
   let currentArea = 'village';
   let villageMap = null;
@@ -212,9 +214,10 @@ export function mount(root, app, opts = {}) {
   const buffBar = h('div', { class: 'buff-bar', testid: 'buff-bar', role: 'status', 'aria-label': '공격 강화 버프', hidden: true });
   const buffEls = new Map(); // id -> { el, cv, num, lastKey }
   const hostChip = debug ? h('span', { class: 'bk-chip debug-host', testid: 'debug-host' }, '호스트 -') : null;
-  const job = jobDefinition(profile?.job);
+  let job = jobDefinition(profile?.job);
   let progress=null,progressError='';
   try {progress=createProgressionStore(app.profileKey,{job:job.id});}catch(e){progressError=e.message;}
+  if(progress)job=jobDefinition(activeJob(progress.state));
   const myLoadout=()=>progress?loadout(progress.state,job.id):null;
   const myStats=()=>combatStats(myLoadout());
   const progressPanel=progress?createProgressionPanel({main:root,store:progress,job:job.id,getArea:()=>currentArea,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true}),canDraw:()=>{const p=petNpcPoint(world);return !!me&&!me.dead&&connection==='connected'&&Math.abs(me.x-p.x)<230&&Math.abs(me.y-p.y)<100;}}):null;
@@ -224,14 +227,16 @@ export function mount(root, app, opts = {}) {
   const growthHud=h('div',{class:'progression-hud',testid:'progression-hud'},growthText,bagBtn);
   function syncProgress(){
     if(!alive||!progress)return;
+    const nextJob=jobDefinition(activeJob(progress.state)),changed=nextJob.id!==job.id;job=nextJob;
+    if(changed){if(me){me.attackUntil=0;me.attackJob=job.id;}for(const s of skillButtons){s.ability=abilityDefinition(job.id,s.slot);drawSkillIcon(s.btn.querySelector('canvas').getContext('2d'),job.id,s.slot,48);setText(s.btn.querySelector('.skill-name'),s.ability.name);s.btn.title=`${s.ability.name} · ${s.ability.description} · ${s.ability.cooldown}초 · ${SKILL_LABELS[s.slot]}키`;}setText(jobChip,`${job.name} · 무기 스킬`);}
     const st=myStats();atk=abilityStats(job.id,0,myLoadout());if(me){me.max=st.maxHp;me.hp=Math.min(me.hp,me.max);me.loadout=myLoadout();announceHp=true;}
-    const state=progress.state;const signature=`${state.equipped[job.id]}:${state.shield}`;if(lastEquipSignature!==null&&signature!==lastEquipSignature){equipAt=-Infinity;equipPending=true;}lastEquipSignature=signature;
+    const state=progress.state;const signature=`${state.activeWeapon}:${state.shield}`;if(lastEquipSignature!==null&&signature!==lastEquipSignature){equipAt=-Infinity;equipPending=true;}lastEquipSignature=signature;
     const key=`${state.revision}|${currentArea}|${layout.mobile}`;if(key!==lastGrowthKey){lastGrowthKey=key;setText(growthText,layout.mobile?`${AREA_NAMES[currentArea]} · ${state.gold.toLocaleString()} G`:`${stageOf(currentArea).order}차 ${AREA_NAMES[currentArea]} · 공격 ${st.attack} / 방어 ${st.defense} · ${state.gold.toLocaleString()} G`);}
     progressPanel?.refresh();
   }
   on(window,'storage',e=>{if(progress&&e.key===progress.key){try{progress.reload();syncProgress();}catch(err){chatLog.addSystem(err.message);}}});
 
-  const jobChip = h('span', { class: 'bk-chip', testid: 'room-job', title: job.description }, `${job.name} · 장비 성장`);
+  const jobChip = h('span', { class: 'bk-chip', testid: 'room-job', title: job.description }, `${job.name} · 무기 스킬`);
   const hudL = h('div', { class: 'hud-l' }, roomChip, countChip, jobChip, modeSlot, hostChip);
   const hud = h('div', { class: 'hud' }, hudL, h('div', { class: 'hud-r' }, hint, deleteBtn, leaveBtn));
   const modeSlot2 = h('span', { class: 'mode-slot' });
@@ -314,7 +319,8 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'bk-input-wrap' }, chatInput, h('span', { class: 'bk-input-end' }, counter)),
     sendBtn);
 
-  const combatDock=h('div',{class:'mobile-combat-dock',testid:'mobile-combat-dock'});
+  const moveDirections=h('div',{class:'mobile-move-directions'}),movePad=h('div',{class:'mobile-move-pad',testid:'mobile-move-pad'},moveDirections),actionPad=h('div',{class:'mobile-action-pad',testid:'mobile-action-pad'});
+  const combatDock=h('div',{class:'mobile-combat-dock',testid:'mobile-combat-dock'},movePad,actionPad);
   const chatToggle=h('button',{type:'button',class:'bk-btn bk-btn--sm mobile-chat-toggle',testid:'mobile-chat-toggle','aria-expanded':'false'},'채팅');
   const col = h('main', { class: 'scr-game scr-room' }, stage,combatDock, touchRow, chatRow);
   hudL.append(chatToggle);
@@ -335,7 +341,7 @@ export function mount(root, app, opts = {}) {
     if (mobile) {
       P = 2;
       cssW = Math.floor(vw / P) * P;
-      cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor((vh - 152 - (col.classList.contains('chat-open')?60:0)) / P) * P);
+      cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor((vh - 164 - (col.classList.contains('chat-open')?60:0)) / P) * P);
     } else {
       P = pixelScale(vw, vh);
       cssW = Math.min(Math.floor(vw / P) * P, (DESKTOP_MAX_VIEW_W * P) / 2); // 1280 (P=2), 1920 (P=3)
@@ -361,7 +367,8 @@ export function mount(root, app, opts = {}) {
     hint.classList.toggle('narrow', cssW < 900); // 캔버스 가로 900px 미만이면 조작 힌트 숨김
     if (modeChanged) {
       chatLog.setMobile(mobile);
-      (mobile?combatDock:stage).append(touchFloat);
+      if(mobile){moveDirections.append(leftBtn,rightBtn);movePad.append(crouchBtn);actionPad.append(touchFloat);touchFloat.append(jumpBtn);}
+      else{const groups=touchRow.querySelectorAll('.touch-group');groups[0].append(leftBtn,rightBtn);groups[1].append(crouchBtn,jumpBtn);stage.append(touchFloat);}
       if(mobile){miniBody.hidden=true;miniToggle.setAttribute('aria-expanded','false');miniToggle.setAttribute('aria-label','미니맵 펼치기');setText(miniToggle,'+');}
       syncProgress();
       // LOCAL MODE 칩: 데스크톱은 HUD 첫 줄, 모바일은 2줄째 (room.md 3.1, 4.1)
@@ -757,7 +764,7 @@ export function mount(root, app, opts = {}) {
     })();
   }
 
-  function refreshAttack() { atk = attackStats(buffs.stacks(), normalizeJob(profile?.job)); }
+  function refreshAttack() { atk = abilityStats(job.id,0,myLoadout()); }
 
   function doAttack(now, slot = 0) {
     const atk = abilityStats(job.id, slot, myLoadout());
@@ -882,7 +889,7 @@ export function mount(root, app, opts = {}) {
       if (!p.dead) pl.invulnUntil = now + COMBAT.invuln * 1000;
     }
     pl.hp = p.hp;
-    if(p.loadout)pl.loadout=p.loadout;
+    if(p.loadout){pl.loadout=p.loadout;if(p.loadout.job)pl.attackJob=p.loadout.job;}
     pl.max = p.max;
     pl.dead = p.dead;
   }
@@ -939,7 +946,7 @@ export function mount(root, app, opts = {}) {
   function configureArea(nextMap) {
     map = nextMap;
     if(mobDefs&&baseMobKinds){mobDefs.kinds=stageKinds(baseMobKinds,currentArea);mobSprites?.clear();mobSprites=createMobSprites(mobDefs.kinds);}
-    lootContributors.clear();petX=petY=null;
+    lootContributors.clear();companion.reset();companionPose=null;
     platforms = map.platforms || []; ropes = map.ropes || [];
     world = worldFromMap(map);
     Object.assign(BODY_OPT, { platforms, ropes, groundY: world.groundY, minX: world.minX, maxX: world.maxX });
@@ -1099,7 +1106,7 @@ export function mount(root, app, opts = {}) {
         if (!c) return; // 받는 쪽 상한: w≤175, hits≤4, dmax≤60, el 0~3
         if (c.w !== p.w || c.hits !== p.hits || c.dmax !== p.dmax || c.el !== p.el) cstats.atkCapped++;
         const animMs = c.animMs;
-        if(p.loadout)pl.loadout=p.loadout;
+        if(p.loadout){pl.loadout=p.loadout;if(p.loadout.job)pl.attackJob=p.loadout.job;}
         pl.attackJob = c.job; pl.lastSkill = p.skill; pl.effectAt = now;
         pl.lastAtkAt = now;
         pl.attackUntil = now + animMs;
@@ -1478,16 +1485,14 @@ export function mount(root, app, opts = {}) {
       const np=petNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy-112)*k/dpr;
       petNpc.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;
       if(!petNpc.hidden){petNpc.style.left=`${nx}px`;petNpc.style.top=`${ny}px`;}
-      drawPetMerchant(ctx,np,camX,cy,k,avatarR,petNpcAvatar,currentArea,now);
       const pet=progress.state.pet;
-      if(pet&&!me.dead){const target=progress.state.pending.filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];const tx=target?target.x:me.x-me.dir*48,ty=target?target.y:me.y;
-        if(petX===null||Math.abs(petX-tx)>500){petX=tx;petY=ty;}else{petX+=(tx-petX)*.15;petY+=(ty-petY)*.18;}
-        drawPet(ctx,pet,(petX-camX)*k,(petY-cy)*k,k*.8,now,progress.state.pets[pet]?.level,{moving:!!me.moving,left:me.dir<0,reduced:prefersReducedMotion(),reaction:now-petHurtAt<700?'hurt':now-petLootAt<700?'loot':now-me.effectAt<450?'attack':null});
-      }
+      const target=progress.state.pending.filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
+      companionPose=companion.sample({id:!me.dead&&progress.state.pets[pet]?pet:null,mapId:currentArea,x:me.x,y:me.y,dir:me.dir,target,now});
+
     }
 
     npcQuest.hidden=currentArea!=='village';
-    if(currentArea==='village'){const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}drawQuestNpc(ctx,np,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now});}
+    if(currentArea==='village'){const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}}
     if(currentArea==='village') {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
@@ -1510,6 +1515,9 @@ export function mount(root, app, opts = {}) {
     // (사이클 9) 비석 → 드롭 → 몬스터 (캐릭터 뒤)
     stones.draw(ctx, tombSprite, camX, cy, k, now);
     drops.draw(ctx, camX, cy, k, now, buffOrbSprite, dropBagSprite);
+    const actors=[];
+    if(currentArea==='village'){const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now})});}
+    if(progress){const p=petNpcPoint(world);actors.push({id:'pet-npc',kind:'npc',y:p.y,draw:()=>drawPetMerchant(ctx,p,camX,cy,k,avatarR,petNpcAvatar,currentArea,now)});}
     const mobsVis = [];
     if (mobView) {
       for (const v of mobView.list) {
@@ -1520,11 +1528,12 @@ export function mount(root, app, opts = {}) {
         drawFootShadow(ctx, sx * k, Math.round((sy - cy) * k), k, sy - v.y);
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
-      for (const v of mobsVis) {
-        if(v.kind===BOSS_KIND){drawBoss(ctx,v,(v.x-camX)*k,(v.y-cy)*k,k,now,garden.snapshot()?.boss?bossPose(garden.snapshot().boss,bossPoint(world),Date.now()):null);continue;}
-        if(zones[v.z]?.event && v.s!=='die') drawGardenInvader(ctx,v,camX,cy,k);
-        drawMob(ctx, v, mobSprites.get(v.kind), Math.round((v.x - camX) * k), Math.round((v.y - cy) * k), k, now, mobDefs.density);
-      }
+      for (const v of mobsVis) actors.push({id:v.id,kind:'mob',y:groundAt(v.x,v.y),draw:()=>{
+        if(v.kind===BOSS_KIND){drawBoss(ctx,v,(v.x-camX)*k,(v.y-cy)*k,k,now,garden.snapshot()?.boss?bossPose(garden.snapshot().boss,bossPoint(world),Date.now()):null);return;}
+        if(zones[v.z]?.event && v.s!=='die')drawGardenInvader(ctx,v,camX,cy,k);
+        drawMob(ctx,v,mobSprites.get(v.kind),Math.round((v.x-camX)*k),Math.round((v.y-cy)*k),k,now,mobDefs.density);
+      }});
+
       ctx.setTransform(1, 0, 0, 1, 0, 0);
     }
     for (const [p, sx] of visible) {
@@ -1538,9 +1547,10 @@ export function mount(root, app, opts = {}) {
       c.globalAlpha = 1;
     });
     smooth(ctx);
-    for(const [p,sx,pyD] of visible)if(!p.isSelf&&!p.dead&&petSpec(p.loadout?.pet))drawPet(ctx,p.loadout.pet,(sx-p.dir*48)*k,pyD,k*.8,now,p.loadout.level,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null});
-    for (const [p, sx, pyD] of visible) {
-      if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); continue; }
+    for(const [p,sx,pyD] of visible)if(!p.isSelf&&!p.dead&&petSpec(p.loadout?.pet))actors.push({id:'pet-'+p.user_id,kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.loadout.pet,(sx-p.dir*48)*k,pyD,k*.8,now,p.loadout.level,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null})});
+    if(companionPose){const p=companionPose;actors.push({id:'my-pet',kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.id,(p.x-camX)*k,(p.y-cy)*k,k*.8,now,progress.state.pets[p.id]?.level,{moving:!!me.moving,left:me.dir<0,reduced:prefersReducedMotion(),reaction:now-petHurtAt<700?'hurt':now-petLootAt<700?'loot':now-me.effectAt<450?'attack':null})});}
+    for (const [p, sx, pyD] of visible) actors.push({id:p.user_id,kind:'player',y:groundAt(p.x,p.y),draw:()=>{
+      if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); return; }
       const a = blinkAlpha(now, p.invulnUntil);
       if (a < 1) ctx.globalAlpha = a;
       const left = p.anim === 'climb' ? false : p.dir < 0;
@@ -1551,10 +1561,12 @@ export function mount(root, app, opts = {}) {
       else avatarR.draw(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(outfitReady)drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{...outfit,rear:p.anim==='climb'});
       if(outfitReady&&p.costume&&p.anim==='climb')avatarR.drawBackHair(ctx,dressed,Math.round(sx*k),pyD,k,frameOf(p,now));
-      if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem});
+      if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem,frame:frameOf(p,now),hand:avatarR.handFit?.(dressed,frameOf(p,now))});
+      if((p.isSelf||p.attackJob)&&p.anim!=='climb'&&p.anim!=='prone')avatarR.drawGrip(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(p.isSelf&&!p.dead){if(equipPending&&!document.body.classList.contains('has-modal')){equipAt=now;equipPending=false;}if(!document.body.classList.contains('has-modal'))drawEquipBurst(ctx,Math.round(sx*k),pyD,k,Math.max(myLoadout()?.tier??0,myLoadout()?.shield??0),now-equipAt,{reduced:prefersReducedMotion()});}
       ctx.globalAlpha = 1;
-    }
+    }});
+    for(const actor of sortSceneActors(actors)){ctx.save();ctx.setTransform(1,0,0,1,0,0);actor.draw();ctx.restore();}
     slashes.draw(ctx, camX, cy, k, now);
     projectiles.draw(ctx, camX, cy, k, now);
     skillAttacks.draw(ctx, camX, cy, k, now);
@@ -1938,7 +1950,7 @@ export function mount(root, app, opts = {}) {
     };
   };
   app.providers.room = () => ({
-    progression:progress?{...progress.state,stats:myStats()}:null,
+    progression:progress?{...progress.state,stats:myStats(),job:job.id,companion:companionPose}:null,
     room: { id: roomId, name: roomName, locked, members: players.size, nickname: myNick, owner: isOwner },
     world: {
       mapId: currentArea, name: AREA_NAMES[currentArea], portals: map ? areaPortals(map) : [],

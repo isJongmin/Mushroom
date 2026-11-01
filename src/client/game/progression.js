@@ -2,6 +2,10 @@
 export const GRADES = Object.freeze(['일반','고급','희귀','영웅','전설']);
 export const GRADE_COLORS = ['#9aaeb6','#65c795','#73b6ff','#bc92ff','#f4ce70'];
 export const WEAPONS = Object.freeze({warrior:'sword',archer:'bow',mage:'staff',thief:'claw'});
+export const weaponJob=kind=>Object.keys(WEAPONS).find(j=>WEAPONS[j]===kind)||'warrior';
+export const activeWeapon=s=>s.items.find(i=>i.id===s.activeWeapon&&i.kind!=='shield')||null;
+export const activeJob=s=>weaponJob(activeWeapon(s)?.kind);
+export const wornItem=(s,id)=>s.activeWeapon===id||s.shield===id;
 export const ITEM_NAMES = {sword:'검',bow:'활',staff:'스태프',claw:'아대',shield:'방패'};
 export const ATTACK = [20,32,51,82,131];
 export const DEFENSE = [0,3,7,13,22];
@@ -33,7 +37,7 @@ export function rollEquipment(area,rnd=Math.random){
  if(rnd()<.10)out.push({kind:'shield',tier:weighted(stageOf(area).drop,rnd)});
  return out;
 }
-export function starterState(job='warrior') {return {version:1,revision:0,gold:0,items:[{id:'starter-'+job,kind:WEAPONS[job]||'sword',tier:0}],equipped:{[job]:'starter-'+job},shield:null,highest:{[job]:0},pets:{},pet:null,essence:0,pity:{},pending:[],seen:[],kills:{village:0,quarry:0,forest:0}};}
+export function starterState(job='warrior') {return {version:1,revision:0,gold:0,items:[{id:'starter-'+job,kind:WEAPONS[job]||'sword',tier:0}],activeWeapon:'starter-'+job,equipped:{[job]:'starter-'+job},shield:null,highest:{[job]:0},pets:{},pet:null,essence:0,pity:{},pending:[],seen:[],kills:{village:0,quarry:0,forest:0}};}
 export function cleanState(raw,job='warrior') {
  if(!raw||raw.version!==1)return starterState(job);
  const s=starterState(job),nat=(n,max=1e9)=>Number.isSafeInteger(n)?Math.max(0,Math.min(max,n)):0;
@@ -43,6 +47,7 @@ export function cleanState(raw,job='warrior') {
  const item=s.items.find(i=>i.id===raw.equipped?.[j]&&i.kind===WEAPONS[j]);if(item)s.equipped[j]=item.id;
  s.highest[j]=Math.max(tierOK(raw.highest?.[j])?raw.highest[j]:0,...s.items.filter(i=>i.kind===WEAPONS[j]).map(i=>i.tier));
  }
+ s.activeWeapon=s.items.find(i=>i.id===(raw.activeWeapon||s.equipped[job])&&i.kind!=='shield')?.id||s.items.find(i=>i.kind!=='shield')?.id||null;
  s.shield=s.items.some(i=>i.id===raw.shield&&i.kind==='shield')?raw.shield:null;
  for(const [id,p] of Object.entries(raw.pets||{}).slice(0,15))if(petSpec(id))s.pets[id]={level:nat(p?.level,5)};
  s.pet=s.pets[raw.pet]?raw.pet:null;
@@ -50,22 +55,22 @@ export function cleanState(raw,job='warrior') {
  s.seen=Array.isArray(raw.seen)?raw.seen.filter(i=>typeof i==='string'&&i.length<=160).slice(-10000):[];
  s.pending=(Array.isArray(raw.pending)?raw.pending:[]).filter(d=>itemOK(d)&&Object.hasOwn(STAGES,d.area)&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&Math.abs(d.x)<1e5&&Math.abs(d.y)<1e5).slice(0,200).map(d=>({...d}));return s;
 }
-export function loadout(s,job) {
- const weapon=s.items.find(i=>i.id===s.equipped[job]&&i.kind===WEAPONS[job]);
- const shield=job==='warrior'?s.items.find(i=>i.id===s.shield&&i.kind==='shield'):null;
- return {tier:weapon?.tier??0,highest:s.highest[job]??0,shield:shield?.tier??-1,pet:s.pet,level:s.pets[s.pet]?.level??0};
+export function loadout(s) {
+ const weapon=activeWeapon(s),job=weaponJob(weapon?.kind);
+ const shield=s.items.find(i=>i.id===s.shield&&i.kind==='shield');
+ return {weapon:weapon?.kind||'sword',job,tier:weapon?.tier??0,highest:s.highest[job]??0,shield:shield?.tier??-1,pet:s.pet,level:s.pets[s.pet]?.level??0};
 }
-export function cleanLoadout(l) {const p=petSpec(l?.pet);return {tier:tierOK(l?.tier)?l.tier:0,highest:Math.max(tierOK(l?.tier)?l.tier:0,tierOK(l?.highest)?l.highest:0),shield:tierOK(l?.shield)?l.shield:-1,pet:p?.id??null,level:Number.isInteger(l?.level)?Math.max(0,Math.min(5,l.level)):0};}
+export function cleanLoadout(l) {const p=petSpec(l?.pet),weapon=Object.values(WEAPONS).includes(l?.weapon)?l.weapon:null;return {...(weapon?{weapon,job:weaponJob(weapon)}:{}),tier:tierOK(l?.tier)?l.tier:0,highest:Math.max(tierOK(l?.tier)?l.tier:0,tierOK(l?.highest)?l.highest:0),shield:tierOK(l?.shield)?l.shield:-1,pet:p?.id??null,level:Number.isInteger(l?.level)?Math.max(0,Math.min(5,l.level)):0};}
 export function combatStats(raw) {
  const l=cleanLoadout(raw),pet=petSpec(l.pet),bonus=pet?PET_ATK[pet.tier]*(1+l.level*.1):0;
  return {attack:Math.round(ATTACK[l.tier]*(1+bonus)),multiplier:ATTACK[l.tier]/20*(1+bonus),defense:DEFENSE[l.tier]+(l.shield<0?0:[4,9,16,26,40][l.shield]),maxHp:100+(pet?Math.round(PET_HP[pet.tier]*(1+l.level*.1)):0),pickup:pet?240:26};
 }
 export const skillUnlocked = (l,slot) => slot<=1 || cleanLoadout(l).highest>=slot-1;
-export const stageUnlocked = (s,job,area) => (s.highest[job]??0)>=stageOf(area).recommended;
+export const stageUnlocked = (s,job,area) => Math.max(0,...Object.values(s.highest))>=stageOf(area).recommended;
 export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=()=>globalThis.crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')}={}) {
  const s=cleanState(original,job),c=command;let result=null;
  const fail=m=>{throw new Error(m);};
- if(c.type==='ensure') {if(!s.items.some(i=>i.kind===WEAPONS[job])){const i={id:id(),kind:WEAPONS[job],tier:0};s.items.push(i);s.equipped[job]=i.id;}}
+ if(c.type==='ensure') {if(!activeWeapon(s)){const i={id:id(),kind:WEAPONS[job],tier:0};s.items.push(i);s.equipped[job]=i.id;s.activeWeapon=i.id;}}
  else if(c.type==='loot') {
   if(typeof c.receipt!=='string'||c.receipt.length>150||!Object.hasOwn(STAGES,c.area))fail('잘못된 드롭 정보입니다.');
   if(s.seen.includes(c.receipt))return {state:s,result:{duplicate:true}};
@@ -80,11 +85,11 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
   s.pending=s.pending.filter(i=>i.id!==d.id);s.items.push({id:d.id,kind:d.kind,tier:d.tier});
   const j=Object.keys(WEAPONS).find(j=>WEAPONS[j]===d.kind);if(j)s.highest[j]=Math.max(s.highest[j]||0,d.tier);result=d;
  }
- else if(c.type==='equip') {const i=s.items.find(i=>i.id===c.id);if(!i)fail('장비가 없습니다.');if(i.kind==='shield'&&job==='warrior')s.shield=i.id;else if(i.kind===WEAPONS[job])s.equipped[job]=i.id;else fail('현재 직업이 사용할 수 없는 장비입니다.');}
+ else if(c.type==='equip') {const i=s.items.find(i=>i.id===c.id);if(!i)fail('장비가 없습니다.');if(i.kind==='shield')s.shield=i.id;else{s.activeWeapon=i.id;s.equipped[weaponJob(i.kind)]=i.id;}}
  else if(c.type==='unequip-shield')s.shield=null;
  else if(c.type==='sell-many') {
  if(!Array.isArray(c.ids)||!c.ids.length||c.ids.length>200||new Set(c.ids).size!==c.ids.length)fail('판매할 장비를 선택해주세요.');
- const equipped=new Set([...Object.values(s.equipped),s.shield]);
+ const equipped=new Set([s.activeWeapon,s.shield]);
  const items=c.ids.map(id=>s.items.find(i=>i.id===id));
  if(items.some(i=>!i))fail('일부 장비가 이미 판매되었거나 없습니다.');
  if(items.some(i=>equipped.has(i.id)))fail('착용 중인 장비는 판매할 수 없습니다.');
@@ -97,13 +102,14 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
  result=PET_SELL[p.tier];delete s.pets[c.id];s.gold=Math.min(1e9,s.gold+result);
  }
  else if(c.type==='sell') {
- const i=s.items.find(i=>i.id===c.id);if(!i)fail('이미 판매된 장비입니다.');if(Object.values(s.equipped).includes(i.id)||s.shield===i.id)fail('착용 중인 장비는 판매할 수 없습니다.');
+ const i=s.items.find(i=>i.id===c.id);if(!i)fail('이미 판매된 장비입니다.');if(wornItem(s,i.id))fail('착용 중인 장비는 판매할 수 없습니다.');
  s.items=s.items.filter(x=>x.id!==i.id);s.gold=Math.min(1e9,s.gold+SELL[i.tier]);result=SELL[i.tier];
  }
  else if(c.type==='fuse') {
  const a=s.items.find(i=>i.id===c.a),b=s.items.find(i=>i.id===c.b);if(!a||!b||a.id===b.id||a.kind!==b.kind||a.tier!==b.tier||a.tier>=4)fail('같은 종류·등급의 장비 2개가 필요합니다.');
  const next={id:id(),kind:a.kind,tier:a.tier+1};s.items=s.items.filter(i=>i.id!==a.id&&i.id!==b.id);s.items.push(next);
  for(const j of Object.keys(WEAPONS)) {if([a.id,b.id].includes(s.equipped[j]))s.equipped[j]=next.id;if(WEAPONS[j]===a.kind)s.highest[j]=Math.max(s.highest[j]||0,next.tier);}
+ if([a.id,b.id].includes(s.activeWeapon))s.activeWeapon=next.id;
  if([a.id,b.id].includes(s.shield))s.shield=next.id;result=next;
  }
  else if(c.type==='draw') {
@@ -121,6 +127,7 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
  else if(c.type==='pet-off')s.pet=null;
  else if(c.type==='pet-upgrade') {const p=s.pets[c.id];if(!p||p.level>=5)fail('더 강화할 수 없습니다.');const cost=PET_UPGRADE[p.level];if(s.essence<cost)fail('펫 정수가 부족합니다.');s.essence-=cost;p.level++;}
  else fail('알 수 없는 동작입니다.');
+ for(const [j,id] of Object.entries(s.equipped))if(!s.items.some(i=>i.id===id))delete s.equipped[j];
  s.revision++;return {state:s,result};
 }
 export function stageKinds(base,area){

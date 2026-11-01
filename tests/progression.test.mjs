@@ -12,7 +12,7 @@ let s=starterState();assert.equal(skillUnlocked(loadout(s,'warrior'),1),true);as
 const receipt={type:'loot',receipt:'kill',area:'village',x:900,y:800,items:[{kind:'sword',tier:0},{kind:'bow',tier:2}]};
 s=doCmd(s,receipt).state;assert.equal(s.pending.length,2);assert.equal(s.kills.village,1);s=doCmd(s,receipt).state;assert.equal(s.pending.length,2);assert.equal(s.kills.village,1);
 s=doCmd(s,{type:'collect',id:'kill:0'}).state;s=doCmd(s,{type:'collect',id:'kill:1'}).state;
-assert.throws(()=>doCmd(s,{type:'equip',id:'kill:1'}),/직업/);assert.throws(()=>doCmd(s,{type:'sell',id:'starter-warrior'}),/착용/);
+const swapped=doCmd(s,{type:'equip',id:'kill:1'}).state;assert.equal(loadout(swapped).job,'archer');assert.equal(loadout(swapped).weapon,'bow');assert.throws(()=>doCmd(s,{type:'sell',id:'starter-warrior'}),/착용/);
 const original=structuredClone(s);assert.throws(()=>doCmd(s,{type:'fuse',a:'kill:0',b:'kill:0'}));assert.deepEqual(s,original);
 let fused=doCmd(s,{type:'fuse',a:'starter-warrior',b:'kill:0'});s=fused.state;assert.equal(s.items.length,2);assert.equal(s.equipped.warrior,fused.result.id);assert.equal(combatStats(loadout(s,'warrior')).attack,32);assert.equal(skillUnlocked(loadout(s,'warrior'),2),true);assert.equal(stageUnlocked(s,'warrior','quarry'),true);
 s=doCmd(s,{type:'sell',id:'kill:1'}).state;assert.equal(s.gold,SELL[2]);assert.throws(()=>doCmd(s,{type:'sell',id:'kill:1'}));
@@ -54,4 +54,4 @@ const fusionState=starterState();fusionState.items.push({id:'fuse-once',kind:'sw
 const fusions=await Promise.allSettled([a.run({type:'fuse',a:'starter-warrior',b:'fuse-once'}),b.run({type:'fuse',a:'starter-warrior',b:'fuse-once'})]);assert.equal(fusions.filter(r=>r.status==='fulfilled').length,1);assert.equal(JSON.parse(data.get(a.key)).items.length,1);
 const failStore=createProgressionStore('test',{storage:{getItem:k=>data.get(k),setItem:()=>{throw Error('quota');}},locks});const before=structuredClone(failStore.state);await assert.rejects(()=>failStore.run({type:'ensure'}),/저장/);assert.deepEqual(failStore.state,before);
 await assert.rejects(()=>createProgressionStore('test',{storage,locks:null}).run({type:'ensure'}),/저장소/);
-console.log('PASS progression: stages/simulation, job restrictions, fusion/equip preservation, sales, permanent skill milestones, per-biome gacha pity/batches, pet stats, protocol rejection, concurrent spend and storage rollback');
+console.log('PASS progression: stages/simulation, weapon-driven equipment, fusion/equip preservation, sales, permanent skill milestones, per-biome gacha pity/batches, pet stats, protocol rejection, concurrent spend and storage rollback');

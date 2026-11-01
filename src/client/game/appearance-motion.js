@@ -1,3 +1,4 @@
+import {handAnchor} from './avatar-hand-anchors.js';
 import {petSpec,GRADE_COLORS,WEAPONS} from './progression.js';
 export const SKILL_KEYS=Object.freeze({KeyK:1,KeyL:2,Semicolon:3,Digit1:1,Digit2:2,Digit3:3});
 export const SKILL_LABELS=['','K','L',';'];
@@ -24,13 +25,17 @@ export function petPose(id,now,{moving=false,reaction=null,reduced=false}={}) {
  }
  return {x,y,angle,sx,sy,fly,seed};
 }
-export function drawEquippedGear(c,job,l,x,y,k,now,{left=false,attacking=false,hidden=false,reduced=false,drawItem}={}) {
- if(hidden||!l||!drawItem)return;const tier=l.tier||0,dir=left?-1:1;
+export function drawEquippedGear(c,job,l,x,y,k,now,{left=false,hidden=false,reduced=false,drawItem,frame=2,hand=null}={}) {
+ if(hidden||!l||!drawItem)return;
+ const tier=l.tier||0,dir=left?-1:1,anchors=handAnchor(frame);
+ const near=hand?.near||{x:anchors.N[0],y:anchors.N[1]},far=hand?.far||{x:anchors.F[0],y:anchors.F[1]};
+ const kind=l.weapon||WEAPONS[job]||'sword',scale=kind==='claw'?.62:.73;
+ const grip={sword:[-Math.sin(.6)*15,Math.cos(.6)*15],bow:[4,-2],staff:[-Math.sin(.3)*15,Math.cos(.3)*15],claw:[0,8]}[kind];
  c.save();c.translate(x,y);c.scale(dir,1);
  if(tier>=2){c.globalAlpha=.12;c.fillStyle=GRADE_COLORS[tier];c.beginPath();c.ellipse(0,-3*k,(19+tier*2)*k,5*k,0,0,Math.PI*2);c.fill();c.globalAlpha=1;}
- if(job==='warrior'&&l.shield>=0)drawItem(c,'shield',-17*k,-30*k,.45*k,GRADE_COLORS[l.shield],l.shield);
- c.translate(23*k,-32*k);if(attacking)c.rotate(-.45);
- drawItem(c,WEAPONS[job]||'sword',0,0,.55*k,GRADE_COLORS[tier],tier);
+ if(l.shield>=0)drawItem(c,'shield',far.x*k,(far.y+3)*k,.48*k,GRADE_COLORS[l.shield],l.shield);
+ c.translate(near.x*k,near.y*k);
+ drawItem(c,kind,-grip[0]*scale*k,-grip[1]*scale*k,scale*k,GRADE_COLORS[tier],tier);
  if(tier>=3&&!reduced){c.fillStyle=GRADE_COLORS[tier];for(let i=0;i<tier;i++){const t=now/600+i*2;c.globalAlpha=.35+.25*Math.sin(t);c.fillRect(Math.cos(t)*15*k,(-15+Math.sin(t)*20)*k,2*k,2*k);}}
  c.restore();
 }

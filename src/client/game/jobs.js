@@ -1,4 +1,4 @@
-import {combatStats,skillUnlocked} from './progression.js';
+import {combatStats,skillUnlocked,weaponJob} from './progression.js';
 // Shared job contract. IDs are persisted in profiles and sent with attacks.
 export const JOBS = Object.freeze([
   { id: 'warrior', name: '검사', label: '검사', skill: '검 베기', description: '넓은 검기로 가까운 몬스터를 함께 베어요.', color: '#ffb35c', cooldown: .52, range: 105, min: 15, max: 22, hits: 1, targets: 3, speed: 0 },
@@ -59,7 +59,7 @@ export function abilityStats(jobId, slot = 0, loadout = null) {
 }
 export function acceptJobAttack(player, attack, now) {
   if (!player || player.dead || !Number.isSafeInteger(attack.seq) || attack.seq <= (player.acceptedAttackSeq || 0)) return false;
-  if (player.job && normalizeJob(player.job) !== attack.job) return false;
+  if (attack.loadout?.weapon && weaponJob(attack.loadout.weapon)!==attack.job) return false;
   if (Math.abs(attack.x - (player.targetX ?? player.x)) > 230 || Math.abs(attack.y - (player.yTo ?? player.y)) > 210) return false;
   const slot = attack.skill ?? 0, a = abilityDefinition(attack.job, slot);
   if (!a || attack.cooldown !== a.cooldown || (attack.loadout && !skillUnlocked(attack.loadout,slot))) return false;

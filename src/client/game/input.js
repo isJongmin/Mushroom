@@ -127,5 +127,5 @@ export const KEY_TAP = Object.freeze({
   KeyW: 'up',
 });
 
-/** 기본 공격 = Ctrl / J / X. 스킬 = 1 / 2 / 3 (room). */
+/** 기본 공격 = Ctrl / J / X. 스킬 = K / L / ; (숫자키는 이전 조작 호환). */
 export const KEY_ATTACK = Object.freeze({ ControlLeft: true, ControlRight: true, KeyJ: true, KeyX: true });

@@ -1,7 +1,8 @@
+import {SKILL_KEYS,SKILL_LABELS,drawEquippedGear,drawEquipBurst} from '../game/appearance-motion.js';
 import {createProgressionStore} from '../progression-store.js';
 import {createProgressionPanel} from '../ui/progression-panel.js';
 import {GRADES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,rollEquipment,itemName,petSpec} from '../game/progression.js';
-import {drawEquipmentDrop,drawPet,petNpcPoint,drawPetMerchant} from '../game/progression-visuals.js';
+import {drawEquipmentDrop,drawPet,petNpcPoint,drawPetMerchant,drawItem} from '../game/progression-visuals.js';
 import {questNpcPoint,drawQuestNpc,NPC_AVATAR} from '../game/quest-npc.js';
 import {BOSS_KIND,bossPoint,bossPose,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
 import {drawBoss,drawBossTelegraph} from '../game/boss-visuals.js';
@@ -112,6 +113,7 @@ export function mount(root, app, opts = {}) {
   let lootAt=0, pickupAt=0, collecting=false, lastGrowthKey="";
   let growthErrorAt=0;
   let petX=null,petY=null;
+  let lastEquipSignature=null,equipAt=-Infinity,equipPending=false,petHurtAt=-Infinity,petLootAt=-Infinity;
   let currentArea = 'village';
   let villageMap = null;
   const areaCatalog = new Map();
@@ -223,7 +225,8 @@ export function mount(root, app, opts = {}) {
   function syncProgress(){
     if(!alive||!progress)return;
     const st=myStats();atk=abilityStats(job.id,0,myLoadout());if(me){me.max=st.maxHp;me.hp=Math.min(me.hp,me.max);me.loadout=myLoadout();announceHp=true;}
-    const state=progress.state,key=`${state.revision}|${currentArea}`;if(key!==lastGrowthKey){lastGrowthKey=key;setText(growthText,`${stageOf(currentArea).order}차 ${AREA_NAMES[currentArea]} · 공격 ${st.attack} / 방어 ${st.defense} · ${state.gold.toLocaleString()} G`);}
+    const state=progress.state;const signature=`${state.equipped[job.id]}:${state.shield}`;if(lastEquipSignature!==null&&signature!==lastEquipSignature){equipAt=-Infinity;equipPending=true;}lastEquipSignature=signature;
+    const key=`${state.revision}|${currentArea}|${layout.mobile}`;if(key!==lastGrowthKey){lastGrowthKey=key;setText(growthText,layout.mobile?`${AREA_NAMES[currentArea]} · ${state.gold.toLocaleString()} G`:`${stageOf(currentArea).order}차 ${AREA_NAMES[currentArea]} · 공격 ${st.attack} / 방어 ${st.defense} · ${state.gold.toLocaleString()} G`);}
     progressPanel?.refresh();
   }
   on(window,'storage',e=>{if(progress&&e.key===progress.key){try{progress.reload();syncProgress();}catch(err){chatLog.addSystem(err.message);}}});
@@ -264,8 +267,8 @@ export function mount(root, app, opts = {}) {
     const icon = h('canvas', { width: '48', height: '48', 'aria-hidden': 'true' });
     drawSkillIcon(icon.getContext('2d'), job.id, slot, 48);
     const timer = h('span', { class: 'skill-timer', 'aria-hidden': 'true' });
-    const btn = h('button', { type: 'button', class: slot===3 ? 'skill-button skill-button--ultimate' : 'skill-button', testid: `skill-${slot}`, 'aria-label': `${a.name}, 재사용 ${a.cooldown}초`, title: `${a.name} · ${a.description} · ${a.cooldown}초 · ${slot}키` },
-      icon, h('span', { class: 'skill-name' }, a.name), h('kbd', {}, String(slot)), timer);
+    const btn = h('button', { type: 'button', class: slot===3 ? 'skill-button skill-button--ultimate' : 'skill-button', testid: `skill-${slot}`, 'aria-label': `${a.name}, 재사용 ${a.cooldown}초`, title: `${a.name} · ${a.description} · ${a.cooldown}초 · ${SKILL_LABELS[slot]}키` },
+      icon, h('span', { class: 'skill-name' }, a.name), h('kbd', {}, SKILL_LABELS[slot]), timer);
     on(btn, 'click', () => useSkill(slot, performance.now()));
     return { btn, timer, slot, ability: a };
   });
@@ -311,7 +314,11 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'bk-input-wrap' }, chatInput, h('span', { class: 'bk-input-end' }, counter)),
     sendBtn);
 
-  const col = h('main', { class: 'scr-game scr-room' }, stage, touchRow, chatRow);
+  const combatDock=h('div',{class:'mobile-combat-dock',testid:'mobile-combat-dock'});
+  const chatToggle=h('button',{type:'button',class:'bk-btn bk-btn--sm mobile-chat-toggle',testid:'mobile-chat-toggle','aria-expanded':'false'},'채팅');
+  const col = h('main', { class: 'scr-game scr-room' }, stage,combatDock, touchRow, chatRow);
+  hudL.append(chatToggle);
+  on(chatToggle,'click',()=>{const open=!col.classList.contains('chat-open');col.classList.toggle('chat-open',open);chatToggle.setAttribute('aria-expanded',String(open));if(open)chatInput.focus();else{chatInput.blur();canvas.focus({preventScroll:true});}computeLayout();});
   root.append(col);
 
   // --- 레이아웃 -----------------------------------------------------------
@@ -328,7 +335,7 @@ export function mount(root, app, opts = {}) {
     if (mobile) {
       P = 2;
       cssW = Math.floor(vw / P) * P;
-      cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor((vh - MOBILE_CONTROLS_H) / P) * P);
+      cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor((vh - 152 - (col.classList.contains('chat-open')?60:0)) / P) * P);
     } else {
       P = pixelScale(vw, vh);
       cssW = Math.min(Math.floor(vw / P) * P, (DESKTOP_MAX_VIEW_W * P) / 2); // 1280 (P=2), 1920 (P=3)
@@ -354,6 +361,9 @@ export function mount(root, app, opts = {}) {
     hint.classList.toggle('narrow', cssW < 900); // 캔버스 가로 900px 미만이면 조작 힌트 숨김
     if (modeChanged) {
       chatLog.setMobile(mobile);
+      (mobile?combatDock:stage).append(touchFloat);
+      if(mobile){miniBody.hidden=true;miniToggle.setAttribute('aria-expanded','false');miniToggle.setAttribute('aria-label','미니맵 펼치기');setText(miniToggle,'+');}
+      syncProgress();
       // LOCAL MODE 칩: 데스크톱은 HUD 첫 줄, 모바일은 2줄째 (room.md 3.1, 4.1)
       app.placeModeBadge(mobile ? modeSlot2 : modeSlot);
       // (사이클 10) 버프 바 자리: 데스크톱 HUD 1줄째 끝, 모바일은 2줄째 아래 왼쪽(캔버스 위, 펼친 로그 아래 층)
@@ -803,7 +813,7 @@ export function mount(root, app, opts = {}) {
       if (me.hp <= 0) break;
       const reduced=Math.max(1,Math.round(d*100/(100+myStats().defense*3)));
       me.hp = Math.max(0, me.hp - reduced);
-      applied.push(reduced);
+      applied.push(reduced);petHurtAt=now;
     }
     me.invulnUntil = now + COMBAT.invuln * 1000;
     cstats.hurt++;
@@ -988,7 +998,7 @@ export function mount(root, app, opts = {}) {
     pickupAt=now;const range=myStats().pickup;
     const d=progress.state.pending.find(d=>d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
     if(!d)return;collecting=true;
-    try{const item=await progress.run({type:'collect',id:d.id});if(alive){chatLog.addSystem(`${itemName(item)} 획득`);syncProgress();}}
+    try{const item=await progress.run({type:'collect',id:d.id});if(alive){chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
     catch(e){if(alive&&now-growthErrorAt>5000){growthErrorAt=now;chatLog.addSystem(e.message);}}finally{collecting=false;}
   }
   function sendLoot(now){
@@ -1472,7 +1482,7 @@ export function mount(root, app, opts = {}) {
       const pet=progress.state.pet;
       if(pet&&!me.dead){const target=progress.state.pending.filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];const tx=target?target.x:me.x-me.dir*48,ty=target?target.y:me.y;
         if(petX===null||Math.abs(petX-tx)>500){petX=tx;petY=ty;}else{petX+=(tx-petX)*.15;petY+=(ty-petY)*.18;}
-        drawPet(ctx,pet,(petX-camX)*k,(petY-cy)*k,k*.8,now,progress.state.pets[pet]?.level);
+        drawPet(ctx,pet,(petX-camX)*k,(petY-cy)*k,k*.8,now,progress.state.pets[pet]?.level,{moving:!!me.moving,left:me.dir<0,reduced:prefersReducedMotion(),reaction:now-petHurtAt<700?'hurt':now-petLootAt<700?'loot':now-me.effectAt<450?'attack':null});
       }
     }
 
@@ -1528,7 +1538,7 @@ export function mount(root, app, opts = {}) {
       c.globalAlpha = 1;
     });
     smooth(ctx);
-    for(const [p,sx,pyD] of visible)if(!p.isSelf&&!p.dead&&petSpec(p.loadout?.pet))drawPet(ctx,p.loadout.pet,(sx-p.dir*48)*k,pyD,k*.8,now,p.loadout.level);
+    for(const [p,sx,pyD] of visible)if(!p.isSelf&&!p.dead&&petSpec(p.loadout?.pet))drawPet(ctx,p.loadout.pet,(sx-p.dir*48)*k,pyD,k*.8,now,p.loadout.level,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null});
     for (const [p, sx, pyD] of visible) {
       if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); continue; }
       const a = blinkAlpha(now, p.invulnUntil);
@@ -1541,6 +1551,8 @@ export function mount(root, app, opts = {}) {
       else avatarR.draw(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(outfitReady)drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{...outfit,rear:p.anim==='climb'});
       if(outfitReady&&p.costume&&p.anim==='climb')avatarR.drawBackHair(ctx,dressed,Math.round(sx*k),pyD,k,frameOf(p,now));
+      if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem});
+      if(p.isSelf&&!p.dead){if(equipPending&&!document.body.classList.contains('has-modal')){equipAt=now;equipPending=false;}if(!document.body.classList.contains('has-modal'))drawEquipBurst(ctx,Math.round(sx*k),pyD,k,Math.max(myLoadout()?.tier??0,myLoadout()?.shield??0),now-equipAt,{reduced:prefersReducedMotion()});}
       ctx.globalAlpha = 1;
     }
     slashes.draw(ctx, camX, cy, k, now);
@@ -1686,6 +1698,7 @@ export function mount(root, app, opts = {}) {
         trySend();
       } else if (isGameFocus() && connection === 'connected') {
         e.preventDefault();
+        if(layout.mobile&&!col.classList.contains('chat-open')){col.classList.add('chat-open');chatToggle.setAttribute('aria-expanded','true');computeLayout();}
         chatInput.focus();
       }
       return;
@@ -1694,6 +1707,7 @@ export function mount(root, app, opts = {}) {
       if (typing) {
         e.preventDefault();
         chatInput.blur();
+        if(layout.mobile){col.classList.remove('chat-open');chatToggle.setAttribute('aria-expanded','false');computeLayout();}
         canvas.focus({ preventScroll: true });
       }
       return;
@@ -1703,9 +1717,9 @@ export function mount(root, app, opts = {}) {
     if (isTypingTarget(ae) || chatLog.el.contains(ae)) return;
     if (document.body.classList.contains('has-modal')) return; // 확인 모달이 열려 있으면 게임 입력 없음
     const now = performance.now();
-    // (사이클 9) 공격 Ctrl / J / X, 스킬 1 / 2 / 3. Ctrl은 단독으로만(Ctrl+J 등 브라우저 단축키는 양보)
-    if (/^Digit[123]$/.test(e.code) && !e.ctrlKey && !e.metaKey && !e.altKey) {
-      e.preventDefault(); if (!e.repeat) useSkill(Number(e.code.slice(-1)), now); return;
+    // (사이클 9) 공격 Ctrl / J / X, 스킬 K / L / ; (숫자키 호환). Ctrl은 단독으로만(Ctrl+J 등 브라우저 단축키는 양보)
+    if (SKILL_KEYS[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) {
+      e.preventDefault(); if (!e.repeat) useSkill(SKILL_KEYS[e.code], now); return;
     }
     const atkKey = KEY_ATTACK[e.code] && (e.code.startsWith('Control') || !e.ctrlKey);
     if (atkKey && !e.metaKey && !e.altKey) {

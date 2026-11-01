@@ -227,7 +227,7 @@ export function drawNormalCast(c,job,slot,x,y,k,elapsed,left=false,options={}) {
   switch(p){
     case 'slash':{
       c.globalAlpha=1-clamp(t);ribbon(c,8,-6,85,-.6,color,core,t*2);
-      if(t<.65)dagger(c,13,-32,45,-.8+ease(t*2)*1.7,color,core,dark);
+      // The actor renderer owns the physical weapon; this layer draws only its trail.
       break;
     }
     case 'cross':
@@ -256,7 +256,8 @@ export function drawNormalCast(c,job,slot,x,y,k,elapsed,left=false,options={}) {
     case 'arrow':
     case 'fan':{
       c.save();c.globalAlpha=castFade;
-      c.strokeStyle=color;c.lineWidth=2.3;c.beginPath();c.moveTo(2,-65);c.quadraticCurveTo(28,-39,2,-13);c.stroke();line(c,[[2,-65],[13,-38],[2,-13]],core,1.1);
+      // Keep release energy, but do not paint a second, unrelated bow over the equipped one.
+      line(c,[[22,-38],[49,-38]],core,1.3);
       if(p==='fan')for(let i=-1;i<=1;i++)line(c,[[18,-38],[52,-38+i*16]],color,1,.5);
       c.restore();break;
     }

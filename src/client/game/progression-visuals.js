@@ -1,13 +1,13 @@
 import {petPose} from './appearance-motion.js';
 import {petSpec,GRADE_COLORS} from './progression.js';
 // Small shaded blocks match the existing voxel avatars, without external assets.
-export function drawItem(c,kind,x,y,k=1,color='#a7d2eb',tier=Math.max(0,GRADE_COLORS.indexOf(color))) {
+export function drawItem(c,kind,x,y,k=1,color='#a7d2eb',tier=Math.max(0,GRADE_COLORS.indexOf(color)),{held=false}={}) {
  c.save();c.translate(x,y);c.scale(k,k);c.lineJoin='miter';
  const r=(col,x,y,w,h)=>{c.fillStyle=col;c.fillRect(x,y,w,h);};
- r('#18283788',-15,13,30,4);
- if(kind==='sword'){c.rotate(.6);r('#39506c',-4,-23,8,32);r('#e8f8ff',-3,-23,3,30);r(color,0,-22,3,29);r('#e6ba66',-10,5,20,5);r('#70543f',-3,10,6,11);}
+ if(!held)r('#18283788',-15,13,30,4);
+ if(kind==='sword'){if(!held)c.rotate(.6);r('#39506c',-4,-23,8,32);r('#e8f8ff',-3,-23,3,30);r(color,0,-22,3,29);r('#e6ba66',-10,5,20,5);r('#70543f',-3,10,6,11);}
  if(kind==='bow'){r('#d3a56f',-9,-21,5,38);r('#916745',-4,-16,6,30);r('#d3a56f',2,-11,5,20);r('#f3e4bc',-11,-21,2,38);r(color,4,-6,4,9);}
- if(kind==='staff'){c.rotate(.3);r('#8c6b85',-3,-13,6,36);r('#e4bd72',-6,-19,12,9);r(color,-8,-29,16,15);r('#effaff',-5,-26,5,7);}
+ if(kind==='staff'){if(!held)c.rotate(.3);r('#8c6b85',-3,-13,6,36);r('#e4bd72',-6,-19,12,9);r(color,-8,-29,16,15);r('#effaff',-5,-26,5,7);}
  if(kind==='claw'){r('#6d678a',-13,-3,25,15);for(let n=0;n<3;n++){r(color,-10+n*8,-23,5,23);r('#eefaff',-10+n*8,-23,2,15);}r('#d8ac69',-14,8,28,5);}
  if(kind==='shield'){r('#48647e',-16,-23,32,31);r(color,-12,-20,24,29);r(color,-8,9,16,7);r('#ebf5ff',-10,-18,4,24);r('#d6b06e',-3,-20,6,31);r('#d6b06e',-12,-7,24,5);}
  // Grade silhouettes: forged guard → crystal wings → orbit crown.

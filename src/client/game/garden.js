@@ -1,3 +1,4 @@
+import {stageOf} from './progression.js';
 import {cleanBoss,advanceBoss,bossMaxHp} from './garden-boss.js';
 // Host-owned, serializable cooperative encounter. No timers or browser dependencies.
 export const GARDEN_TITLE = 'sprout-guardian';
@@ -6,9 +7,8 @@ export const BOSS_TITLE='mushroom-village-guardian';
 export const BOSS_LABEL='버섯마을의 수호자';
 export const gardenPoint = world => ({ x: world.spawn?.x ?? world.width / 2, y: world.groundY });
 export function gardenZones(zones, world, area) {
-  if (area !== 'village') return zones;
   const p = gardenPoint(world);
-  return [...zones, { i: zones.length, id: 'garden-event', event: true, x1: p.x - 680, x2: p.x + 680, y: p.y, max: 12, mobs: ['mushroom', 'slime','garden-runner','garden-guard'] },{i:zones.length+1,id:'garden-boss',event:true,boss:true,x1:p.x-420,x2:p.x+940,y:p.y,max:1,mobs:['garden-king']}];
+  return [...zones, { i: zones.length, id: 'garden-event', event: true, x1: p.x - 680, x2: p.x + 680, y: p.y, max: 12, mobs: area==='village'?['mushroom','slime','garden-runner','garden-guard']:Object.keys(stageOf(area).mobs).slice(1,4) },{i:zones.length+1,id:'garden-boss',event:true,boss:true,x1:p.x-420,x2:p.x+940,y:p.y,max:1,mobs:['garden-king']}];
 }
 const states = new Set(['ready','wave','rest','success','failed','boss']);
 const int = (x,a,b) => Number.isInteger(x) && x>=a && x<=b;
@@ -46,7 +46,7 @@ export function createGarden() {
     m.damage=Math.min(1e7,m.damage+Math.max(0,Math.round(damage)));
     if(killed){m.kills++;state.kills++;} state.rev++;
   }
-  function tick(now,{alive=0,breaches=0,players=1,spawn=()=>0,spawnBoss=()=>false,bossAlive=true,targetX=0,bossX=targetX,clear=()=>{}}={}) {
+  function tick(now,{alive=0,breaches=0,players=1,difficulty=1,spawn=()=>0,spawnBoss=()=>false,bossAlive=true,targetX=0,bossX=targetX,clear=()=>{}}={}) {
     if(!gardenActive(state))return;
     const finish=phase=>{state.phase=phase;state.ended=now;state.deadline=now+5000;state.rev++;clear();};
     if(breaches){state.hp=Math.max(0,state.hp-breaches*20);state.rev++;}
@@ -57,7 +57,7 @@ export function createGarden() {
       const next=advanceBoss(state.boss,now,targetX);if(next!==state.boss){state.boss=next;state.rev++;}return;
     }
     if(state.phase==='ready'&&state.mode==='boss'&&now>=state.deadline){
-      const max=bossMaxHp(players);if(!spawnBoss(max)){state.deadline=now+1000;return;}
+      const max=Math.min(50000,Math.round(bossMaxHp(players)*difficulty));if(!spawnBoss(max)){state.deadline=now+1000;return;}
       state.phase='boss';state.wave=1;state.boss={pattern:'stomp',seq:1,at:now,targetX,max,homeX:bossX,originX:bossX};state.deadline=now+150000;state.rev++;return;
     }
     if(state.phase==='wave') {

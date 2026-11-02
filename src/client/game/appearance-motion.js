@@ -5,7 +5,7 @@ export const SKILL_LABELS=['','K','L',';'];
 // Deterministic species motion; reactions do not change combat or loot rules.
 export function petPose(id,now,{moving=false,reaction=null,reduced=false}={}) {
  const p=petSpec(id);if(!p)return {x:0,y:0,angle:0,sx:1,sy:1};
- const seed=p.tier+({village:0,quarry:5,forest:10}[p.area]),t=now/(170+seed*17);
+ const seed=p.tier+({village:0,quarry:5,forest:10,frost:15}[p.area]),t=now/(170+seed*17);
  const fly=['quarry:1','quarry:4','forest:2','forest:4'].includes(id);
  const hop=['village:0','village:1','forest:0','forest:1'].includes(id);
  let x=0,y=fly?-9:0,angle=0,sx=1,sy=1;

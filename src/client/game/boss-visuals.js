@@ -1,3 +1,4 @@
+import {drawMobFallback} from './mobs.js';
 import {bossImpactAt,bossStrikePoint} from './garden-boss.js';
 // Small faceted blocks share the map's stepped silhouettes and three-face shading.
 function block(c,x,y,w,h,d,front,top,side){
@@ -7,6 +8,11 @@ function block(c,x,y,w,h,d,front,top,side){
 }
 function littleMushroom(c,x,y,s=1){block(c,x-3*s,y-6*s,6*s,6*s,2*s,'#e6d4a0','#fff0be','#b29c6d');block(c,x-8*s,y-11*s,16*s,5*s,2*s,'#b56346','#e6a465','#824c37');block(c,x-5*s,y-14*s,10*s,3*s,2*s,'#c98051','#f3bd7e','#945b3c');c.fillStyle='#f8e5b0';c.fillRect(x-3*s,y-11*s,3*s,2*s);}
 export function drawBoss(c,m,x,y,k,now,pose=null){
+ if(m.biome&&m.biome!=='village'){
+   const kind=m.biome==='quarry'?'cave-sentinel':m.biome==='forest'?'ancient-treant':'glacier-sentinel';
+   c.save();c.translate(x,y);c.scale((pose?.dir??m.dir??1)*k*1.6,k*1.6*(pose?.squash??1));
+   drawMobFallback(c,kind,{size:{w:100,h:110},behavior:'walk',biome:m.biome},1,now/1000,m.s==='hit'?'hit':'move');c.restore();return;
+ }
  const height=pose?.height??0,step=pose?.step??Math.sin(now/120)*.3,squash=pose?.squash??1,dir=pose?.dir??m.dir??1;
  c.save();c.translate(x,y);c.scale(k,k);
  c.fillStyle='#283c3538';c.fillRect(-52,height-3,104,8);c.fillStyle='#26382e28';c.fillRect(-66,height,132,5);

@@ -1,3 +1,4 @@
+import {petSellPrice} from '../src/client/game/progression.js';
 import assert from 'node:assert/strict';
 import {starterState,applyCommand,PET_SELL} from '../src/client/game/progression.js';
 import {createPetReveal} from '../src/client/ui/pet-reveal.js';
@@ -10,7 +11,7 @@ for(let tier=0;tier<5;tier++){
  const state=starterState();const id='forest:'+tier;state.pets[id]={level:5};state.pet=id;state.essence=50;
  assert.throws(()=>applyCommand(state,{type:'pet-sell',id}),/동행/);
  const off=applyCommand(state,{type:'pet-off'}).state;const sale=applyCommand(off,{type:'pet-sell',id});
- assert.equal(sale.result,PET_SELL[tier]);assert.equal(sale.state.gold,PET_SELL[tier]);assert.equal(sale.state.essence,50);assert.equal(sale.state.pets[id],undefined);assert.equal(sale.state.pet,null);assert.throws(()=>applyCommand(sale.state,{type:'pet-sell',id}));
+ assert.equal(sale.result,petSellPrice(id));assert.equal(sale.state.gold,petSellPrice(id));assert.equal(sale.state.essence,50);assert.equal(sale.state.pets[id],undefined);assert.equal(sale.state.pet,null);assert.throws(()=>applyCommand(sale.state,{type:'pet-sell',id}));
 }
 const results=[{id:'village:0',duplicate:false},{id:'village:4',duplicate:false},{id:'village:0',duplicate:true,essence:1}];
 const r=createPetReveal(results);assert.equal(r.current,null);assert.equal(r.phase,'sealed');assert.equal(r.begin(),true);assert.equal(r.begin(),false);assert.equal(r.current,null);assert.equal(r.reveal(),true);assert.equal(r.reveal(),false);assert.equal(r.current,results[0]);assert.equal(r.shown.length,1);assert.equal(r.next(),true);assert.equal(r.next(),false);r.begin();r.reveal();assert.equal(r.current,results[1]);r.next();r.begin();r.reveal();assert.equal(r.phase,'complete');assert.equal(r.next(),false);r.summary();assert.equal(r.phase,'summary');assert.deepEqual(r.shown,results);

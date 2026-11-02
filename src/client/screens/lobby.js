@@ -81,7 +81,7 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'lobby-tools' }, title, countEl, refreshBtn, createBtn),
     banner, wrap, note, srStatus);
   const gardenRecord=readRewards(app.profileKey);
-  const gardenCard=h('section',{class:'lobby-garden','aria-label':'마을 협동 이벤트'},h('div',{},h('strong',{},'버섯밭 방어 · 버섯왕 도전'),h('p',{},'마을 중앙 숲지기 모리의 느낌표를 눌러 퀘스트를 선택하세요. 방어 성공과 버섯왕 처치로 망토·왕관 코스튬을 모아보세요.')),h('span',{class:'lobby-garden__record'},gardenRecord.unlocked?`방어 ${gardenRecord.clears}회 · 버섯왕 ${gardenRecord.bossClears}회`:'첫 방어에 도전하세요'));
+  const gardenCard=h('section',{class:'lobby-garden','aria-label':'마을 협동 이벤트'},h('div',{},h('strong',{},'지역 방어 · 보스 도전'),h('p',{},'각 마을 안내 NPC의 느낌표에서 방어 이벤트와 보스 도전을 선택하세요. 강한 지역일수록 더 좋은 장비와 골드, 강력한 펫이 기다립니다.')),h('span',{class:'lobby-garden__record'},gardenRecord.unlocked?`방어 ${gardenRecord.clears}회 · 버섯왕 ${gardenRecord.bossClears}회`:'첫 방어에 도전하세요'));
   const main = h('main', { class: 'scr-lobby', id: 'lobby' }, header, pageIntro('lobby'), gardenCard, panel, h('footer', { class: 'ui-footer' }, 'MUSHROOM VILLAGE', h('span', {}, '작은 마을, 함께 만드는 모험.')));
   root.append(main);
   if (app.mode === 'local') app.placeModeBadge(modeSlot);

@@ -1,3 +1,4 @@
+import {stageKinds} from '../src/client/game/progression.js';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AREA_IDS, areaMap, areaPortals, nearbyPortal, normalizeMapId, sameArea, minimapPoint } from '../src/client/game/areas.js';
@@ -10,9 +11,9 @@ for(const id of AREA_IDS){
  const map=areaMap(id,village);
  const platforms=normalizePlatforms(map.platforms,{width:map.width,groundY:map.groundY});
  const ropes=normalizeRopes(map.ropes,{width:map.width,groundY:map.groundY});
- const zones=normalizeZones(map.spawns,platforms,{width:map.width,groundY:map.groundY},mobs.kinds);
+ const zones=normalizeZones(map.spawns,platforms,{width:map.width,groundY:map.groundY},stageKinds(mobs.kinds,id));
  assert.ok(zones.length>0);
- for(const z of zones) for(const k of z.mobs) assert.ok(mobs.kinds.has(k));
+ for(const z of zones) for(const k of z.mobs) assert.ok(stageKinds(mobs.kinds,id).has(k));
  for(const portal of areaPortals(map)){
   const next=areaMap(portal.to,village),back=areaPortals(next).find(p=>p.id===portal.entry);
   assert.equal(back.to,id);assert.equal(back.entry,portal.id);

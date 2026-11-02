@@ -1,3 +1,4 @@
+import {regionOf} from '../game/regions.js';
 import {drawVillageOutskirts,drawRegionLandmarks} from '../game/areas.js';
 import {bindJoystick} from '../ui/joystick.js';
 import {BOSS_TITLE,BOSS_LABEL} from '../game/garden.js';
@@ -749,6 +750,7 @@ export function mount(root, app, opts = {}) {
   // --- (사이클 9~10) 전투 ---------------------------------------------------------
   const headOf = (p) => (avatarR ? avatarR.headTop(costumeAvatar(p.avatar,p.costume)) : 100);
   const groundAt = (x, y) => surfaceBelow(platforms, x, y, world.groundY);
+  const settleDrop=d=>({...d,y:groundAt(d.x,d.y-1)});
   const send = (event, payload) => (link && connection === 'connected' && typeof link.send === 'function' ? link.send(event, { ...payload, mapId: currentArea }) : false);
 
   /** hp 송신. dm = 이번에 받은 타별 피해 (다른 화면의 피해 숫자용, 사이클 10 확장) */
@@ -921,7 +923,7 @@ export function mount(root, app, opts = {}) {
 
   function startGarden(uid,mode='defense') {
     const p=players.get(uid),point=questNpcPoint(world);
-    if(currentArea!=='village'||!sim||!p||p.dead||!sameArea(p,me)||Math.abs(p.x-point.x)>230||Math.abs(p.y-point.y)>100)return false;
+    if(!sim||!p||p.dead||!sameArea(p,me)||Math.abs(p.x-point.x)>230||Math.abs(p.y-point.y)>100)return false;
     const started=garden.start(`g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,Date.now(),[...players.values()].filter(p=>sameArea(p,me)).map(p=>p.user_id),mode);
     if(started){sim.removeGarden();lastMobsSent=-Infinity;}
     return started;
@@ -942,12 +944,16 @@ export function mount(root, app, opts = {}) {
   function paintGardenPanel(now) {
     if(!me||now-lastGardenPaint<100)return;lastGardenPaint=now;
     const s=garden.snapshot(),eligible=gardenEligible(s,me.user_id);
-    if(eligible&&!grantedRuns.has(s.id)) {
+    if(currentArea==='village'&&eligible&&!grantedRuns.has(s.id)) {
       grantedRuns.add(s.id);if(grantedRuns.size>64)grantedRuns.delete(grantedRuns.values().next().value);const grant=grantGarden(app.profileKey,s.id,s.hp,s.mode);rewardMemory=grant.rewards;gardenRewardSaved=grant.saved;if(s.mode==='boss'){me.title=BOSS_TITLE;link?.updateSelf?.({title:me.title}).catch(()=>{});}
+    }
+    if(currentArea!=='village'&&eligible&&!grantedRuns.has(s.id)){
+      grantedRuns.add(s.id);
+      if(s.mode!=='boss'){const loot=rollMonsterLoot(currentArea,Object.keys(stageOf(currentArea).mobs).at(-1));receiveLoot({owner:me.user_id,receipt:'event-'+s.id,area:currentArea,x:me.x,y:groundAt(me.x,me.y-1),items:loot.items,gold:Math.min(20000,loot.gold*4)});}
     }
     const point=questNpcPoint(world),near=!me.dead&&Math.abs(me.x-point.x)<=230&&Math.abs(me.y-point.y)<=100;
     const zi=zones.find(z=>z.event)?.i;
-    gardenPanel.paint(s,{village:currentArea==='village',connected:connection==='connected',near,bossHp:[...(mobView?.list||[])].find(m=>m.kind===BOSS_KIND)?.hp??0,uid:me.user_id,host:!!hostId && !!mobView && (!isHost()||!!sim),eligible,rewardSaved:gardenRewardSaved,
+    gardenPanel.paint(s,{village:true,area:currentArea,connected:connection==='connected',near,bossHp:[...(mobView?.list||[])].find(m=>m.kind===BOSS_KIND)?.hp??0,uid:me.user_id,host:!!hostId && !!mobView && (!isHost()||!!sim),eligible,rewardSaved:gardenRewardSaved,
       alive:[...(isHost()&&sim?sim.gardenMobs():mobView?.list||[])].filter(m=>(zi==null||m.z===zi)&&m.s!=='die').length});
   }
 
@@ -1028,7 +1034,7 @@ export function mount(root, app, opts = {}) {
   async function collectEquipment(now){
     if(!progress||!me||me.dead||collecting||now-pickupAt<180||document.body.classList.contains('has-modal'))return;
     pickupAt=now;const range=myStats().pickup;
-    const d=progress.state.pending.find(d=>(d.kind==='gold'||progress.state.items.length<200)&&now-(dropBorn.get(d.id)??now)>350&&d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
+    const d=progress.state.pending.map(settleDrop).find(d=>(d.kind==='gold'||progress.state.items.length<200)&&now-(dropBorn.get(d.id)??now)>350&&d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
     if(!d)return;collecting=true;
     try{const item=await progress.run({type:'collect',id:d.id});dropBorn.delete(d.id);if(alive){chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
     catch(e){if(alive&&now-growthErrorAt>5000){growthErrorAt=now;chatLog.addSystem(e.message);}}finally{collecting=false;}
@@ -1374,7 +1380,7 @@ export function mount(root, app, opts = {}) {
           const breached=gs.phase==='boss'?[]:invaders.filter(m=>Math.abs(m.x-point.x)<65);
           sim.removeGarden(breached.map(m=>m.id));
           garden.tick(Date.now(),{alive:invaders.length-breached.length,breaches:breached.length,players:[...players.values()].filter(p=>sameArea(p,me)).length,
-            spawn:(n,wave)=>sim.spawnGarden(n,now,wave),spawnBoss:max=>sim.spawnBoss(max,now),bossAlive:!!sim.bossMob(),bossX:bossPoint(world).x,targetX:[...players.values()].filter(p=>sameArea(p,me)&&!p.dead)[(gs.boss?.seq??0)%Math.max(1,[...players.values()].filter(p=>sameArea(p,me)&&!p.dead).length)]?.x??point.x,clear:()=>sim.removeGarden()});
+            spawn:(n,wave)=>sim.spawnGarden(n,now,wave),difficulty:regionOf(currentArea).scale,spawnBoss:max=>sim.spawnBoss(max,now),bossAlive:!!sim.bossMob(),bossX:bossPoint(world).x,targetX:[...players.values()].filter(p=>sameArea(p,me)&&!p.dead)[(gs.boss?.seq??0)%Math.max(1,[...players.values()].filter(p=>sameArea(p,me)&&!p.dead).length)]?.x??point.x,clear:()=>sim.removeGarden()});
         } else if(!gardenActive(gs)) sim.removeGarden();
         const poseState=garden.snapshot();if(poseState?.phase==='boss'){const pose=bossPose(poseState.boss,bossPoint(world),Date.now());sim.moveBoss(pose.x,world.groundY-pose.height,pose.dir);}
         mobView.apply(sim.snapshot(), now, true);
@@ -1424,7 +1430,7 @@ export function mount(root, app, opts = {}) {
     const bossState=garden.snapshot();
     if(connection==='connected'&&bossState?.phase==='boss'&&me&&!me.dead){
       const b=bossState.boss,key=`${bossState.id}:${b.seq}`,age=Date.now()-bossImpactAt(b);
-      if(key!==lastBossImpact&&age>=0&&age<800){lastBossImpact=key;if(now>=me.invulnUntil&&bossDanger(b,me,bossPoint(world)))takeDamage([b.pattern==='spores'?24:20],me.x<gardenPoint(world).x?-1:1,'garden-boss',now);}
+      if(key!==lastBossImpact&&age>=0&&age<800){lastBossImpact=key;if(now>=me.invulnUntil&&bossDanger(b,me,bossPoint(world)))takeDamage([Math.round((b.pattern==='spores'?24:20)*Math.sqrt(regionOf(currentArea).scale))],me.x<gardenPoint(world).x?-1:1,'garden-boss',now);}
     }
     paintGardenPanel(now);
     paintSkills(now);
@@ -1459,7 +1465,7 @@ export function mount(root, app, opts = {}) {
     if (b.grounded) camRef = b.y;
     else if (b.y > camRef) camRef = b.y;
     else if (camY !== null && b.y - CAM_HEAD < camY + viewH * 0.08) camRef = Math.min(camRef, b.y - CAM_HEAD + viewH * (0.66 - 0.08));
-    const target = camYTarget(camRef, viewH, 0, world.bottomY);
+    const target = camYTarget(camRef, viewH, 0, layout.mobile?world.groundY+36:world.bottomY,layout.mobile ? .88 : .66);
     if (camY === null || !Number.isFinite(camY)) camY = target;
     else camY += (target - camY) * (1 - Math.exp(-dt / CAM_SMOOTH_S));
     if (Math.abs(target - camY) < 0.05) camY = target;
@@ -1496,13 +1502,14 @@ export function mount(root, app, opts = {}) {
     syncPlayerStatus();
     if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
     const { cssW, viewW, viewH, P, dpr, k } = layout;
-    if (camY === null) camY = camYTarget(camRef, viewH, 0, world.bottomY);
+    if (camY === null) camY = camYTarget(camRef, viewH, 0, layout.mobile?world.groundY+36:world.bottomY,layout.mobile ? .88 : .66);
     const cam = cameraFor(me.x, viewW, viewH, k, camY, world);
     const punch=skillAttacks.presentation(now,me.user_id,prefersReducedMotion());
     const camX = cam.camX + punch.x*dpr/k;
     lastCamX = camX;
     const cy = cam.camY + punch.y*dpr/k;
     const ctx = canvas.getContext('2d');
+    ctx.setTransform(1,0,0,1,0,0); // World rendering must not inherit the previous DPR label transform.
     if (currentArea === 'village') drawMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     if(layout.mobile){const edge=Math.round((world.bottomY-cy)*k);if(edge>3&&edge<canvas.height)ctx.drawImage(canvas,0,edge-3,canvas.width,2,0,edge-1,canvas.width,canvas.height-edge+1);}
@@ -1510,19 +1517,19 @@ export function mount(root, app, opts = {}) {
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
     if(progress){
-      for(const d of progress.state.pending)if(d.area===currentArea){if(!dropBorn.has(d.id))dropBorn.set(d.id,now);drawEquipmentDrop(ctx,d,camX,cy,k,now,prefersReducedMotion()?Infinity:now-dropBorn.get(d.id));}
+      for(const d of progress.state.pending.map(settleDrop))if(d.area===currentArea){if(!dropBorn.has(d.id))dropBorn.set(d.id,now);drawEquipmentDrop(ctx,d,camX,cy,k,now,prefersReducedMotion()?Infinity:now-dropBorn.get(d.id));}
       const np=petNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy-112)*k/dpr;
       petNpc.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;
       if(!petNpc.hidden){petNpc.style.left=`${nx}px`;petNpc.style.top=`${ny}px`;}
       const pet=progress.state.pet;
-      const target=progress.state.pending.filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
+      const target=progress.state.pending.map(settleDrop).filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
       companionPose=companion.sample({id:!me.dead&&progress.state.pets[pet]?pet:null,mapId:currentArea,x:me.x,y:me.y,dir:me.dir,target,now});
 
     }
 
-    npcQuest.hidden=currentArea!=='village';
-    if(currentArea==='village'){const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}}
-    if(currentArea==='village') {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
+    npcQuest.hidden=false;
+    {const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}}
+    {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now,currentArea);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
       drawMinimap(miniCanvas.getContext('2d'), map, players.values(), mobView?.list || [], me, { x: camX, y: cy, w: viewW, h: viewH });
@@ -1545,7 +1552,7 @@ export function mount(root, app, opts = {}) {
     stones.draw(ctx, tombSprite, camX, cy, k, now);
     drops.draw(ctx, camX, cy, k, now, buffOrbSprite, dropBagSprite);
     const actors=[];
-    if(currentArea==='village'){const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now})});}
+    {const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now})});}
     if(progress){const p=petNpcPoint(world);actors.push({id:'pet-npc',kind:'npc',y:p.y,draw:()=>drawPetMerchant(ctx,p,camX,cy,k,avatarR,petNpcAvatar,currentArea,now)});}
     const mobsVis = [];
     if (mobView) {
@@ -1558,7 +1565,7 @@ export function mount(root, app, opts = {}) {
       }
       ctx.setTransform(1, 0, 0, 1, 0, 0);
       for (const v of mobsVis) actors.push({id:v.id,kind:'mob',y:groundAt(v.x,v.y),draw:()=>{
-        if(v.kind===BOSS_KIND){drawBoss(ctx,v,(v.x-camX)*k,(v.y-cy)*k,k,now,garden.snapshot()?.boss?bossPose(garden.snapshot().boss,bossPoint(world),Date.now()):null);return;}
+        if(v.kind===BOSS_KIND){drawBoss(ctx,{...v,biome:currentArea},(v.x-camX)*k,(v.y-cy)*k,k,now,garden.snapshot()?.boss?bossPose(garden.snapshot().boss,bossPoint(world),Date.now()):null);return;}
         if(zones[v.z]?.event && v.s!=='die')drawGardenInvader(ctx,v,camX,cy,k);
         drawMob(ctx,v,mobSprites.get(v.kind),Math.round((v.x-camX)*k),Math.round((v.y-cy)*k),k,now,mobDefs.density);
       }});
@@ -2091,7 +2098,7 @@ export function mount(root, app, opts = {}) {
       if (mobDefs) {
         installBoss(mobDefs.kinds);
         baseMobKinds=new Map(mobDefs.kinds);mobDefs.kinds=stageKinds(baseMobKinds,currentArea);
-        for(const area of ['quarry','forest'])for(const [id,spec] of stageKinds(baseMobKinds,area))if(!baseMobKinds.has(id))baseMobKinds.set(id,spec);
+        for(const area of ['quarry','forest','frost'])for(const [id,spec] of stageKinds(baseMobKinds,area))if(!baseMobKinds.has(id))baseMobKinds.set(id,spec);
         zones = gardenZones(normalizeZones(map.spawns, platforms, world, mobDefs.kinds), world, currentArea);
         if (zones.length) {
           mobView = createMobView({

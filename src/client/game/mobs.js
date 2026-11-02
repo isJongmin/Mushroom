@@ -382,7 +382,7 @@ export function createMobSim(o) {
       const z=zones.find(z=>z.event&&!z.boss);if(!z)return 0;
       let n=0;const free=Math.max(0,12-this.gardenMobs().length);for(let i=0;i<Math.min(count,free) && mobs.size<MOB_LIMITS.total;i++) {
         const side=i%2 ? 1 : -1, center=(z.x1+z.x2)/2;
-        const lane={...z,mobs:wave>=2?(i%3===0?['garden-runner','slime']:i%3===1?['garden-guard','mushroom']:z.mobs):z.mobs.filter(k=>k!=='garden-guard'),x1:center+side*540-85,x2:center+side*540+85};
+        const lane={...z,mobs:!z.mobs.includes('mushroom')?z.mobs:wave>=2?(i%3===0?['garden-runner','slime']:i%3===1?['garden-guard','mushroom']:z.mobs):z.mobs.filter(k=>k!=='garden-guard'),x1:center+side*540-85,x2:center+side*540+85};
         if(spawn(lane,now))n++;
       }return n;
     },
@@ -552,6 +552,7 @@ function eyes(ctx, x, y, u, gap = 7) {
 
 /** 시트가 없을 때의 종류별 절차적 그림 (오른쪽을 본다, 원점 = 발 중앙) */
 export function drawMobFallback(ctx, kind, spec, u, t, s) {
+  if(spec.biome==='frost'){kind=({'frost-slime':'moss-slime','ice-crab':'ore-beetle','ice-golem':'cave-sentinel','frost-beetle':'ore-beetle','glacier-sentinel':'cave-sentinel'})[kind]||kind;}
   const w = spec.size.w;
   const h = spec.size.h;
   const lw = Math.max(1, 2 * u);
@@ -561,7 +562,8 @@ export function drawMobFallback(ctx, kind, spec, u, t, s) {
   if(['wild-stump','armored-mushroom','ore-beetle','cave-sentinel','thorn-mantis','ancient-treant'].includes(kind)){
    const r=(color,x,y,ww,hh)=>{ctx.fillStyle=color;ctx.fillRect(x*u,y*u,ww*u,hh*u);},wood=kind.includes('stump')||kind.includes('treant'),stone=kind==='cave-sentinel',beetle=kind==='ore-beetle',mantis=kind==='thorn-mantis';
    const stride=s==='move'?Math.sin(t*(beetle?18:9)):Math.sin(t*2)*.18,pulse=.5+Math.sin(t*(stone?3:2))*.5;
-   const base=wood?'#876148':stone?'#747d9c':beetle?'#568fa0':mantis?'#759957':'#a87755',light=wood?'#b38d63':stone?'#a4b1cb':beetle?'#a0d7de':mantis?'#aacc77':'#d9b06b';
+   const icy=spec.biome==='frost';
+   const base=icy?'#83b7d0':wood?'#876148':stone?'#747d9c':beetle?'#568fa0':mantis?'#759957':'#a87755',light=icy?'#e1faff':wood?'#b38d63':stone?'#a4b1cb':beetle?'#a0d7de':mantis?'#aacc77':'#d9b06b';
    r('#2d4144',-w*.43,-h*.82,w*.86,h*.77);r(base,-w*.4,-h*.84,w*.8,h*.77);r(light,-w*.36,-h*.8,w*.17,h*.65);r('#243b4533',w*.22,-h*.7,w*.17,h*.57);
    for(const d of [-1,1]){const lift=Math.max(0,stride*d)*(beetle?3:6);r(base,d<0?-w*.43:w*.18,-h*.12-lift,w*.25,h*.12);r('#384749',d<0?-w*.43:w*.18,-h*.04-lift,w*.27,h*.06);}
    if(wood){for(let n=0;n<4;n++)r('#553f32',-w*.25+n*w*.17,-h*.64+(n%2)*8,3,h*.45);r('#d0b287',-w*.38,-h*.85,w*.76,8);for(const d of [-1,1])r(base,d<0?-w*.58:w*.39,-h*.62,w*.2,h*.3);if(kind==='ancient-treant'){r('#497354',-w*.55+Math.sin(t*1.7)*2,-h,w*1.1,h*.22);r('#85a975',-w*.4+Math.sin(t*1.7)*3,-h*1.05,w*.8,h*.11);r('#c8cf8c',-7,-h*.68,14,17);}}
@@ -573,11 +575,11 @@ export function drawMobFallback(ctx, kind, spec, u, t, s) {
   }
   if(kind==='moss-slime'||kind==='moss-guardian') {
     const r=(color,x,y,ww,hh)=>{ctx.fillStyle=color;ctx.fillRect(x*u,y*u,ww*u,hh*u);};
-    r('#2c4d43',-w/2,-h+5,w,h-5);r('#699768',-w/2+3,-h+2,w-6,h-5);r('#a5bf7c',-w/2+3,-h+2,w-6,7);r('#416c58',w/2-9,-h+9,6,h-14);
+    r('#2c4d43',-w/2,-h+5,w,h-5);r(spec.biome==='frost'?'#98cbdc':'#699768',-w/2+3,-h+2,w-6,h-5);r(spec.biome==='frost'?'#ddf7ff':'#a5bf7c',-w/2+3,-h+2,w-6,7);r(spec.biome==='frost'?'#6493b8':'#416c58',w/2-9,-h+9,6,h-14);
     for(let n=0;n<5;n++)r(n%2?'#90b66b':'#456c50',-w/2+6+n*(w-14)/5,-h+14+(n%3)*9,7,5);
     r('#1d3637',-10,-h*.55,5,7);r('#1d3637',5,-h*.55,5,7);r('#d6f5b4',-9,-h*.55,2,3);r('#d6f5b4',6,-h*.55,2,3);
     if(kind==='moss-guardian'){r('#52735e',-w/2-8,-h*.68,10,h*.4);r('#52735e',w/2-2,-h*.68,10,h*.4);r('#c4db83',-6,-h-10,12,12);r('#e9f3b4',-3,-h-7,5,6);}
-    else{r('#5a925f',-5,-h-9,4,10);r('#b9cf79',-1,-h-10,10,5);}return;
+    else{r(spec.biome==='frost'?'#7baed1':'#5a925f',-5,-h-9,4,10);r(spec.biome==='frost'?'#e2faff':'#b9cf79',-1,-h-10,10,5);}return;
   }
   switch (kind) {
     case 'snail': {

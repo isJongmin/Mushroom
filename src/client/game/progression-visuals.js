@@ -20,7 +20,7 @@ export function drawItem(c,kind,x,y,k=1,color='#a7d2eb',tier=Math.max(0,GRADE_CO
 export function drawPet(c,id,x,y,k=1,now=0,level=0,motion={}) {
  const p=petSpec(id);if(!p)return;const pose=petPose(id,now,motion);c.save();c.translate(x+pose.x*k,y+pose.y*k);c.rotate(pose.angle);c.scale((motion.left?-1:1)*k*pose.sx,k*pose.sy);
  const r=(col,x,y,w,h)=>{c.fillStyle=col;c.fillRect(x,y,w,h);};
- const color=p.area==='village'?['#d58f64','#82cd9c','#ba8c62','#93b9e7','#f0cb66'][p.tier]:p.area==='quarry'?['#a2a9b7','#a88bd6','#78c7e8','#b797e6','#f0d390'][p.tier]:['#8fbc72','#b5d69a','#b4e2b0','#a2c1a3','#d2e9a3'][p.tier];
+ const color=p.area==='frost'?['#a9daee','#d7eff7','#8bc5ee','#b2c9f1','#d1edff'][p.tier]:p.area==='village'?['#d58f64','#82cd9c','#ba8c62','#93b9e7','#f0cb66'][p.tier]:p.area==='quarry'?['#a2a9b7','#a88bd6','#78c7e8','#b797e6','#f0d390'][p.tier]:['#8fbc72','#b5d69a','#b4e2b0','#a2c1a3','#d2e9a3'][p.tier];
  r('#132c3f33',-15,1,30,4);
  if(p.tier>=3){c.globalAlpha=.5+(motion.reduced?0:Math.sin(now/350)*.2);for(let i=0;i<6;i++){const a=(motion.reduced?0:now/1100)+i*Math.PI/3;r(GRADE_COLORS[p.tier],Math.cos(a)*23-1,-17+Math.sin(a)*23,3,3);}c.globalAlpha=1;}
  r('#324c55',-14,-28,28,26);r(color,-12,-27,24,24);r('#ffffff44',-10,-25,9,5);r('#29445055',8,-24,4,21);r(color,-10,-3,7,6);r(color,5,-3,7,6);

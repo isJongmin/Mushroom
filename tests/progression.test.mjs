@@ -1,3 +1,4 @@
+import {petPrice,petBonuses} from '../src/client/game/progression.js';
 import assert from 'node:assert/strict';
 import {starterState,applyCommand,cleanState,STAGES,GRADES,ATTACK,DEFENSE,SELL,WEAPONS,loadout,combatStats,skillUnlocked,stageUnlocked,rollEquipment,weighted,PET_RATES,PET_PRICES,petSpec,stageKinds} from '../src/client/game/progression.js';
 import {createProgressionStore} from '../src/client/progression-store.js';
@@ -24,8 +25,8 @@ for(const area of Object.keys(STAGES)) {
  p=doCmd(p,{type:'draw',area,count:1}).state;assert.ok(p.pets[area+':4']);assert.deepEqual(p.pity[area],[0,0,0]);
  p.pity[area]=[0,79,0];const epic=doCmd(p,{type:'draw',area,count:1});assert.ok(epic.state.pets[area+':3']);assert.equal(epic.result[0].id,area+':3');
  p.pity[area]=[19,0,0];const rare=doCmd(p,{type:'draw',area,count:1});assert.equal(rare.result[0].id,area+':2');
- p.pity[area]=[0,0,0];p=doCmd(p,{type:'draw',area,count:10}).state;assert.equal(p.pets[area+':0'].level,0);assert.equal(p.essence,9);assert.equal(p.gold,98000);
- p.pet=area+':4';const stats=combatStats(loadout(p,'warrior'));assert.equal(stats.attack,23);assert.equal(stats.maxHp,160);assert.equal(stats.pickup,240);
+ p.pity[area]=[0,0,0];p=doCmd(p,{type:'draw',area,count:10}).state;assert.equal(p.pets[area+':0'].level,0);assert.equal(p.essence,9);assert.equal(p.gold,100000-petPrice(area,1)-petPrice(area,10));
+ p.pet=area+':4';const stats=combatStats(loadout(p,'warrior'));assert.equal(stats.attack,Math.round(20*(1+petBonuses(area+':4').attack)));assert.equal(stats.maxHp,100+petBonuses(area+':4').hp);assert.equal(stats.pickup,240);
  p.essence=100;p=doCmd(p,{type:'pet-upgrade',id:area+':4'}).state;assert.equal(p.essence,95);assert.equal(p.pets[area+':4'].level,1);
 }
 let batch=starterState();batch.gold=5000;batch.pity.village=[15,0,0];const batched=doCmd(batch,{type:'draw',area:'village',count:10});let singles=structuredClone(batch);for(let n=0;n<10;n++)singles=doCmd(singles,{type:'draw',area:'village',count:1}).state;assert.deepEqual(batched.state.pity,singles.pity);assert.deepEqual(batched.state.pets,singles.pets);assert.equal(batched.state.gold-singles.gold,200);
@@ -42,7 +43,7 @@ const base=stageKinds(stageKinds(defs.kinds,'forest'),'quarry');
 for(const area of AREA_IDS){const map=areaMap(area,{width:3500,height:900,groundY:800,spawn:{x:250,y:800},platforms:[],spawns:[{id:'test',mobs:['golem'],max:2,x1:500,x2:1000}]});
  const kinds=stageKinds(base,area),world={groundY:800,minX:20,maxX:3480};const zones=normalizeZones(map.spawns,map.platforms||[],world,kinds);const sim=createMobSim({kinds,zones,rnd:()=>.5});sim.fill(0);assert.ok(sim.snapshot().length>0);
  const view=createMobView({kinds});view.apply(sim.snapshot(),0,true);for(const v of view.list){assert.equal(v.hp,STAGES[area].mobs[v.kind][0]);assert.equal(v.spec.touchDamage,STAGES[area].mobs[v.kind][1]);}
- const portals=areaPortals(map);assert.equal(portals.length,area==='quarry'?2:1);assert.ok(portals.every(p=>Math.abs(AREA_IDS.indexOf(p.to)-AREA_IDS.indexOf(area))===1));
+ const portals=areaPortals(map);assert.equal(portals.length,AREA_IDS.indexOf(area)>0&&AREA_IDS.indexOf(area)<AREA_IDS.length-1?2:1);assert.ok(portals.every(p=>Math.abs(AREA_IDS.indexOf(p.to)-AREA_IDS.indexOf(area))===1));
 }
 // Lock serialization: two tabs cannot spend the same gold or sell/fuse the same items.
 const data=new Map(),storage={getItem:k=>data.get(k)||null,setItem:(k,v)=>data.set(k,v)};let queue=Promise.resolve();const locks={request:(key,fn)=>{const p=queue.then(fn);queue=p.catch(()=>{});return p;}};

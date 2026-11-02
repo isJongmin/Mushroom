@@ -1,6 +1,6 @@
 import {h} from '../dom.js';
 import {openModal} from './modal.js';
-import {fusionSummary,GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL,activeWeapon,activeJob,wornItem} from '../game/progression.js';
+import {petSellPrice,petPrice,petBonuses,fusionSummary,GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL,activeWeapon,activeJob,wornItem} from '../game/progression.js';
 import {drawItem,drawPet} from '../game/progression-visuals.js';
 import {createPetReveal} from './pet-reveal.js';
 
@@ -107,19 +107,19 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
   }
   if(!grid.children.length)grid.append(h('p',{class:'gp-empty'},'아직 펫이 없어요. 마을의 펫 조련사 루루를 찾아보세요.'));body.append(grid);
   const p=s.pets[detail],pet=petSpec(detail);if(!p||!pet)return;
-  const d=h('section',{class:'gp-detail','aria-label':'선택 펫 상세'},h('strong',{},`${pet.name} +${p.level}`),h('p',{class:'gp-muted'},`공격력 +${(PET_ATK[pet.tier]*(1+p.level*.1)*100).toFixed(1)}% · HP +${Math.round(PET_HP[pet.tier]*(1+p.level*.1))} · 자동 줍기`));
-  if(confirm?.type==='pet-sell')d.append(h('p',{class:'gp-confirm'},`판매할 펫: ${pet.name} · ${PET_SELL[pet.tier].toLocaleString()} G. 펫은 사라지며 강화에 쓴 정수는 반환되지 않습니다.`),h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button('펫 판매 확정',()=>run({type:'pet-sell',id:detail}),{disabled:busy,kind:'gp-danger',testid:'pet-sell-confirm'})));
-  else d.append(h('div',{},h('div',{class:'gp-actions'},button(s.pet===detail?'동행 해제':'동행하기',()=>run(s.pet===detail?{type:'pet-off'}:{type:'pet-equip',id:detail}),{disabled:busy,kind:'gp-primary',testid:'pet-equip-toggle'}),button(p.level>=5?'최대 강화':`강화 · 정수 ${PET_UPGRADE[p.level]}`,()=>run({type:'pet-upgrade',id:detail}),{disabled:busy||p.level>=5||s.essence<PET_UPGRADE[p.level]}),button(`판매 · ${PET_SELL[pet.tier].toLocaleString()} G`,()=>{confirm={type:'pet-sell'};paint();},{disabled:busy||s.pet===detail,testid:'pet-sell-start'})),s.pet===detail?h('small',{class:'gp-muted'},'판매하려면 먼저 동행을 해제해주세요.'):null));
+  const d=h('section',{class:'gp-detail','aria-label':'선택 펫 상세'},h('strong',{},`${pet.name} +${p.level}`),h('p',{class:'gp-muted'},`공격력 +${(petBonuses(pet.id,p.level).attack*100).toFixed(1)}% · HP +${petBonuses(pet.id,p.level).hp} · 자동 줍기`));
+  if(confirm?.type==='pet-sell')d.append(h('p',{class:'gp-confirm'},`판매할 펫: ${pet.name} · ${petSellPrice(pet.id).toLocaleString()} G. 펫은 사라지며 강화에 쓴 정수는 반환되지 않습니다.`),h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button('펫 판매 확정',()=>run({type:'pet-sell',id:detail}),{disabled:busy,kind:'gp-danger',testid:'pet-sell-confirm'})));
+  else d.append(h('div',{},h('div',{class:'gp-actions'},button(s.pet===detail?'동행 해제':'동행하기',()=>run(s.pet===detail?{type:'pet-off'}:{type:'pet-equip',id:detail}),{disabled:busy,kind:'gp-primary',testid:'pet-equip-toggle'}),button(p.level>=5?'최대 강화':`강화 · 정수 ${PET_UPGRADE[p.level]}`,()=>run({type:'pet-upgrade',id:detail}),{disabled:busy||p.level>=5||s.essence<PET_UPGRADE[p.level]}),button(`판매 · ${petSellPrice(pet.id).toLocaleString()} G`,()=>{confirm={type:'pet-sell'};paint();},{disabled:busy||s.pet===detail,testid:'pet-sell-start'})),s.pet===detail?h('small',{class:'gp-muted'},'판매하려면 먼저 동행을 해제해주세요.'):null));
   body.append(d);
  }
  function paintShop(s,area){
   if(reveal){paintReveal();return;}
   const pity=s.pity[area]||[0,0,0];
   body.append(h('div',{class:'gp-shop-hero'},petIcon(area+':4',108),h('div',{},h('h3',{},'어떤 동료를 만나게 될까요?'),h('p',{class:'gp-muted'},'이 마을의 펫 5종 · 한 장씩 열어보세요.'))),
-   h('div',{class:'gp-draw-options'},...[1,5,10].map(count=>button('',()=>{if(!canDraw()){notice='펫 조련사 가까이에서 이용해주세요.';paint();return;}run({type:'draw',area,count});},{disabled:busy||s.gold<PET_PRICES[count],testid:`pet-draw-${count}`,kind:count===10?'is-featured':''})).map((b,n)=>{const count=[1,5,10][n];b.append(h('strong',{},`${count}마리 뽑기`),h('span',{},`${PET_PRICES[count].toLocaleString()} G`),h('small',{},count===1?'한 장의 설렘':count===5?'5% 할인':'10% 할인'));return b;})),
+   h('div',{class:'gp-draw-options'},...[1,5,10].map(count=>button('',()=>{if(!canDraw()){notice='펫 조련사 가까이에서 이용해주세요.';paint();return;}run({type:'draw',area,count});},{disabled:busy||s.gold<petPrice(area,count),testid:`pet-draw-${count}`,kind:count===10?'is-featured':''})).map((b,n)=>{const count=[1,5,10][n];b.append(h('strong',{},`${count}마리 뽑기`),h('span',{},`${petPrice(area,count).toLocaleString()} G`),h('small',{},count===1?'한 장의 설렘':count===5?'5% 할인':'10% 할인'));return b;})),
    h('div',{class:'gp-pity'},h('strong',{},'다음 보장까지'),h('span',{},`희귀 이상 ${20-pity[0]}회 · 영웅 이상 ${80-pity[1]}회 · 전설 ${200-pity[2]}회`)));
   const info=h('details',{class:'gp-odds'},h('summary',{},'등장 펫 · 확률 보기'));
-  const list=h('div',{class:'gp-pool'});PET_RATES.forEach((rate,tier)=>list.append(h('div',{},petIcon(area+':'+tier,48),h('strong',{},petSpec(area+':'+tier).name),badge(GRADES[tier],tier),h('span',{},`${(rate*100).toFixed(1)}%`),h('small',{},`공격 +${Math.round(PET_ATK[tier]*100)}% · HP +${PET_HP[tier]}`))));
+  const list=h('div',{class:'gp-pool'});PET_RATES.forEach((rate,tier)=>list.append(h('div',{},petIcon(area+':'+tier,48),h('strong',{},petSpec(area+':'+tier).name),badge(GRADES[tier],tier),h('span',{},`${(rate*100).toFixed(1)}%`),h('small',{},`공격 +${Math.round(petBonuses(area+':'+tier).attack*100)}% · HP +${petBonuses(area+':'+tier).hp}`))));
   info.append(list,h('p',{class:'gp-muted'},'기본 확률이며 보장 회차에는 상위 등급이 나올 수 있어요. 천장은 마을별로 유지되고 해당 등급 이상 획득 시 초기화됩니다. 중복은 등급별 정수 1/2/5/12/30개로 바뀝니다. 묶음도 한 번씩 같은 규칙을 적용합니다.'));body.append(info);
  }
  function paintReveal(){

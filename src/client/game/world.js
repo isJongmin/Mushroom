@@ -112,10 +112,10 @@ export function cameraFor(playerX, viewW, viewH, k, camYIn, world = WORLD) {
  * 지면 근처(refY 440)에서는 지금 구도 그대로다. 시야가 맵 세로보다 크면 지금 구도 고정.
  */
 export const CAM_FOOT_RATIO = 0.66;
-export function camYTarget(refY, viewH, top = 0, bottomY = WORLD.bottomY) {
+export function camYTarget(refY, viewH, top = 0, bottomY = WORLD.bottomY,footRatio=CAM_FOOT_RATIO) {
   const base = bottomY - viewH;
   if (base <= top) return base;
-  return Math.min(base, Math.max(top, refY - viewH * CAM_FOOT_RATIO));
+  return Math.min(base, Math.max(top, refY - viewH * footRatio));
 }
 
 /** QA/디버그용 발판 윤곽 (sessionStorage mushroom.debug.platforms = '1'일 때만 화면이 부른다) */

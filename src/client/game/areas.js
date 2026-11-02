@@ -1,24 +1,26 @@
 // 세 맵은 같은 방의 채팅을 공유하며 사냥/위치/호스트는 mapId로 분리한다.
-export const AREA_IDS = Object.freeze(['village', 'quarry', 'forest']);
+export const AREA_IDS = Object.freeze(['village', 'quarry', 'forest', 'frost']);
 export const normalizeMapId = (id) => AREA_IDS.includes(id) ? id : 'village';
-export const AREA_NAMES = Object.freeze({ village: '버섯마을', forest: '이끼마을', quarry: '광산마을' });
+export const AREA_NAMES = Object.freeze({ village: '버섯마을', forest: '이끼마을', quarry: '광산마을', frost:'서리마을' });
 export function areaMap(id, village) {
   id = normalizeMapId(id);
   if(id==='village'){
-   const edge=village.width||3840,extra=[{id:'outskirts-step',x1:edge+60,x2:edge+390,y:650},{id:'outskirts-canopy',x1:edge+460,x2:edge+850,y:475},{id:'outskirts-east',x1:edge+920,x2:edge+1200,y:630}];
+   const edge=village.width||3840,extra=[{id:'outskirts-step',x1:edge+60,x2:edge+390,y:650},{id:'outskirts-canopy',x1:edge+460,x2:edge+850,y:590},{id:'outskirts-east',x1:edge+920,x2:edge+1200,y:630}];
    return {...village,id,name:AREA_NAMES[id],artWidth:edge,width:edge+1380,platforms:[...(village.platforms||[]),...extra],ropes:[...(village.ropes||[]),...extra.map((p,i)=>({id:p.id+'-rope',x:(p.x1+p.x2)/2,y1:p.y,y2:800}))],
     districts:[{x:1647,name:'버섯마을 광장'},{x:edge+210,name:'그루터기 산책길'},{x:edge+680,name:'철갑버섯 숲'}],
     spawns:[...(village.spawns||[]).slice(0,18).map((z,i)=>({...z,mobs:[['snail','mushroom','slime'][i%3]],max:Math.min(3,z.max||2)})),{id:'outskirts-ground',platform:'ground',x1:edge+60,x2:edge+1250,mobs:['wild-stump','armored-mushroom'],max:4},...extra.map((p,i)=>({id:p.id+'-mobs',platform:p.id,x1:p.x1+30,x2:p.x2-30,mobs:[i===1?'armored-mushroom':'wild-stump'],max:2}))]};
   }
-  const forest=id==='forest',width=forest?5400:4800;
+  const forest=id==='forest',width=id==='frost'?6000:forest?5400:4800;
   const platforms=forest?[
-   {id:'root-step',x1:420,x2:950,y:665},{id:'west-canopy',x1:1050,x2:1530,y:505},{id:'ancient-bough',x1:1730,x2:2220,y:340},{id:'hollow-root',x1:2400,x2:2850,y:650},{id:'thorn-perch',x1:3050,x2:3540,y:480},{id:'treant-crown',x1:3750,x2:4200,y:300},{id:'east-root',x1:4450,x2:4930,y:635}
+   {id:'root-step',x1:420,x2:950,y:665},{id:'west-canopy',x1:1050,x2:1530,y:510},{id:'ancient-bough',x1:1730,x2:2220,y:330},{id:'hollow-root',x1:2400,x2:2850,y:650},{id:'thorn-perch',x1:3050,x2:3540,y:480},{id:'treant-crown',x1:3750,x2:4200,y:305},{id:'east-root',x1:4450,x2:4930,y:635}
   ]:[{id:'entry-rail',x1:440,x2:990,y:655},{id:'crystal-shelf',x1:1130,x2:1610,y:495},{id:'mine-lift',x1:1800,x2:2310,y:345},{id:'lower-rail',x1:2490,x2:2980,y:650},{id:'sentinel-post',x1:3200,x2:3690,y:475},{id:'deep-crystal',x1:3890,x2:4350,y:625}];
-  const ropes=platforms.map(p=>({id:p.id+'-rope',x:(p.x1+p.x2)/2,y1:p.y,y2:800}));
-  const monsters=forest?['moss-slime','forest-stump','moss-guardian','thorn-mantis','ancient-treant']:['bat','crystal-crab','golem','ore-beetle','cave-sentinel'];
-  return {id,name:AREA_NAMES[id],layers:[],width,height:1000,groundY:800,spawn:{x:240,y:800},platforms,ropes,
-   districts:forest?[{x:650,name:'이끼 뿌리길'},{x:2000,name:'고목의 가지'},{x:4000,name:'고대 정령의 숲'}]:[{x:650,name:'광산 입구'},{x:2100,name:'수정 채굴장'},{x:3700,name:'파수꾼의 갱도'}],
-   spawns:[{id:'entry-ground',platform:'ground',x1:400,x2:1450,mobs:monsters.slice(0,2),max:4},{id:'middle-ground',platform:'ground',x1:1700,x2:3000,mobs:monsters.slice(1,4),max:4},{id:'elite-ground',platform:'ground',x1:3250,x2:width-350,mobs:monsters.slice(3),max:4},...platforms.map((p,i)=>({id:p.id+'-mobs',platform:p.id,x1:p.x1+35,x2:p.x2-35,mobs:[monsters[Math.min(4,Math.floor(i*.8))]],max:2}))]};
+  if(id==='frost')platforms.push({id:'glacier-throne',x1:4700,x2:5280,y:480},{id:'snow-east',x1:5430,x2:5790,y:650});
+  for(const p of [...platforms]){if(p.y<600)for(let y=650;y>p.y;y-=175)platforms.push({id:p.id+'-step-'+y,x1:p.x1-55,x2:p.x1+115,y});}
+  const ropes=platforms.filter(p=>!p.id.includes('-step-')).map(p=>({id:p.id+'-rope',x:(p.x1+p.x2)/2,y1:p.y,y2:800}));
+  const monsters=id==='frost'?['frost-slime','ice-crab','ice-golem','frost-beetle','glacier-sentinel']:forest?['moss-slime','forest-stump','moss-guardian','thorn-mantis','ancient-treant']:['bat','crystal-crab','golem','ore-beetle','cave-sentinel'];
+  return {id,name:AREA_NAMES[id],layers:[],width,height:1000,groundY:800,spawn:{x:900,y:800},platforms,ropes,
+   districts:id==='frost'?[{x:650,name:'눈송이 초입'},{x:2400,name:'얼어붙은 광장'},{x:4700,name:'빙하 군주의 봉인'}]:forest?[{x:650,name:'이끼 뿌리길'},{x:2000,name:'고목의 가지'},{x:4000,name:'고대 정령의 숲'}]:[{x:650,name:'광산 입구'},{x:2100,name:'수정 채굴장'},{x:3700,name:'파수꾼의 갱도'}],
+   spawns:[{id:'entry-ground',platform:'ground',x1:1400,x2:2100,mobs:monsters.slice(0,2),max:4},{id:'middle-ground',platform:'ground',x1:2350,x2:3300,mobs:monsters.slice(1,4),max:4},{id:'elite-ground',platform:'ground',x1:3500,x2:width-350,mobs:monsters.slice(3),max:4},...platforms.filter(p=>!p.id.includes('-step-')).map((p,i)=>({id:p.id+'-mobs',platform:p.id,x1:p.x1+35,x2:p.x2-35,mobs:[monsters[Math.min(4,Math.floor(p.x1/width*5))]],max:2}))]};
 
 }
 export function areaPortals(map) {
@@ -36,8 +38,8 @@ const palettes = {
  quarry:{sky:'#253354',haze:'#7283a3',far:'#465879',mount:'#344763',bark:'#474d69',leaf:'#727eab',light:'#9aa9d1',soil:'#44445d',edge:'#a0c7d2'},
 };
 export function drawBiomeMap(ctx,map,camX,camY,k,W,H) {
-  const p=palettes[map.id]||palettes.forest;
-  ctx.save();ctx.setTransform(1,0,0,1,0,0);ctx.imageSmoothingEnabled=false;
+  const p=map.id==='frost'?{...palettes.quarry,sky:'#5b819d',haze:'#d8eff5',soil:'#657d93',edge:'#e4fbff',leaf:'#a1cbdc'}:palettes[map.id]||palettes.forest;
+  ctx.setTransform(1,0,0,1,0,0);ctx.save();ctx.imageSmoothingEnabled=false;
   const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,p.sky);g.addColorStop(1,p.haze);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
   const noise=(x,n)=>{const v=Math.sin(x*12.9898+n*78.233)*43758.5453;return v-Math.floor(v);};
   const poly=(color,points)=>{ctx.fillStyle=color;ctx.beginPath();points.forEach(([x,y],i)=>ctx[i?'lineTo':'moveTo'](Math.round((x-camX)*k),Math.round((y-camY)*k)));ctx.closePath();ctx.fill();};

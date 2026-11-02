@@ -20,7 +20,7 @@ export const PHYS = Object.freeze({
   dashTime: 0.22,
   dashUpV: 350,
   dashGravity: 0.5, // 대시 중 중력 배율
-  superUpV: 950,
+  superUpV: 1100,
   superCooldown: 0.8,
   dropIgnore: 0.25,
   doubleTapMs: 300,
@@ -129,7 +129,7 @@ function leaveGround(b) {
 function crossed(platforms, b, yTop, yEnd) {
   for (const p of platforms) { // y 오름차순 → 처음 맞는 것이 가장 높다
     if (p.y < yTop - 1e-9) continue;
-    if (p.y >= yEnd) break;
+    if (p.y > yEnd + 1e-9) break;
     if (b.x < p.x1 || b.x > p.x2) continue;
     if (b.ignore === p.id && b.t < b.ignoreUntil) continue;
     return p;
@@ -266,9 +266,9 @@ export function stepBody(b, inp, dt, opt) {
   } else {
     let rem = dt;
     let guard = 0;
-    while (rem > 1e-9 && guard++ < 4) {
+    while (rem > 1e-9 && guard++ < Math.ceil(dt*120)+4) {
       const dashing = b.dashT > 0;
-      const h = dashing ? Math.min(rem, b.dashT) : rem;
+      const h = Math.min(rem,1/120,dashing?b.dashT:Infinity);
       const gg = dashing ? g * PHYS.dashGravity : g;
       const vx = dashing ? b.dashDir * PHYS.dashVX : (b.kbT > 0 ? b.kbDir * KNOCK.vx : walkDir * opt.speed);
       if (vx !== 0) b.x = clampX(b.x + vx * h);

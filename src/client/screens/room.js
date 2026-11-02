@@ -1,3 +1,5 @@
+import {createHuntChain,comboBonus} from '../game/hunt-chain.js';
+import {npcRoster} from '../game/npc-roster.js';
 import {regionOf} from '../game/regions.js';
 import {drawVillageOutskirts,drawRegionLandmarks} from '../game/areas.js';
 import {bindJoystick} from '../ui/joystick.js';
@@ -10,7 +12,7 @@ import {createProgressionStore} from '../progression-store.js';
 import {createProgressionPanel} from '../ui/progression-panel.js';
 import {GRADES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,itemName,petSpec,activeJob} from '../game/progression.js';
 import {drawEquipmentDrop,drawPet,petNpcPoint,drawPetMerchant,drawItem} from '../game/progression-visuals.js';
-import {questNpcPoint,drawQuestNpc,NPC_AVATAR} from '../game/quest-npc.js';
+import {questNpcPoint,drawQuestNpc} from '../game/quest-npc.js';
 import {BOSS_KIND,bossPoint,bossPose,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
 import {drawBoss,drawBossTelegraph} from '../game/boss-visuals.js';
 import {eventDamage} from '../game/event-balance.js';
@@ -47,7 +49,7 @@ import { createAvatarRenderer, smooth } from '../avatar.js';
 import { drawMap, drawFootShadow, cameraFor, camYTarget, drawPlatformDebug, drawRopeDebug, worldFromMap } from '../game/world.js';
 import { layoutBubble, drawBubble, drawLabel, bubbleAlpha } from '../game/overlay.js';
 import { createMoveInput, KEY_DIR, KEY_ACTION, KEY_TAP, KEY_ATTACK } from '../game/input.js';
-import { PHYS, createBody, stepBody, surfaceBelow, normState, isFx, knockBody } from '../game/physics.js';
+import { PHYS, normalizePlatforms, normalizeRopes, createBody, stepBody, surfaceBelow, normState, isFx, knockBody } from '../game/physics.js';
 import {
   COMBAT, attackBox, hurtBox, overlaps, randInt, projectileCollision, createDamageNumbers, createSlashes, createTombstones, drawGhost, drawHpBar, HPBAR, blinkAlpha,
 } from '../game/combat.js';
@@ -114,8 +116,10 @@ export function mount(root, app, opts = {}) {
   let assets = null;
   let avatarR = null;
   let npcAvatar = null;
+  const regionNpcs=new Map();
   let petNpcAvatar = null;
   let baseMobKinds = null;
+  const huntChain=createHuntChain();let chainUntil=0;
   const lootContributors = new Map(), lootOutbox = new Map(),dropBorn=new Map();
   let lootAt=0, pickupAt=0, collecting=false, lastGrowthKey="";
   let growthErrorAt=0;
@@ -227,17 +231,17 @@ export function mount(root, app, opts = {}) {
   const myLoadout=()=>progress?loadout(progress.state,job.id):null;
   const myStats=()=>combatStats(myLoadout());
   const progressPanel=progress?createProgressionPanel({main:root,store:progress,job:job.id,getArea:()=>currentArea,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true}),canDraw:()=>{const p=petNpcPoint(world);return !!me&&!me.dead&&connection==='connected'&&Math.abs(me.x-p.x)<230&&Math.abs(me.y-p.y)<100;}}):null;
-  const growthText=h('span',{});
+  const growthText=h('span',{}),huntText=h('small',{class:'hunt-tracker',testid:'hunt-tracker'}),chainHud=h('div',{class:'hunt-combo',testid:'hunt-combo',role:'status',hidden:true});
   const bagBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'equipment-bag'},'가방');
   on(bagBtn,'click',()=>{input.clear();if(progressPanel)progressPanel.open();else chatLog.addSystem(progressError);});
-  const growthHud=h('div',{class:'progression-hud',testid:'progression-hud'},growthText,bagBtn);
+  const growthHud=h('div',{class:'progression-hud',testid:'progression-hud'},growthText,bagBtn,huntText);
   function syncProgress(){
     if(!alive||!progress)return;
     const nextJob=jobDefinition(activeJob(progress.state)),changed=nextJob.id!==job.id;job=nextJob;
     if(changed){if(me){me.attackUntil=0;me.attackJob=job.id;}for(const s of skillButtons){s.ability=abilityDefinition(job.id,s.slot);drawSkillIcon(s.btn.querySelector('canvas').getContext('2d'),job.id,s.slot,48);setText(s.btn.querySelector('.skill-name'),s.ability.name);s.btn.title=`${s.ability.name} · ${s.ability.description} · ${s.ability.cooldown}초 · ${SKILL_LABELS[s.slot]}키`;}setText(jobChip,`${job.name} · 무기 스킬`);}
     const st=myStats();atk=abilityStats(job.id,0,myLoadout());if(me){me.max=st.maxHp;me.hp=Math.min(me.hp,me.max);me.loadout=myLoadout();announceHp=true;}
     const state=progress.state;const signature=`${state.activeWeapon}:${state.shield}`;if(lastEquipSignature!==null&&signature!==lastEquipSignature){equipAt=-Infinity;equipPending=true;}lastEquipSignature=signature;
-    const key=`${state.revision}|${currentArea}|${layout.mobile}`;if(key!==lastGrowthKey){lastGrowthKey=key;setText(growthText,layout.mobile?`${AREA_NAMES[currentArea]} · ${state.gold.toLocaleString()} G`:`${stageOf(currentArea).order}차 ${AREA_NAMES[currentArea]} · 공격 ${st.attack} / 방어 ${st.defense} · ${state.gold.toLocaleString()} G`);}
+    const key=`${state.revision}|${currentArea}|${layout.mobile}`;if(key!==lastGrowthKey){lastGrowthKey=key;setText(huntText,`사냥 의뢰 ${state.kills[currentArea]%20}/20 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 보상`);setText(growthText,layout.mobile?`${AREA_NAMES[currentArea]} · ${state.gold.toLocaleString()} G`:`${stageOf(currentArea).order}차 ${AREA_NAMES[currentArea]} · 공격 ${st.attack} / 방어 ${st.defense} · ${state.gold.toLocaleString()} G`);}
     progressPanel?.refresh();
   }
   on(window,'storage',e=>{if(progress&&e.key===progress.key){try{progress.reload();syncProgress();}catch(err){chatLog.addSystem(err.message);}}});
@@ -289,7 +293,7 @@ export function mount(root, app, opts = {}) {
   const petNpc=h('button',{type:'button',class:'pet-npc-marker',testid:'pet-npc','aria-label':'지역 펫 조련사와 대화',hidden:true},'펫 뽑기');
   on(petNpc,'click',()=>{const p=petNpcPoint(world);if(!me||me.dead||connection!=='connected')return;if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>100){chatLog.addSystem('펫 조련사 가까이로 이동해주세요.');return;}input.clear();progressPanel?.open('shop');});
   const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true})});
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,growthHud, gardenPanel.el, gardenPanel.result);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -967,6 +971,7 @@ export function mount(root, app, opts = {}) {
     for (const [uid, player] of players) if (sameArea(player, me) && uid < min) min = uid;
     if (min === hostId) return;
     const was = isHost();
+    huntChain.clear();chainUntil=0;
     hostId = min;
     cstats.hostChanges++;
     if (hostChip) setText(hostChip, `호스트 ${min === me.user_id ? '나' : nickOf(players.get(min))}`);
@@ -974,11 +979,13 @@ export function mount(root, app, opts = {}) {
     if (isHost()) hostSince = performance.now();
   }
 
+  function syncNpcLook(){const pair=regionNpcs.get(currentArea);if(!pair)return;npcAvatar=pair.quest;petNpcAvatar=pair.pet;npcQuest.setAttribute('aria-label',npcRoster(currentArea).quest.name+'에게 말 걸기: 퀘스트 선택');petNpc.setAttribute('aria-label',npcRoster(currentArea).pet.name+'에게 말 걸기: 펫 상점');}
   function configureArea(nextMap) {
     map = nextMap;
+    syncNpcLook();
     if(mobDefs&&baseMobKinds){mobDefs.kinds=stageKinds(baseMobKinds,currentArea);mobSprites?.clear();mobSprites=createMobSprites(mobDefs.kinds);}
-    lootContributors.clear();dropBorn.clear();companion.reset();companionPose=null;
-    platforms = map.platforms || []; ropes = map.ropes || [];
+    lootContributors.clear();dropBorn.clear();huntChain.clear();chainUntil=0;chainHud.hidden=true;companion.reset();companionPose=null;
+    platforms = normalizePlatforms(map.platforms,{width:map.width,groundY:map.groundY}); ropes = normalizeRopes(map.ropes,{width:map.width,groundY:map.groundY});
     world = worldFromMap(map);
     Object.assign(BODY_OPT, { platforms, ropes, groundY: world.groundY, minX: world.minX, maxX: world.maxX });
     zones = mobDefs ? gardenZones(normalizeZones(map.spawns || [], platforms, world, mobDefs.kinds), world, currentArea) : [];
@@ -1028,7 +1035,7 @@ export function mount(root, app, opts = {}) {
 
   async function receiveLoot(p){
     if(!progress||!me||p.owner!==me.user_id||p.area!==currentArea)return;
-    try {await progress.run({type:'loot',...p});if(!alive)return;syncProgress();if(isHost())lootOutbox.delete(p.receipt+'|'+p.owner);else send('loot-ack',{receipt:p.receipt});}
+    try {const awarded=await progress.run({type:'loot',...p});if(!alive)return;if(!awarded?.duplicate&&p.combo){chainUntil=performance.now()+5000;chainHud.hidden=false;setText(chainHud,`${p.combo} COMBO · 골드 +${comboBonus(p.combo)}%`);}if(awarded?.contract){chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}syncProgress();if(isHost())lootOutbox.delete(p.receipt+'|'+p.owner);else send('loot-ack',{receipt:p.receipt});}
     catch(e){if(alive&&performance.now()-growthErrorAt>5000){growthErrorAt=performance.now();chatLog.addSystem(e.message);}}
   }
   async function collectEquipment(now){
@@ -1055,8 +1062,8 @@ export function mount(root, app, opts = {}) {
     if (r.killed) {
       const hits=lootContributors.get(r.mob.id)||new Map();if(r.mob.kind===BOSS_KIND)for(const m of garden.snapshot()?.members||[])if(m.bossDamage>0)hits.set(m.uid,now);
       for(const [owner,at] of hits){const pl=players.get(owner);if(now-at>30000||!pl||(pl.dead&&r.mob.kind!==BOSS_KIND)||!sameArea(pl,me)||Math.abs(pl.x-r.mob.x)>1400)continue;
-        const receipt=`${roomId}:${currentArea}:${r.mob.id}`;
-        const packet={receipt,owner,area:currentArea,x:Math.round(r.mob.x),y:Math.round(groundAt(r.mob.x,r.mob.y-1)),...rollMonsterLoot(currentArea,r.mob.kind),mapId:currentArea};
+        const receipt=`${roomId}:${currentArea}:${r.mob.id}`,chain=huntChain.record(owner,now),loot=rollMonsterLoot(currentArea,r.mob.kind);loot.gold=Math.min(20000,Math.round(loot.gold*(1+chain.bonus/100)));
+        const packet={receipt,owner,area:currentArea,x:Math.round(r.mob.x),y:Math.round(groundAt(r.mob.x,r.mob.y-1)),...loot,combo:chain.count,mapId:currentArea};
         lootOutbox.set(receipt+'|'+owner,{packet,last:0,at:now});
       }
       lootContributors.delete(r.mob.id);
@@ -1260,6 +1267,7 @@ export function mount(root, app, opts = {}) {
 
   function update(dt, now) {
     joystick.check();
+    if(now>chainUntil)chainHud.hidden=true;huntChain.prune(now);
     if (me) {
       const near = connection === 'connected' && now >= portalReadyAt ? nearbyPortal(map, me) : null;
       portalBtn.hidden = !near;
@@ -1281,7 +1289,7 @@ export function mount(root, app, opts = {}) {
       const y0 = b.y;
       const r = stepBody(b, inp, dt, BODY_OPT);
       if (r.jumped) input.consumeJump();
-      if (r.unclimbed === 'top') input.suppressJumpHold(); // 위끝에 올라선 직후 누르고 있는 ↑로 바로 뛰지 않게
+      if (r.unclimbed === 'top' || r.landed && b.on) input.suppressJumpHold(); // 위끝에 올라선 직후 누르고 있는 ↑로 바로 뛰지 않게
       if (r.grabbed) stats.ropeGrabs = (stats.ropeGrabs || 0) + 1;
       if (r.fx) {
         if (r.fx === 'dash-left') me.dir = -1;
@@ -1552,7 +1560,7 @@ export function mount(root, app, opts = {}) {
     stones.draw(ctx, tombSprite, camX, cy, k, now);
     drops.draw(ctx, camX, cy, k, now, buffOrbSprite, dropBagSprite);
     const actors=[];
-    {const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now})});}
+    {const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now,area:currentArea})});}
     if(progress){const p=petNpcPoint(world);actors.push({id:'pet-npc',kind:'npc',y:p.y,draw:()=>drawPetMerchant(ctx,p,camX,cy,k,avatarR,petNpcAvatar,currentArea,now)});}
     const mobsVis = [];
     if (mobView) {
@@ -2080,8 +2088,8 @@ export function mount(root, app, opts = {}) {
     for (const id of AREA_IDS) areaCatalog.set(id, areaMap(id, villageMap));
     map = areaCatalog.get(currentArea);
     if (!alive) return;
-    platforms = map && Array.isArray(map.platforms) ? map.platforms : Object.freeze([]);
-    ropes = map && Array.isArray(map.ropes) ? map.ropes : Object.freeze([]); // (사이클 10)
+    platforms = normalizePlatforms(map?.platforms,{width:map?.width,groundY:map?.groundY});
+    ropes = normalizeRopes(map?.ropes,{width:map?.width,groundY:map?.groundY}); // (사이클 10)
     BODY_OPT.ropes = ropes;
     world = worldFromMap(map); // (사이클 9) 크기·지면·스폰은 맵 manifest에서
     camRef = world.groundY;
@@ -2111,9 +2119,9 @@ export function mount(root, app, opts = {}) {
       }
     }
     avatarR = createAvatarRenderer(assets);
-    npcAvatar=assets.sanitizeAvatar(NPC_AVATAR);
-    petNpcAvatar=assets.sanitizeAvatar({...NPC_AVATAR,hair:'brown-short',face:'smile',top:'mage-robe',hat:'explorer-brown'});
-    await Promise.all([avatarR.ready(npcAvatar),avatarR.ready(petNpcAvatar)]);
+    for(const area of AREA_IDS){const cast=npcRoster(area);regionNpcs.set(area,{quest:assets.sanitizeAvatar(cast.quest.avatar),pet:assets.sanitizeAvatar(cast.pet.avatar)});}
+    await Promise.all([...regionNpcs.values()].flatMap(p=>[avatarR.ready(p.quest),avatarR.ready(p.pet)]));
+    syncNpcLook();
     if(!alive)return;
     const sp = spawnPoint();
     me = makePlayer(app.userId || 'me', myNick, assets.sanitizeAvatar(profile.avatar), sp.x, true);

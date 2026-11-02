@@ -32,3 +32,11 @@
 .scr-room .room-log{top:137px!important;left:14px}.scr-room .room-log.is-collapsed{display:none!important}[data-layout=mobile] .scr-room .room-log{top:151px!important;left:10px}
 .scr-room .rpg-menu [hidden]{display:none!important}
 .movement-joystick{display:none}[data-layout=mobile] .mobile-move-pad{border:0;background:none}[data-layout=mobile] .mobile-move-directions,[data-layout=mobile] .mobile-move-pad>[data-testid=crouch]{display:none!important}[data-layout=mobile] .movement-joystick{display:block;position:absolute;inset:0;pointer-events:auto;touch-action:none;border-radius:50%;background:radial-gradient(circle,#576f8226,#2b415648);border:1px solid #e8e8da4d;box-shadow:inset 0 0 0 12px #e1e7dc08;user-select:none;-webkit-user-select:none;outline-offset:4px}.joystick-axis{position:absolute;inset:26px;border:1px solid #e4eadc22;border-radius:50%;pointer-events:none}.joystick-axis::before,.joystick-axis::after{content:'';position:absolute;background:#e4eadc33}.joystick-axis::before{left:50%;top:0;bottom:0;width:1px}.joystick-axis::after{top:50%;left:0;right:0;height:1px}.joystick-knob{position:absolute;left:calc(50% - 26px);top:calc(50% - 26px);width:52px;height:52px;border:1px solid #e6ead699;border-radius:50%;background:radial-gradient(circle at 35% 25%,#bac9cbb8,#597288c9);box-shadow:0 4px 12px #16324d44,inset 0 0 0 4px #d3e1e318;pointer-events:none}.movement-joystick.is-active{border-color:#f1e1ac88}.movement-joystick.is-active .joystick-knob{background:radial-gradient(circle at 35% 25%,#d8dfcbe0,#7993a5dd)}
+
+/* Hunt feedback uses the existing wallet and one short-lived, non-interactive badge. */
+.progression-hud{flex-wrap:wrap;max-width:290px}
+.hunt-tracker{flex-basis:100%;font-size:10px;line-height:1.35;color:#e6e6c5;white-space:normal}
+.hunt-combo{position:absolute;right:14px;top:112px;z-index:12;pointer-events:none;border:1px solid #f0d18a88;border-radius:10px;padding:8px 11px;background:#223849e8;color:#ffe4a1;font:750 12px system-ui;box-shadow:0 5px 18px #10233344}
+.hunt-combo[hidden]{display:none}
+[data-layout="mobile"] .progression-hud{max-width:205px;gap:4px 8px}
+[data-layout="mobile"] .hunt-combo{top:112px;max-width:150px;font-size:10px;padding:7px}

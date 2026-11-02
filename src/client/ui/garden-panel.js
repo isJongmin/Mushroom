@@ -1,3 +1,4 @@
+import {npcRoster} from '../game/npc-roster.js';
 import {regionOf} from '../game/regions.js';
 import {bossPatternText} from '../game/garden-boss.js';
 import { h,setText } from '../dom.js';
@@ -26,12 +27,12 @@ export function createGardenPanel({onStart,onBoss,onEquip,onReplay,onFocus}) {
       const key=[area,s?.id,s?.rev,left,connected,near,alive,host,bossHp].join(':');if(key===lastKey)return;lastKey=key;
       hp.hidden=!active;hp.value=s?.phase==='boss'?bossHp/s.boss.max*100:s?.hp??100;hp.setAttribute('aria-label',s?.mode==='boss'?'버섯왕 체력':'버섯밭 내구도');
       status.textContent=active?(s?.mode==='boss'?'BOSS':`${s.wave}/3 WAVE`):'QUEST';
-      setText(label,active?(s?.mode==='boss'?region.boss:region.event):region.event+' · 도전 선택');
+      setText(label,active?(s?.mode==='boss'?region.boss:region.event):npcRoster(area).quest.name+' · 도전 선택');
       setText(detail,s?.phase==='boss'?`${bossPatternText[s.boss.pattern]} · HP ${bossHp}/${s.boss.max} · ${left}초`:active?(s.phase==='wave'?`내구도 ${s.hp}% · 적 ${alive}${s.queued?` + 증원 ${s.queued}(${Math.max(0,Math.ceil((s.reinforceAt-now)/1000))}초)`:''} · ${left}초`:`${s.phase==='ready'?'습격 준비':'잠시 숨 고르기'} · ${left}초 후 시작`):'시간차 증원과 급습·강화 몬스터를 막아 마을을 지켜주세요.');
       start.hidden=bossStart.hidden=active;
       start.disabled=!connected || !host || !near || !!s&&now<s.ended+5000;
       bossStart.disabled=start.disabled;
-      setText(start,!connected?'연결 중':!host?'동기화 중':!near?'숲지기 모리에게 가까이 이동':s&&now<s.ended+5000?'잠시 후 다시 도전':region.event);
+      setText(start,!connected?'연결 중':!host?'동기화 중':!near?npcRoster(area).quest.name+'에게 가까이 이동':s&&now<s.ended+5000?'잠시 후 다시 도전':region.event);
       if(s && ['success','failed'].includes(s.phase)&&s.id!==resultId) {
         resultId=s.id;resultMode=s.mode;result.hidden=false;const success=s.phase==='success';
         setText(resultTitle,success?(s.mode==='boss'?region.boss+' 처치 성공!':region.event+' 성공!'):'다음엔 함께 지켜봐요');

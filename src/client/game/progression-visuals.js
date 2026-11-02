@@ -1,3 +1,4 @@
+import {npcRoster} from './npc-roster.js';
 import {petPose} from './appearance-motion.js';
 import {petSpec,GRADE_COLORS} from './progression.js';
 // Small shaded blocks match the existing voxel avatars, without external assets.
@@ -57,12 +58,12 @@ export function drawEquipmentDrop(c,d,camX,camY,k,now,age=Infinity) {
  const x=(d.x-camX)*k,y=(d.y-camY-15-hop+Math.sin(now/300+d.x)*3)*k,color=GRADE_COLORS[d.tier];
  c.save();c.fillStyle=color+'28';c.fillRect(x-20*k,y-30*k,40*k,49*k);c.fillStyle=color;c.fillRect(x-18*k,y+17*k,36*k,2*k);drawItem(c,d.kind,x,y,.65*k,color);c.restore();
 }
-export const petNpcPoint = world => ({x:Math.min(world.maxX-90,(world.spawn?.x??300)+145),y:world.groundY});
+export const petNpcPoint = world => ({x:Math.min(world.maxX-90,(world.spawn?.x??300)+125),y:world.groundY});
 export function drawPetMerchant(c,p,camX,camY,k,renderer,avatar,area,now) {
  const x=(p.x-camX)*k,y=(p.y-camY)*k;if(x<-150*k||x>c.canvas.width+150*k)return;
  c.save();c.fillStyle='#39505b44';c.fillRect(x-38*k,y-2*k,76*k,6*k);
  renderer?.draw(c,avatar,x,y,k,renderer.frameAt('idle_front',now),true);
  c.fillStyle=area==='quarry'?'#766491':area==='forest'?'#60866d':'#ad795a';c.fillRect(x+25*k,y-31*k,53*k,32*k);c.fillStyle='#ead5a3';c.fillRect(x+22*k,y-35*k,59*k,6*k);
  drawPet(c,area+':0',x+50*k,y-33*k,k*.65,now);
- c.font=`600 ${10*k}px system-ui`;c.textAlign='center';c.fillStyle='#203e39';c.fillRect(x-42*k,y+7*k,84*k,18*k);c.fillStyle='#f7ebc7';c.fillText('펫 조련사 루루',x,y+20*k);c.restore();
+ c.font=`600 ${10*k}px system-ui`;c.textAlign='center';c.fillStyle='#203e39';c.fillRect(x-57*k,y+7*k,114*k,18*k);c.fillStyle='#f7ebc7';c.fillText(npcRoster(area).pet.name,x,y+20*k);c.restore();
 }

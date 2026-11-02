@@ -7,7 +7,7 @@ import { normalizeMapId } from './areas.js';
 //   엎드리기(prone): 지면/발판에서 ↓를 누르는 동안. 엎드린 동안 좌우 이동·점프 불가. 공중에서 누르면 착지 후 엎드린다.
 //   ↓ + 점프: 발판 위면 그 발판을 0.25초 무시하고 떨어진다. 지면에서는 아무것도 하지 않는다(점프도 안 함).
 //   슈퍼 점프: 같은 방향키(←, →, ↑) 300ms 안 두 번(input.js). ←/→ 대시 = 수평 1100 x 0.22초(그 동안 중력 절반) + 위로 350,
-//     ↑ = 위로 950(최고 약 225). 쿨다운 0.8초. 공중에서는 1회(착지하면 다시 충전).
+//     ↑ = 위로 1120(최고 약 314). 쿨다운 0.8초. 공중에서는 1회(착지하면 다시 충전).
 //     지면/발판에서 쓰거나, 더블탭의 첫 누름으로 막 뛰어오른 경우(↑↑)는 공중 충전을 쓰지 않는다.
 // 상태 s: 'idle' | 'walk' | 'jump'(vy<0) | 'fall'(vy>=0, 공중) | 'prone'. 수신은 옛 'crouch'도 'prone'으로 받는다.
 
@@ -20,7 +20,7 @@ export const PHYS = Object.freeze({
   dashTime: 0.22,
   dashUpV: 350,
   dashGravity: 0.5, // 대시 중 중력 배율
-  superUpV: 1100,
+  superUpV: 1120,
   superCooldown: 0.8,
   dropIgnore: 0.25,
   doubleTapMs: 300,
@@ -127,14 +127,14 @@ function leaveGround(b) {
 
 /** 이번 구간에서 위에서 아래로 윗면을 지난 발판 중 가장 먼저(가장 높은) 것. 없으면 null */
 function crossed(platforms, b, yTop, yEnd) {
-  for (const p of platforms) { // y 오름차순 → 처음 맞는 것이 가장 높다
-    if (p.y < yTop - 1e-9) continue;
-    if (p.y > yEnd + 1e-9) break;
+  let best=null;
+  for (const p of platforms) {
+    if (p.y < yTop - 1e-9 || p.y > yEnd + 1e-9) continue;
     if (b.x < p.x1 || b.x > p.x2) continue;
     if (b.ignore === p.id && b.t < b.ignoreUntil) continue;
-    return p;
+    if (!best || p.y < best.y) best=p;
   }
-  return null;
+  return best;
 }
 
 /**

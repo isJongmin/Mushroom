@@ -1,3 +1,4 @@
+import {huntContract} from './hunt-chain.js';
 import {regionOf} from './regions.js';
 // One balance contract for loot, equipment, stages and pets. No real-money purchases.
 export const GRADES = Object.freeze(['일반','고급','희귀','영웅','전설']);
@@ -91,11 +92,14 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
   if(typeof c.receipt!=='string'||c.receipt.length>150||!Object.hasOwn(STAGES,c.area))fail('잘못된 드롭 정보입니다.');
   if(s.seen.includes(c.receipt))return {state:s,result:{duplicate:true}};
   if(!Array.isArray(c.items)||c.items.length>8||c.items.some(i=>!itemOK({...i,id:'check'})))fail('잘못된 장비입니다.');
-  const gold=c.gold??0;if(!Number.isSafeInteger(gold)||gold<0||gold>20000)fail('잘못된 골드 보상입니다.');const piles=gold?Math.min(8,Math.max(1,Math.ceil(gold/120))):0;
-  if(s.pending.length+c.items.length+piles>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
+  let gold=c.gold??0;if(!Number.isSafeInteger(gold)||gold<0||gold>20000)fail('잘못된 골드 보상입니다.');
+  const counts=!c.receipt.startsWith('event-'),kills=s.kills[c.area]+(counts?1:0),contract=counts?huntContract(c.area,stageOf(c.area).order,kills,activeWeapon(s)?.kind||'sword'):null,items=[...c.items];
+  if(contract){gold+=contract.gold;items.push(contract.item);result={contract:true};}
+  const piles=gold?Math.min(8,Math.max(1,Math.ceil(gold/120))):0;
+  if(s.pending.length+items.length+piles>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
   if(!Number.isFinite(c.x)||!Number.isFinite(c.y)||Math.abs(c.x)>1e5||Math.abs(c.y)>1e5)fail('잘못된 드롭 위치입니다.');
-  s.seen.push(c.receipt);s.seen=s.seen.slice(-10000);s.kills[c.area]++;
-  c.items.forEach((i,n)=>s.pending.push({id:c.receipt+':'+n,kind:i.kind,tier:i.tier,area:c.area,x:c.x+(n-(c.items.length-1)/2)*38,y:c.y}));
+  s.seen.push(c.receipt);s.seen=s.seen.slice(-10000);s.kills[c.area]=kills;
+  items.forEach((i,n)=>s.pending.push({id:c.receipt+':'+n,kind:i.kind,tier:i.tier,area:c.area,x:c.x+(n-(items.length-1)/2)*38,y:c.y}));
   for(let n=0;n<piles;n++)s.pending.push({id:c.receipt+':gold:'+n,kind:'gold',amount:Math.floor(gold/piles)+(n<gold%piles?1:0),area:c.area,x:c.x+(n-(piles-1)/2)*32,y:c.y});
  }
  else if(c.type==='collect') {

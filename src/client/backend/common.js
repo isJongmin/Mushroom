@@ -176,7 +176,8 @@ function cleanGameEventPayload(event, p) {
     case 'loot':
       if(!UID_OK(p.host)||!UID_OK(p.owner)||typeof p.receipt!=='string'||p.receipt.length>150||!Object.hasOwn(STAGES,p.area)||!numIn(p.x,-COORD,COORD)||!numIn(p.y,-COORD,COORD)||!Array.isArray(p.items)||p.items.length>8||p.items.some(i=>!itemOK({...i,id:'check'})))return null;
       if(p.gold!=null&&(!Number.isSafeInteger(p.gold)||p.gold<0||p.gold>20000))return null;
-      return {host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,gold:p.gold??0,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
+      if(p.combo!=null&&(!Number.isInteger(p.combo)||p.combo<1||p.combo>999))return null;
+      return {...(p.combo?{combo:p.combo}:{}),host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,gold:p.gold??0,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
     case 'boss-start':
     case 'garden-start':
       return UID_OK(p.user_id) ? { user_id:p.user_id } : null;

@@ -11,9 +11,9 @@ export const ATTACK = [20,32,51,82,131];
 export const DEFENSE = [0,3,7,13,22];
 export const SELL = [15,40,110,300,800];
 export const STAGES = Object.freeze({
- village:{order:1,name:'버섯마을',recommended:0,drop:[.80,.18,.02,0,0],mobs:{snail:[40,5],mushroom:[65,8],slime:[90,10]},petNames:['아기버섯','새싹슬라임','도토리다람쥐','달빛사슴','황금버섯왕']},
- quarry:{order:2,name:'광산마을',recommended:1,drop:[.10,.70,.18,.02,0],mobs:{bat:[150,15],'crystal-crab':[220,19],golem:[300,24]},petNames:['광석두더지','꼬마박쥐','수정게','자수정골렘','별빛드래곤']},
- forest:{order:3,name:'이끼마을',recommended:2,drop:[0,.10,.70,.18,.02],mobs:{'moss-slime':[420,28],'forest-stump':[560,33],'moss-guardian':[720,39]},petNames:['이끼방울','잎새토끼','반딧불정령','고대숲사슴','세계수정령']},
+ village:{order:1,name:'버섯마을',recommended:0,drop:[.80,.18,.02,0,0],mobs:{snail:[40,5],mushroom:[65,8],slime:[90,10],'wild-stump':[120,12],'armored-mushroom':[180,16]},petNames:['아기버섯','새싹슬라임','도토리다람쥐','달빛사슴','황금버섯왕']},
+ quarry:{order:2,name:'광산마을',recommended:1,drop:[.10,.70,.18,.02,0],mobs:{bat:[150,15],'crystal-crab':[220,19],golem:[300,24],'ore-beetle':[380,27],'cave-sentinel':[540,33]},petNames:['광석두더지','꼬마박쥐','수정게','자수정골렘','별빛드래곤']},
+ forest:{order:3,name:'이끼마을',recommended:2,drop:[0,.10,.70,.18,.02],mobs:{'moss-slime':[420,28],'forest-stump':[560,33],'moss-guardian':[720,39],'thorn-mantis':[920,45],'ancient-treant':[1250,53]},petNames:['이끼방울','잎새토끼','반딧불정령','고대숲사슴','세계수정령']},
 });
 export const PET_RATES = [.65,.25,.08,.018,.002];
 export const PET_PRICES = {1:200,5:950,10:1800};
@@ -30,7 +30,8 @@ export function petSpec(id) {
  const [area,t]=id.split(':');const tier=Number(t);
  return Object.hasOwn(STAGES,area)&&String(tier)===t&&tierOK(tier)?{id,area,tier,name:STAGES[area].petNames[tier]}:null;
 }
-export const itemName = i => `${GRADES[i.tier]} ${ITEM_NAMES[i.kind]}`;
+export const itemName = i => i.kind==='gold'?`${i.amount.toLocaleString()} G`:`${GRADES[i.tier]} ${ITEM_NAMES[i.kind]}`;
+export const dropOK=d=>itemOK(d)||!!d&&d.kind==='gold'&&typeof d.id==='string'&&d.id.length>0&&d.id.length<=160&&Number.isSafeInteger(d.amount)&&d.amount>0&&d.amount<=20000;
 export function weighted(rates,rnd=Math.random){let n=rnd();for(let i=0;i<rates.length;i++){n-=rates[i];if(n<0)return i;}return rates.length-1;}
 export function rollEquipment(area,rnd=Math.random){
  const out=[];if(rnd()<.65)out.push({kind:['sword','bow','staff','claw'][Math.min(3,Math.floor(rnd()*4))],tier:weighted(stageOf(area).drop,rnd)});
@@ -53,7 +54,7 @@ export function cleanState(raw,job='warrior') {
  s.pet=s.pets[raw.pet]?raw.pet:null;
  for(const area of Object.keys(STAGES)) {const p=raw.pity?.[area];s.pity[area]=[nat(p?.[0],19),nat(p?.[1],79),nat(p?.[2],199)];s.kills[area]=nat(raw.kills?.[area]);}
  s.seen=Array.isArray(raw.seen)?raw.seen.filter(i=>typeof i==='string'&&i.length<=160).slice(-10000):[];
- s.pending=(Array.isArray(raw.pending)?raw.pending:[]).filter(d=>itemOK(d)&&Object.hasOwn(STAGES,d.area)&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&Math.abs(d.x)<1e5&&Math.abs(d.y)<1e5).slice(0,200).map(d=>({...d}));return s;
+ s.pending=(Array.isArray(raw.pending)?raw.pending:[]).filter(d=>dropOK(d)&&Object.hasOwn(STAGES,d.area)&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&Math.abs(d.x)<1e5&&Math.abs(d.y)<1e5).slice(0,200).map(d=>({...d}));return s;
 }
 export function loadout(s) {
  const weapon=activeWeapon(s),job=weaponJob(weapon?.kind);
@@ -84,15 +85,17 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
  else if(c.type==='loot') {
   if(typeof c.receipt!=='string'||c.receipt.length>150||!Object.hasOwn(STAGES,c.area))fail('잘못된 드롭 정보입니다.');
   if(s.seen.includes(c.receipt))return {state:s,result:{duplicate:true}};
-  if(!Array.isArray(c.items)||c.items.length>2||c.items.some(i=>!itemOK({...i,id:'check'})))fail('잘못된 장비입니다.');
-  if(s.pending.length+c.items.length>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
+  if(!Array.isArray(c.items)||c.items.length>8||c.items.some(i=>!itemOK({...i,id:'check'})))fail('잘못된 장비입니다.');
+  const gold=c.gold??0;if(!Number.isSafeInteger(gold)||gold<0||gold>20000)fail('잘못된 골드 보상입니다.');const piles=gold?Math.min(8,Math.max(1,Math.ceil(gold/120))):0;
+  if(s.pending.length+c.items.length+piles>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
   if(!Number.isFinite(c.x)||!Number.isFinite(c.y)||Math.abs(c.x)>1e5||Math.abs(c.y)>1e5)fail('잘못된 드롭 위치입니다.');
   s.seen.push(c.receipt);s.seen=s.seen.slice(-10000);s.kills[c.area]++;
-  c.items.forEach((i,n)=>s.pending.push({id:c.receipt+':'+n,kind:i.kind,tier:i.tier,area:c.area,x:c.x+n*24,y:c.y}));
+  c.items.forEach((i,n)=>s.pending.push({id:c.receipt+':'+n,kind:i.kind,tier:i.tier,area:c.area,x:c.x+(n-(c.items.length-1)/2)*38,y:c.y}));
+  for(let n=0;n<piles;n++)s.pending.push({id:c.receipt+':gold:'+n,kind:'gold',amount:Math.floor(gold/piles)+(n<gold%piles?1:0),area:c.area,x:c.x+(n-(piles-1)/2)*32,y:c.y});
  }
  else if(c.type==='collect') {
-  const d=s.pending.find(i=>i.id===c.id);if(!d)fail('이미 주운 장비입니다.');if(s.items.length>=200)fail('가방이 가득 찼습니다. 장비를 판매하거나 합성해주세요.');
-  s.pending=s.pending.filter(i=>i.id!==d.id);s.items.push({id:d.id,kind:d.kind,tier:d.tier});
+  const d=s.pending.find(i=>i.id===c.id);if(!d)fail('이미 주운 장비입니다.');if(d.kind!=='gold'&&s.items.length>=200)fail('가방이 가득 찼습니다. 장비를 판매하거나 합성해주세요.');
+  s.pending=s.pending.filter(i=>i.id!==d.id);if(d.kind==='gold')s.gold=Math.min(1e9,s.gold+d.amount);else s.items.push({id:d.id,kind:d.kind,tier:d.tier});
   const j=Object.keys(WEAPONS).find(j=>WEAPONS[j]===d.kind);if(j)s.highest[j]=Math.max(s.highest[j]||0,d.tier);result=d;
  }
  else if(c.type==='equip') {const i=s.items.find(i=>i.id===c.id);if(!i)fail('장비가 없습니다.');if(i.kind==='shield')s.shield=i.id;else{s.activeWeapon=i.id;s.equipped[weaponJob(i.kind)]=i.id;}}
@@ -153,7 +156,7 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
  s.revision++;return {state:s,result};
 }
 export function stageKinds(base,area){
- const kinds=new Map(base);for(const [kind,[hp,touchDamage]] of Object.entries(stageOf(area).mobs)) {
- const source=base.get(kind)||base.get(kind==='moss-slime'?'slime':'golem');if(source)kinds.set(kind,{...source,id:kind,hp,touchDamage,name:({'moss-slime':'이끼 슬라임','moss-guardian':'이끼 수호자'})[kind]||source.name,biome:area,...(kind.startsWith('moss-')?{sheet:null}: {})});
+ const kinds=new Map(base);const extra={'wild-stump':['golem','숲 그루터기',58,66],'armored-mushroom':['mushroom','철갑 버섯',68,70],'ore-beetle':['crystal-crab','광석 딱정벌레',68,52],'cave-sentinel':['golem','광산 파수꾼',84,98],'thorn-mantis':['golem','가시 사마귀',66,83],'ancient-treant':['golem','고대 나무정령',94,112]};for(const [kind,[hp,touchDamage]] of Object.entries(stageOf(area).mobs)) {
+ const source=base.get(extra[kind]?.[0]||kind)||base.get(kind==='moss-slime'?'slime':'golem');if(source)kinds.set(kind,{...source,id:kind,hp,touchDamage,name:({'moss-slime':'이끼 슬라임','moss-guardian':'이끼 수호자'})[kind]||source.name,biome:area,...(extra[kind]?{sheet:null,name:extra[kind][1],size:{w:extra[kind][2],h:extra[kind][3]},rewardRank:kind.includes('sentinel')||kind.includes('ancient')||kind.includes('armored')?3:2}:{}),...(kind.startsWith('moss-')?{sheet:null}: {})});
  }return kinds;
 }

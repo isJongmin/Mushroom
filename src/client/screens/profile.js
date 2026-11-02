@@ -1,6 +1,6 @@
 import {COSTUMES,drawCostume,costumeAvatar} from '../game/reward-costumes.js';
 import { readRewards, saveRewards } from '../rewards.js';
-import { GARDEN_LABEL } from '../game/garden.js';
+import { GARDEN_LABEL,BOSS_LABEL } from '../game/garden.js';
 import { drawAbilityEffect } from '../game/skill-visuals.js';
 // 프로필 화면: 닉네임 + 캐릭터 꾸미기 (docs/design/screens/profile.md v4, character-create.md v3 3·5장, style-guide 5.12~5.14)
 // - 서버와 통신하지 않는다. 저장 = localStorage `mushroom:profile` = { nickname, avatar(7키) } (ARCHITECTURE 결정 3).
@@ -132,10 +132,11 @@ export function mount(root, app, opts = {}) {
   const rewards=readRewards(app.profileKey);
   const titleBtn=h('button',{type:'button',class:'bk-btn',testid:'garden-title-toggle','aria-pressed':String(rewards.equipped),disabled:!rewards.unlocked},rewards.unlocked?(rewards.equipped?'칭호 착용 중':'칭호 착용'):'아직 잠겨 있어요');
   on(titleBtn,'click',()=>{rewards.equipped=!rewards.equipped;titleBtn.setAttribute('aria-pressed',String(rewards.equipped));setText(titleBtn,rewards.equipped?'칭호 착용 중':'칭호 착용');});
-  const rewardArea=h('section',{class:'reward-studio','aria-label':'모험 보상'},h('div',{},h('h3',{},GARDEN_LABEL),h('p',{},rewards.unlocked?`버섯밭 지키기 ${rewards.clears}회 성공 · 최고 내구도 ${rewards.bestHp}%`:'마을 중앙의 버섯밭 지키기에 성공하면 해금돼요.')),titleBtn);
+  const rewardArea=h('section',{class:'reward-studio','aria-label':'모험 보상'},h('div',{},h('h3',{},rewards.bossClears>0?BOSS_LABEL:GARDEN_LABEL),h('p',{},rewards.unlocked?`버섯왕 ${rewards.bossClears}회 처치 · 마을 방어 ${rewards.clears}회 성공`:'마을 중앙의 버섯밭 지키기에 성공하면 해금돼요.')),titleBtn);
   const costumeButtons=[];
   const costumeList=h('div',{class:'costume-list'});
   for(const costume of COSTUMES){
+    if(costume.id==='royal-guardian'&&!rewards.legacyRoyal)continue;
     const unlocked=costume.unlocked(rewards),cv=h('canvas',{width:'180',height:'220','aria-hidden':'true'});
     const c=cv.getContext('2d');drawCostume(c,costume.id,90,205,2,{back:true});drawCostume(c,costume.id,90,205,2);
     const btn=h('button',{type:'button',class:'bk-btn costume-card',testid:`costume-${costume.id}`,disabled:!unlocked,'aria-pressed':String(rewards.costume===costume.id)},cv,h('strong',{},costume.name),h('span',{},unlocked?'선택하여 착용 / 해제':'미해금'),h('small',{},costume.need));

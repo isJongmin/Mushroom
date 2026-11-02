@@ -4,18 +4,22 @@ export const normalizeMapId = (id) => AREA_IDS.includes(id) ? id : 'village';
 export const AREA_NAMES = Object.freeze({ village: '버섯마을', forest: '이끼마을', quarry: '광산마을' });
 export function areaMap(id, village) {
   id = normalizeMapId(id);
-  if (id === 'village') return { ...village, id, name: AREA_NAMES[id], spawns:(village?.spawns||[]).map((z,i)=>({...z,mobs:[['snail','mushroom','slime'][i%3]],max:Math.min(3,z.max||2)})) };
-  const platforms = [
-    {id:'west-bough',x1:470,x2:1040,y:650}, {id:'high-bough',x1:1280,x2:1800,y:490},
-    {id:'east-bough',x1:2050,x2:2500,y:640}, {id:'summit',x1:2740,x2:3140,y:450},
-  ];
-  const ropes = [{id:'west-rope',x:760,y1:650,y2:800},{id:'high-rope',x:1510,y1:490,y2:800},
-    {id:'east-rope',x:2250,y1:640,y2:800},{id:'summit-rope',x:2920,y1:450,y2:800}];
-  const monsters = id === 'forest' ? ['forest-stump','moss-slime','moss-guardian'] : ['crystal-crab','golem','bat'];
-  return {id,name:AREA_NAMES[id],layers:[],width:3500,height:900,groundY:800,spawn:{x:240,y:800},platforms,ropes,
-    spawns:[{id:'west-ground',platform:'ground',x1:420,x2:1450,mobs:monsters,max:4},
-      {id:'east-ground',platform:'ground',x1:1850,x2:3050,mobs:monsters,max:4},
-      ...platforms.map((p,i)=>({id:p.id+'-mobs',platform:p.id,x1:p.x1+35,x2:p.x2-35,mobs:[monsters[i%monsters.length]],max:2}))]};
+  if(id==='village'){
+   const edge=village.width||3840,extra=[{id:'outskirts-step',x1:edge+60,x2:edge+390,y:650},{id:'outskirts-canopy',x1:edge+460,x2:edge+850,y:475},{id:'outskirts-east',x1:edge+920,x2:edge+1200,y:630}];
+   return {...village,id,name:AREA_NAMES[id],artWidth:edge,width:edge+1380,platforms:[...(village.platforms||[]),...extra],ropes:[...(village.ropes||[]),...extra.map((p,i)=>({id:p.id+'-rope',x:(p.x1+p.x2)/2,y1:p.y,y2:800}))],
+    districts:[{x:1647,name:'버섯마을 광장'},{x:edge+210,name:'그루터기 산책길'},{x:edge+680,name:'철갑버섯 숲'}],
+    spawns:[...(village.spawns||[]).slice(0,18).map((z,i)=>({...z,mobs:[['snail','mushroom','slime'][i%3]],max:Math.min(3,z.max||2)})),{id:'outskirts-ground',platform:'ground',x1:edge+60,x2:edge+1250,mobs:['wild-stump','armored-mushroom'],max:4},...extra.map((p,i)=>({id:p.id+'-mobs',platform:p.id,x1:p.x1+30,x2:p.x2-30,mobs:[i===1?'armored-mushroom':'wild-stump'],max:2}))]};
+  }
+  const forest=id==='forest',width=forest?5400:4800;
+  const platforms=forest?[
+   {id:'root-step',x1:420,x2:950,y:665},{id:'west-canopy',x1:1050,x2:1530,y:505},{id:'ancient-bough',x1:1730,x2:2220,y:340},{id:'hollow-root',x1:2400,x2:2850,y:650},{id:'thorn-perch',x1:3050,x2:3540,y:480},{id:'treant-crown',x1:3750,x2:4200,y:300},{id:'east-root',x1:4450,x2:4930,y:635}
+  ]:[{id:'entry-rail',x1:440,x2:990,y:655},{id:'crystal-shelf',x1:1130,x2:1610,y:495},{id:'mine-lift',x1:1800,x2:2310,y:345},{id:'lower-rail',x1:2490,x2:2980,y:650},{id:'sentinel-post',x1:3200,x2:3690,y:475},{id:'deep-crystal',x1:3890,x2:4350,y:625}];
+  const ropes=platforms.map(p=>({id:p.id+'-rope',x:(p.x1+p.x2)/2,y1:p.y,y2:800}));
+  const monsters=forest?['moss-slime','forest-stump','moss-guardian','thorn-mantis','ancient-treant']:['bat','crystal-crab','golem','ore-beetle','cave-sentinel'];
+  return {id,name:AREA_NAMES[id],layers:[],width,height:1000,groundY:800,spawn:{x:240,y:800},platforms,ropes,
+   districts:forest?[{x:650,name:'이끼 뿌리길'},{x:2000,name:'고목의 가지'},{x:4000,name:'고대 정령의 숲'}]:[{x:650,name:'광산 입구'},{x:2100,name:'수정 채굴장'},{x:3700,name:'파수꾼의 갱도'}],
+   spawns:[{id:'entry-ground',platform:'ground',x1:400,x2:1450,mobs:monsters.slice(0,2),max:4},{id:'middle-ground',platform:'ground',x1:1700,x2:3000,mobs:monsters.slice(1,4),max:4},{id:'elite-ground',platform:'ground',x1:3250,x2:width-350,mobs:monsters.slice(3),max:4},...platforms.map((p,i)=>({id:p.id+'-mobs',platform:p.id,x1:p.x1+35,x2:p.x2-35,mobs:[monsters[Math.min(4,Math.floor(i*.8))]],max:2}))]};
+
 }
 export function areaPortals(map) {
   const i=AREA_IDS.indexOf(normalizeMapId(map.id));
@@ -133,4 +137,12 @@ export function drawMinimap(ctx,map,players,mobs,me,view,width=204,height=88) {
   for(const m of mobs)if(m.s!=='die'&&m.hp>0)dot(m.x,m.y-12,'#ed9291',2);
   for(const p of players)if(p.user_id!==me?.user_id&&sameArea(p,me))dot(p.x,p.y-24,'#eee9cf',3);
   if(me)dot(me.x,me.y-24,'#ffe578',5);
+}
+
+export function drawRegionLandmarks(ctx,map,camX,camY,k){
+ ctx.save();for(const d of map.districts||[]){const x=(d.x-camX)*k,y=(map.groundY-camY)*k;if(x<-180*k||x>ctx.canvas.width+180*k)continue;ctx.fillStyle='#6d5845';ctx.fillRect(x-3*k,y-62*k,6*k,62*k);ctx.fillStyle='#e3d5b3';ctx.fillRect(x-65*k,y-65*k,130*k,25*k);ctx.fillStyle='#5b6d57';ctx.fillRect(x-65*k,y-65*k,130*k,3*k);ctx.font=`600 ${10*k}px system-ui`;ctx.textAlign='center';ctx.fillStyle='#3a5145';ctx.fillText(d.name,x,y-49*k);}
+ ctx.restore();
+}
+export function drawVillageOutskirts(ctx,map,camX,camY,k,W,H){
+ if(map.id!=='village'||!map.artWidth||camX+W/k<map.artWidth)return;ctx.save();ctx.beginPath();ctx.rect(Math.max(0,(map.artWidth-camX)*k),0,W,H);ctx.clip();drawBiomeMap(ctx,{...map,id:'forest',platforms:map.platforms.filter(p=>p.x1>=map.artWidth),ropes:map.ropes.filter(r=>r.x>=map.artWidth)},camX,camY,k,W,H);ctx.restore();
 }

@@ -1,6 +1,6 @@
 import {cleanLoadout,itemOK,STAGES} from '../game/progression.js';
 import {cleanCostume} from '../game/reward-costumes.js';
-import { cleanGarden, GARDEN_TITLE } from '../game/garden.js';
+import { cleanGarden, GARDEN_TITLE,BOSS_TITLE } from '../game/garden.js';
 import { normalizeMapId } from '../game/areas.js';
 import { normalizeJob } from '../game/jobs.js';
 // 두 어댑터와 화면이 공유하는 형식 검사. 서버(supabase/migrations/20261015000000_rooms.sql)와 같은 규칙.
@@ -76,7 +76,7 @@ export function cleanPresenceState(s) {
     mapId: normalizeMapId(s.mapId),
     nickname: typeof s.nickname === 'string' ? s.nickname.slice(0, 32) : '',
     costume: cleanCostume(s.costume),
-    title: s.title === GARDEN_TITLE ? GARDEN_TITLE : null,
+    title: [GARDEN_TITLE,BOSS_TITLE].includes(s.title)?s.title:null,
     avatar: s.avatar && typeof s.avatar === 'object' ? s.avatar : null,
     x: isNum(s.x) ? s.x : null,
     y: isNum(s.y) ? s.y : null,
@@ -174,8 +174,9 @@ function cleanGameEventPayload(event, p) {
     case 'loot-ack':
       return UID_OK(p.user_id)&&typeof p.receipt==='string'&&p.receipt.length<=150?{user_id:p.user_id,receipt:p.receipt}:null;
     case 'loot':
-      if(!UID_OK(p.host)||!UID_OK(p.owner)||typeof p.receipt!=='string'||p.receipt.length>150||!Object.hasOwn(STAGES,p.area)||!numIn(p.x,-COORD,COORD)||!numIn(p.y,-COORD,COORD)||!Array.isArray(p.items)||p.items.length>2||p.items.some(i=>!itemOK({...i,id:'check'})))return null;
-      return {host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
+      if(!UID_OK(p.host)||!UID_OK(p.owner)||typeof p.receipt!=='string'||p.receipt.length>150||!Object.hasOwn(STAGES,p.area)||!numIn(p.x,-COORD,COORD)||!numIn(p.y,-COORD,COORD)||!Array.isArray(p.items)||p.items.length>8||p.items.some(i=>!itemOK({...i,id:'check'})))return null;
+      if(p.gold!=null&&(!Number.isSafeInteger(p.gold)||p.gold<0||p.gold>20000))return null;
+      return {host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,gold:p.gold??0,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
     case 'boss-start':
     case 'garden-start':
       return UID_OK(p.user_id) ? { user_id:p.user_id } : null;

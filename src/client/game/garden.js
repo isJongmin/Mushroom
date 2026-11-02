@@ -2,6 +2,8 @@ import {cleanBoss,advanceBoss,bossMaxHp} from './garden-boss.js';
 // Host-owned, serializable cooperative encounter. No timers or browser dependencies.
 export const GARDEN_TITLE = 'sprout-guardian';
 export const GARDEN_LABEL = '새싹 수호자';
+export const BOSS_TITLE='mushroom-village-guardian';
+export const BOSS_LABEL='버섯마을의 수호자';
 export const gardenPoint = world => ({ x: world.spawn?.x ?? world.width / 2, y: world.groundY });
 export function gardenZones(zones, world, area) {
   if (area !== 'village') return zones;

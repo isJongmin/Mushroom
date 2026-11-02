@@ -80,7 +80,7 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
     },
     /** (사이클 10) 로프 오르기: ↑/W/터치 점프를 누르고 있음 (Space 제외) */
     upHeld() {
-      for (const [id, a] of acts) if (a === 'jump' && id !== 'key:Space') return true;
+      for (const [id, a] of acts) if ((a === 'jump' && id !== 'key:Space')||a==='climb-up') return true;
       return false;
     },
     /** (사이클 10) 점프를 방금(bufferMs 안) 새로 눌렀음 — 로프에서 뛰어내리기 */

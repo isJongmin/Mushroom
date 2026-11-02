@@ -1,7 +1,7 @@
 export const COSTUMES=Object.freeze([
  {id:'sprout-cape',name:'새싹 정찰대',need:'버섯밭 방어 1회 성공',unlocked:r=>r.clears>=1,color:'#7aaa61',trim:'#d6e9a4'},
  {id:'bloom-cape',name:'꽃잎 기사단',need:'버섯밭 방어 3회 성공',unlocked:r=>r.clears>=3,color:'#b56d91',trim:'#f4cfcd'},
- {id:'royal-guardian',name:'버섯 왕관과 망토',need:'버섯왕 처치 1회 성공 · 기존 모자 대신 착용',unlocked:r=>r.bossClears>=1,color:'#476d86',trim:'#e8bf63'}
+ {id:'royal-guardian',name:'버섯 왕관과 망토',need:'기존 획득 코스튬 · 신규 지급 종료',unlocked:r=>r.legacyRoyal===true,color:'#476d86',trim:'#e8bf63'}
 ]);
 export const cleanCostume=id=>COSTUMES.some(c=>c.id===id)?id:null;
 export const costumeAvatar=(avatar,id)=>id==='royal-guardian'?{...avatar,hat:'none'}:avatar;

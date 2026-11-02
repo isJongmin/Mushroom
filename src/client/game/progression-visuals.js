@@ -51,8 +51,10 @@ export function drawPet(c,id,x,y,k=1,now=0,level=0,motion={}) {
  r('#233744',-7,-18,4,5);r('#233744',5,-18,4,5);r('#fff',-6,-18,2,2);r('#fff',6,-18,2,2);r('#e5a5a5',-10,-10,4,2);r('#e5a5a5',8,-10,4,2);r('#52635a',-1,-10,4,2);
  if(level){r('#f9df89',-2,-30,4,4);}c.restore();
 }
-export function drawEquipmentDrop(c,d,camX,camY,k,now) {
- const x=(d.x-camX)*k,y=(d.y-camY-15+Math.sin(now/300+d.x)*3)*k,color=GRADE_COLORS[d.tier];
+export function drawEquipmentDrop(c,d,camX,camY,k,now,age=Infinity) {
+ const hop=Number.isFinite(age)?Math.sin(Math.min(1,Math.max(0,age/650))*Math.PI)*28:0;
+ if(d.kind==='gold'){const x=(d.x-camX)*k,y=(d.y-camY-12-hop+Math.sin(now/240+d.x)*3)*k;c.save();c.fillStyle='#80502b';c.fillRect(x-9*k,y-8*k,18*k,13*k);c.fillStyle='#e9ba54';c.fillRect(x-8*k,y-10*k,16*k,12*k);c.fillStyle='#fff0a2';c.fillRect(x-5*k,y-8*k,4*k,7*k);c.fillStyle='#b8833e';c.fillRect(x+3*k,y-7*k,2*k,6*k);c.restore();return;}
+ const x=(d.x-camX)*k,y=(d.y-camY-15-hop+Math.sin(now/300+d.x)*3)*k,color=GRADE_COLORS[d.tier];
  c.save();c.fillStyle=color+'28';c.fillRect(x-20*k,y-30*k,40*k,49*k);c.fillStyle=color;c.fillRect(x-18*k,y+17*k,36*k,2*k);drawItem(c,d.kind,x,y,.65*k,color);c.restore();
 }
 export const petNpcPoint = world => ({x:Math.min(world.maxX-90,(world.spawn?.x??300)+145),y:world.groundY});

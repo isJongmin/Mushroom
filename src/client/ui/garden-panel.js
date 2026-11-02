@@ -1,6 +1,6 @@
 import {bossPatternText} from '../game/garden-boss.js';
 import { h,setText } from '../dom.js';
-import { gardenActive,GARDEN_LABEL } from '../game/garden.js';
+import { gardenActive,GARDEN_LABEL,BOSS_LABEL } from '../game/garden.js';
 export function createGardenPanel({onStart,onBoss,onEquip,onReplay,onFocus}) {
   const ac=new AbortController(),on=(el,fn)=>el.addEventListener('click',fn,{signal:ac.signal});
   const label=h('strong',{},'버섯마을 지키기'),detail=h('p',{},'3번의 습격을 막고 전용 칭호를 얻으세요.');
@@ -36,8 +36,8 @@ export function createGardenPanel({onStart,onBoss,onEquip,onReplay,onFocus}) {
         const mine=s.members.find(m=>m.uid===uid),total=s.members.reduce((n,m)=>n+m.damage,0),share=total?Math.round((mine?.damage??0)/total*100):0;
         setText(resultDesc,`${success?'모두의 공격이 작은 마을을 지켰습니다.':'적이 밭에 닿기 전에 길목에서 막아보세요.'} 내 기여: ${mine?.damage??0} 유효 피해 (${share}%) · ${mine?.kills??0} 처치 · 보스 ${mine?.bossDamage??0} 피해`);
         stats.replaceChildren(...(s.mode==='boss'?[['전투 결과',success?'처치 성공':'재도전'],['내 보스 피해',`${mine?.bossDamage??0}`],['진행 시간',`${Math.round((s.ended-s.started)/1000)}초`]]:[['진행 단계',`${s.wave}/3차`],['함께 처치',`${s.kills}마리`],['남은 내구도',`${s.hp}%`]]).map(([k,v])=>h('div',{},h('strong',{},v),h('span',{},k))));
-        setText(reward,eligible?`${s.mode==='boss'?'버섯 왕관과 망토':GARDEN_LABEL+' · 코스튬 진행도'} 해금 · ${rewardSaved?'이 브라우저에 저장됐어요.':'저장 공간이 없어 이번 접속에서만 착용할 수 있어요.'}`:success?'이벤트 적을 공격한 참여자에게 칭호가 지급돼요.':'보상은 방어 성공 시 받을 수 있어요.');
-        equip.hidden=!eligible;equip.disabled=false;setText(equip,s.mode==='boss'?'버섯 왕관·망토 바로 착용':'칭호 바로 착용');
+        setText(reward,eligible&&s.mode==='boss'?`${BOSS_LABEL} 칭호 획득 · 떨어진 골드와 장비를 주워보세요.`:eligible?`${s.mode==='boss'?BOSS_LABEL+' 칭호 · 골드와 장비 드롭':GARDEN_LABEL+' · 코스튬 진행도'} 해금 · ${rewardSaved?'이 브라우저에 저장됐어요.':'저장 공간이 없어 이번 접속에서만 착용할 수 있어요.'}`:success?'이벤트 적을 공격한 참여자에게 칭호가 지급돼요.':'보상은 방어 성공 시 받을 수 있어요.');
+        equip.hidden=!eligible;equip.disabled=false;setText(equip,s.mode==='boss'?'수호자 칭호 착용':'칭호 바로 착용');
         // Results are non-modal so movement/chat remain available; no focus theft during combat.
       }
     },destroy(){ac.abort();result.remove();el.remove();}};

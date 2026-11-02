@@ -558,6 +558,18 @@ export function drawMobFallback(ctx, kind, spec, u, t, s) {
   const sq = s === 'hit' ? 0.12 : Math.sin(t * 8) * 0.04;
   if (spec.behavior === 'hop' && s === 'move') ctx.translate(0, -Math.abs(Math.sin(t * 5)) * 14 * u); // 대체 그림만 통통
   ctx.scale(1 + sq, 1 - sq);
+  if(['wild-stump','armored-mushroom','ore-beetle','cave-sentinel','thorn-mantis','ancient-treant'].includes(kind)){
+   const r=(color,x,y,ww,hh)=>{ctx.fillStyle=color;ctx.fillRect(x*u,y*u,ww*u,hh*u);},wood=kind.includes('stump')||kind.includes('treant'),stone=kind==='cave-sentinel',beetle=kind==='ore-beetle',mantis=kind==='thorn-mantis';
+   const base=wood?'#876148':stone?'#747d9c':beetle?'#568fa0':mantis?'#759957':'#a87755',light=wood?'#b38d63':stone?'#a4b1cb':beetle?'#a0d7de':mantis?'#aacc77':'#d9b06b';
+   r('#2d4144',-w*.43,-h*.82,w*.86,h*.77);r(base,-w*.4,-h*.84,w*.8,h*.77);r(light,-w*.36,-h*.8,w*.17,h*.65);r('#243b4533',w*.22,-h*.7,w*.17,h*.57);
+   for(const d of [-1,1]){r(base,d<0?-w*.43:w*.18,-h*.12,w*.25,h*.12);r('#384749',d<0?-w*.43:w*.18,-h*.04,w*.27,h*.06);}
+   if(wood){for(let n=0;n<4;n++)r('#553f32',-w*.25+n*w*.17,-h*.64+(n%2)*8,3,h*.45);r('#d0b287',-w*.38,-h*.85,w*.76,8);for(const d of [-1,1])r(base,d<0?-w*.58:w*.39,-h*.62,w*.2,h*.3);if(kind==='ancient-treant'){r('#497354',-w*.55,-h,w*1.1,h*.22);r('#85a975',-w*.4,-h*1.05,w*.8,h*.11);r('#c8cf8c',-7,-h*.68,14,17);}}
+   else if(stone){r('#525f7b',-w*.58,-h*.7,w*.22,h*.4);r('#525f7b',w*.36,-h*.7,w*.22,h*.4);r('#c2a7dd',-8,-h*.65,16,19);r('#e2daee',-3,-h*.6,6,9);for(let n=0;n<3;n++)r('#b0bdd3',-w*.3+n*w*.25,-h-6,12,16);}
+   else if(beetle){for(const d of [-1,1])for(let n=0;n<3;n++)r('#385d72',d<0?-w*.61:w*.38,-h*.45+n*8,w*.23,4);r('#a6d7df',-w*.27,-h*.9,w*.54,8);r('#36576e',-2,-h*.8,4,h*.5);for(const d of [-1,1])r(light,d*14-3,-h-8,6,16);}
+   else if(mantis){for(const d of [-1,1]){r('#577a46',d<0?-w*.65:w*.4,-h*.68,w*.23,h*.38);r('#d8dfad',d<0?-w*.65:w*.5,-h*.42,w*.13,h*.28);r('#5c7847',d*13-2,-h-12,4,17);}r(light,-w*.3,-h,w*.6,h*.22);}
+   else{r('#6b6b60',-w*.5,-h*.91,w,h*.3);r('#b7b4a0',-w*.49,-h*.94,w*.98,7);for(let n=0;n<3;n++)r('#e5c67b',-w*.32+n*w*.3,-h*.88,7,7);r('#8d7759',-w*.32,-h*.6,w*.64,4);}
+   r('#20343a',-12,-h*.48,6,7);r('#20343a',6,-h*.48,6,7);r('#e8f0c4',-11,-h*.48,2,3);r('#e8f0c4',7,-h*.48,2,3);return;
+  }
   if(kind==='moss-slime'||kind==='moss-guardian') {
     const r=(color,x,y,ww,hh)=>{ctx.fillStyle=color;ctx.fillRect(x*u,y*u,ww*u,hh*u);};
     r('#2c4d43',-w/2,-h+5,w,h-5);r('#699768',-w/2+3,-h+2,w-6,h-5);r('#a5bf7c',-w/2+3,-h+2,w-6,7);r('#416c58',w/2-9,-h+9,6,h-14);

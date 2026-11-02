@@ -1,9 +1,13 @@
+import {drawVillageOutskirts,drawRegionLandmarks} from '../game/areas.js';
+import {bindJoystick} from '../ui/joystick.js';
+import {BOSS_TITLE,BOSS_LABEL} from '../game/garden.js';
+import {rollMonsterLoot} from '../game/monster-rewards.js';
 import {touchLayout,combatReserve} from '../ui/game-layout.js';
 import {sortSceneActors,createCompanionFollower} from '../game/scene-order.js';
 import {SKILL_KEYS,SKILL_LABELS,drawEquippedGear,drawEquipBurst} from '../game/appearance-motion.js';
 import {createProgressionStore} from '../progression-store.js';
 import {createProgressionPanel} from '../ui/progression-panel.js';
-import {GRADES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,rollEquipment,itemName,petSpec,activeJob} from '../game/progression.js';
+import {GRADES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,itemName,petSpec,activeJob} from '../game/progression.js';
 import {drawEquipmentDrop,drawPet,petNpcPoint,drawPetMerchant,drawItem} from '../game/progression-visuals.js';
 import {questNpcPoint,drawQuestNpc,NPC_AVATAR} from '../game/quest-npc.js';
 import {BOSS_KIND,bossPoint,bossPose,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
@@ -111,7 +115,7 @@ export function mount(root, app, opts = {}) {
   let npcAvatar = null;
   let petNpcAvatar = null;
   let baseMobKinds = null;
-  const lootContributors = new Map(), lootOutbox = new Map();
+  const lootContributors = new Map(), lootOutbox = new Map(),dropBorn=new Map();
   let lootAt=0, pickupAt=0, collecting=false, lastGrowthKey="";
   let growthErrorAt=0;
   const companion=createCompanionFollower();
@@ -321,6 +325,7 @@ export function mount(root, app, opts = {}) {
     sendBtn);
 
   const moveDirections=h('div',{class:'mobile-move-directions'}),movePad=h('div',{class:'mobile-move-pad',testid:'mobile-move-pad'},moveDirections),actionPad=h('div',{class:'mobile-action-pad',testid:'mobile-action-pad'});
+  const stickKnob=h('span',{class:'joystick-knob','aria-hidden':'true'}),stickPad=h('div',{class:'movement-joystick',testid:'movement-joystick',tabindex:'0','aria-label':'이동 조이스틱: 좌우로 드래그해 이동, 위로 밧줄, 아래로 엎드리기'},h('span',{class:'joystick-axis','aria-hidden':'true'}),stickKnob);movePad.prepend(stickPad);
   const combatDock=h('div',{class:'mobile-combat-dock',testid:'mobile-combat-dock'},movePad,actionPad);
   const chatToggle=h('button',{type:'button',class:'bk-btn bk-btn--sm mobile-chat-toggle',testid:'mobile-chat-toggle','aria-expanded':'false'},'채팅');
   const col = h('main', { class: 'scr-game scr-room' }, stage,combatDock, touchRow, chatRow);
@@ -931,14 +936,14 @@ export function mount(root, app, opts = {}) {
     if(!rewardMemory.unlocked)return;
     const latestRewards=readRewards(app.profileKey);
     if(latestRewards.unlocked)rewardMemory=latestRewards;
-    rewardMemory.equipped=true;if(mode==='boss'&&rewardMemory.bossClears>0){rewardMemory.costume='royal-guardian';me.costume=rewardMemory.costume;}gardenRewardSaved=saveRewards(app.profileKey,rewardMemory);
-    me.title=GARDEN_TITLE;link?.updateSelf?.({title:me.title,costume:me.costume}).catch(()=>{});
+    rewardMemory.equipped=true;gardenRewardSaved=saveRewards(app.profileKey,rewardMemory);
+    me.title=rewardMemory.bossClears>0?BOSS_TITLE:GARDEN_TITLE;link?.updateSelf?.({title:me.title,costume:me.costume}).catch(()=>{});
   }
   function paintGardenPanel(now) {
     if(!me||now-lastGardenPaint<100)return;lastGardenPaint=now;
     const s=garden.snapshot(),eligible=gardenEligible(s,me.user_id);
     if(eligible&&!grantedRuns.has(s.id)) {
-      grantedRuns.add(s.id);if(grantedRuns.size>64)grantedRuns.delete(grantedRuns.values().next().value);const grant=grantGarden(app.profileKey,s.id,s.hp,s.mode);rewardMemory=grant.rewards;gardenRewardSaved=grant.saved;
+      grantedRuns.add(s.id);if(grantedRuns.size>64)grantedRuns.delete(grantedRuns.values().next().value);const grant=grantGarden(app.profileKey,s.id,s.hp,s.mode);rewardMemory=grant.rewards;gardenRewardSaved=grant.saved;if(s.mode==='boss'){me.title=BOSS_TITLE;link?.updateSelf?.({title:me.title}).catch(()=>{});}
     }
     const point=questNpcPoint(world),near=!me.dead&&Math.abs(me.x-point.x)<=230&&Math.abs(me.y-point.y)<=100;
     const zi=zones.find(z=>z.event)?.i;
@@ -966,7 +971,7 @@ export function mount(root, app, opts = {}) {
   function configureArea(nextMap) {
     map = nextMap;
     if(mobDefs&&baseMobKinds){mobDefs.kinds=stageKinds(baseMobKinds,currentArea);mobSprites?.clear();mobSprites=createMobSprites(mobDefs.kinds);}
-    lootContributors.clear();companion.reset();companionPose=null;
+    lootContributors.clear();dropBorn.clear();companion.reset();companionPose=null;
     platforms = map.platforms || []; ropes = map.ropes || [];
     world = worldFromMap(map);
     Object.assign(BODY_OPT, { platforms, ropes, groundY: world.groundY, minX: world.minX, maxX: world.maxX });
@@ -1023,9 +1028,9 @@ export function mount(root, app, opts = {}) {
   async function collectEquipment(now){
     if(!progress||!me||me.dead||collecting||now-pickupAt<180||document.body.classList.contains('has-modal'))return;
     pickupAt=now;const range=myStats().pickup;
-    const d=progress.state.pending.find(d=>d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
+    const d=progress.state.pending.find(d=>(d.kind==='gold'||progress.state.items.length<200)&&now-(dropBorn.get(d.id)??now)>350&&d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
     if(!d)return;collecting=true;
-    try{const item=await progress.run({type:'collect',id:d.id});if(alive){chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
+    try{const item=await progress.run({type:'collect',id:d.id});dropBorn.delete(d.id);if(alive){chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
     catch(e){if(alive&&now-growthErrorAt>5000){growthErrorAt=now;chatLog.addSystem(e.message);}}finally{collecting=false;}
   }
   function sendLoot(now){
@@ -1042,10 +1047,10 @@ export function mount(root, app, opts = {}) {
     showHits(r.dmgs, r.mob.x, r.mob.y - kindsH(r.mob.kind), 'hit', now);
     if(uid){let hits=lootContributors.get(r.mob.id);if(!hits){hits=new Map();lootContributors.set(r.mob.id,hits);}hits.set(uid,now);}
     if (r.killed) {
-      const hits=lootContributors.get(r.mob.id)||new Map();
-      for(const [owner,at] of hits){const pl=players.get(owner);if(now-at>30000||!pl||pl.dead||!sameArea(pl,me)||Math.abs(pl.x-r.mob.x)>1400)continue;
+      const hits=lootContributors.get(r.mob.id)||new Map();if(r.mob.kind===BOSS_KIND)for(const m of garden.snapshot()?.members||[])if(m.bossDamage>0)hits.set(m.uid,now);
+      for(const [owner,at] of hits){const pl=players.get(owner);if(now-at>30000||!pl||(pl.dead&&r.mob.kind!==BOSS_KIND)||!sameArea(pl,me)||Math.abs(pl.x-r.mob.x)>1400)continue;
         const receipt=`${roomId}:${currentArea}:${r.mob.id}`;
-        const packet={receipt,owner,area:currentArea,x:Math.round(r.mob.x),y:Math.round(groundAt(r.mob.x,r.mob.y-1)),items:rollEquipment(currentArea),mapId:currentArea};
+        const packet={receipt,owner,area:currentArea,x:Math.round(r.mob.x),y:Math.round(groundAt(r.mob.x,r.mob.y-1)),...rollMonsterLoot(currentArea,r.mob.kind),mapId:currentArea};
         lootOutbox.set(receipt+'|'+owner,{packet,last:0,at:now});
       }
       lootContributors.delete(r.mob.id);
@@ -1500,10 +1505,11 @@ export function mount(root, app, opts = {}) {
     if (currentArea === 'village') drawMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     if(layout.mobile){const edge=Math.round((world.bottomY-cy)*k);if(edge>3&&edge<canvas.height)ctx.drawImage(canvas,0,edge-3,canvas.width,2,0,edge-1,canvas.width,canvas.height-edge+1);}
+    drawVillageOutskirts(ctx,map,camX,cy,k,canvas.width,canvas.height);drawRegionLandmarks(ctx,map,camX,cy,k);
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
     if(progress){
-      for(const d of progress.state.pending)if(d.area===currentArea)drawEquipmentDrop(ctx,d,camX,cy,k,now);
+      for(const d of progress.state.pending)if(d.area===currentArea){if(!dropBorn.has(d.id))dropBorn.set(d.id,now);drawEquipmentDrop(ctx,d,camX,cy,k,now,prefersReducedMotion()?Infinity:now-dropBorn.get(d.id));}
       const np=petNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy-112)*k/dpr;
       petNpc.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;
       if(!petNpc.hidden){petNpc.style.left=`${nx}px`;petNpc.style.top=`${ny}px`;}
@@ -1599,7 +1605,7 @@ export function mount(root, app, opts = {}) {
     const u = P / 2; // CSS px / 월드
     for (const [p, sx, pyD] of visible) {
       drawLabel(ctx, p.nickname, sx * u, pyD / dpr, p.isSelf, cssW);
-      if(p.title===GARDEN_TITLE) drawGardenTitle(ctx,GARDEN_LABEL,sx*u,pyD/dpr-avatarR.headTop(costumeAvatar(p.avatar,p.costume))*u-29);
+      if([GARDEN_TITLE,BOSS_TITLE].includes(p.title)) drawGardenTitle(ctx,p.title===BOSS_TITLE?BOSS_LABEL:GARDEN_LABEL,sx*u,pyD/dpr-avatarR.headTop(costumeAvatar(p.avatar,p.costume))*u-29);
     }
     // (사이클 9) HP 바: 머리(모자) 맨 위 바로 위 1px (말풍선 꼬리 끝은 그 위라 위치 그대로). 유령은 없음
     for (const [p, sx, pyD] of visible) {
@@ -1824,6 +1830,9 @@ export function mount(root, app, opts = {}) {
     on(btn, 'contextmenu', (e) => e.preventDefault());
   }
 
+  const joystick=bindJoystick(stickPad,stickKnob,{input,on,enabled:()=>connection==='connected'&&!me?.dead&&!document.body.classList.contains('has-modal')});
+  on(window,'blur',()=>joystick.reset());on(document,'visibilitychange',()=>{if(document.hidden)joystick.reset();});
+
   on(bannerBtn, 'click', async () => {
     const action = bannerAction;
     bannerBtn.disabled = true;
@@ -2036,7 +2045,7 @@ export function mount(root, app, opts = {}) {
     mobSprites?.clear();
     earlyHp.clear();
     if (delModal) { const m = delModal; delModal = null; m.close({ restoreFocus: false }); }
-    progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();
+    progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
     gardenPanel.destroy(); garden.clear();
     chatLog.destroy();
     link = null;

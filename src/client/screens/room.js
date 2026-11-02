@@ -1253,11 +1253,12 @@ export function mount(root, app, opts = {}) {
   const NO_INPUT = { dir: 0, jump: false, prone: false, superKind: null };
 
   function update(dt, now) {
+    joystick.check();
     if (me) {
       const near = connection === 'connected' && now >= portalReadyAt ? nearbyPortal(map, me) : null;
       portalBtn.hidden = !near;
       if (near) setText(portalBtn, progress&&stageUnlocked(progress.state,job.id,near.to)?`${AREA_NAMES[near.to]} 이동 ↑`:`${AREA_NAMES[near.to]} · ${GRADES[stageOf(near.to).recommended]} 주무기 필요`);
-      if (near && input.upHeld()) enterPortal(now);
+      if (near && input.upHeld() && !document.body.classList.contains('has-modal')) enterPortal(now);
       // 내 캐릭터: 연결 중일 때만 입력을 받는다. 연결이 끊겨도 공중이면 중력으로 착지까지 진행한다.
       let inp = NO_INPUT;
       if (connection === 'connected' && !document.body.classList.contains('has-modal')) {
@@ -1830,7 +1831,7 @@ export function mount(root, app, opts = {}) {
     on(btn, 'contextmenu', (e) => e.preventDefault());
   }
 
-  const joystick=bindJoystick(stickPad,stickKnob,{input,on,enabled:()=>connection==='connected'&&!me?.dead&&!document.body.classList.contains('has-modal')});
+  const joystick=bindJoystick(stickPad,stickKnob,{input,on,enabled:()=>!!me&&connection==='connected'&&!me.dead&&!document.body.classList.contains('has-modal')});
   on(window,'blur',()=>joystick.reset());on(document,'visibilitychange',()=>{if(document.hidden)joystick.reset();});
 
   on(bannerBtn, 'click', async () => {

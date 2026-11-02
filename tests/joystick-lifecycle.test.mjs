@@ -1,0 +1,16 @@
+import assert from 'node:assert/strict';
+import {bindJoystick,stickVector} from '../src/client/ui/joystick.js';
+import {createMoveInput} from '../src/client/game/input.js';
+const handlers=new Map(),captured=new Set(),input=createMoveInput();let enabled=true;
+const el={getBoundingClientRect:()=>({left:0,top:0,width:134,height:134}),classList:{add(){},remove(){}},setPointerCapture:id=>captured.add(id),hasPointerCapture:id=>captured.has(id),releasePointerCapture:id=>captured.delete(id)};
+const knob={style:{}},stick=bindJoystick(el,knob,{input,enabled:()=>enabled,on:(_,name,fn)=>handlers.set(name,fn)});
+const event=(id,x,y,button=0)=>({pointerId:id,clientX:x,clientY:y,button,preventDefault(){}});
+handlers.get('pointerdown')(event(1,110,67));assert.equal(input.direction(),1);
+handlers.get('pointerdown')(event(2,10,67));assert.equal(input.direction(),1,'second finger cannot take over');
+handlers.get('pointermove')(event(1,-100,67));assert.equal(input.direction(),-1,'drag outside remains captured');
+input.pressAction('attack-thumb','attack',performance.now());enabled=false;stick.check();assert.equal(input.direction(),0);assert.equal(captured.size,0);assert.equal(input.wantsAttack(performance.now()),true);
+enabled=true;handlers.get('pointerdown')(event(3,84,12));assert.equal(input.upHeld(),true);assert.equal(input.direction(),0,'rope input tolerates horizontal thumb drift');assert.equal(input.wantsJump(0,100),false);
+handlers.get('pointercancel')(event(3,84,12));assert.equal(input.upHeld(),false);assert.equal(knob.style.transform,'');
+handlers.get('pointerdown')(event(4,110,67,2));assert.equal(input.direction(),0);
+assert.equal(stickVector(45,-20).dir,1);assert.equal(stickVector(20,-45).dir,0);
+console.log('PASS pointer capture, second thumb isolation, cancellation, disabled-state reset and vertical drift');

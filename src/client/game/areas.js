@@ -76,6 +76,32 @@ export function drawBiomeMap(ctx,map,camX,camY,k,W,H) {
       rect('#e1fcf2',x+57,y-7,4,18);
     }
   }
+  // Background landmarks stay behind combatants and clear of the rope/portal hit areas.
+  for(let x=Math.floor((camX-400)/680)*680;x<camX+W/k+400;x+=680){
+    if(map.id==='quarry'){
+      rect('#202b43',x+100,615,245,185);
+      for(const xx of [x+88,x+333]){rect('#403b40',xx,598,18,202);rect('#89745d',xx+3,604,6,196);for(let y=625;y<790;y+=45)rect('#b29a76',xx+1,y,16,5);}
+      rect('#453d43',x+74,589,290,24);rect('#b09a77',x+80,589,278,6);
+      poly('#65574b',[[x+107,613],[x+145,650],[x+150,642],[x+120,613]]);
+      poly('#65574b',[[x+324,613],[x+285,650],[x+279,642],[x+311,613]]);
+      rect('#4e5666',x+126,772,190,6);rect('#b0b4ac',x+126,772,190,2);
+      for(let xx=x+130;xx<x+310;xx+=31)rect('#766554',xx,777,15,6);
+      const lampX=x+211;
+      rect('#cda66c22',lampX-37,620,74,92);rect('#e7ba6822',lampX-24,636,48,58);
+      rect('#6d655d',lampX-2,611,4,29);rect('#353b4c',lampX-10,637,20,27);rect('#ffd48a',lampX-6,643,12,14);rect('#fff1c1',lampX-3,643,5,10);
+      rect('#343b4d',x+381,757,62,32);rect('#788f9f',x+385,761,54,21);rect('#b0c8cb',x+385,757,54,5);
+      for(const xx of [x+393,x+428]){rect('#222e40',xx-6,787,12,12);rect('#9c9988',xx-2,790,4,5);}
+      poly('#79c4ca',[[x+396,756],[x+399,739],[x+407,733],[x+417,747],[x+424,738],[x+435,757]]);
+    }else{
+      // Ruined arch and roots make the deeper woods readable without foreground occlusion.
+      for(const xx of [x+130,x+290]){rect('#687b69',xx,684,29,116);rect('#a0ac87',xx,684,8,110);for(let y=708;y<790;y+=28)rect('#4a6256',xx+1,y,27,3);rect('#477b54',xx-5,680,40,9);}
+      rect('#607b69',x+126,675,197,18);rect('#b4bf95',x+130,675,189,5);
+      rect('#517b55',x+144,693,7,36);rect('#84a66e',x+148,714,10,5);rect('#84a66e',x+143,702,8,4);
+      rect('#536c59',x+208,690,31,37);rect('#a8bd88',x+217,699,13,16);rect('#dae1b2',x+222,702,4,10);
+      for(let n=0;n<4;n++){const xx=x+390+n*26;rect('#5c503d',xx,790-n*4,38,10+n*4);rect('#927c56',xx,788-n*4,30,4);rect('#6e9b62',xx+4,784-n*4,20,5);}
+      rect('#eddbb5',x+423,770,5,20);rect('#aa6570',x+411,763,29,8);rect('#d89898',x+416,758,19,7);rect('#f8e3c4',x+420,760,5,3);
+    }
+  }
   rect(p.soil,0,800,map.width,200);rect(p.leaf,0,800,map.width,14);rect(p.edge,0,800,map.width,5);
   for(let x=Math.floor(camX/38)*38;x<camX+W/k+38;x+=38) {
     rect(p.bark,x,827+(Math.sin(x)*.5+.5)*22,15,6);

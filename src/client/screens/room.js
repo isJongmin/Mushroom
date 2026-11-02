@@ -1,3 +1,4 @@
+import {touchLayout,combatReserve} from '../ui/game-layout.js';
 import {sortSceneActors,createCompanionFollower} from '../game/scene-order.js';
 import {SKILL_KEYS,SKILL_LABELS,drawEquippedGear,drawEquipBurst} from '../game/appearance-motion.js';
 import {createProgressionStore} from '../progression-store.js';
@@ -222,7 +223,7 @@ export function mount(root, app, opts = {}) {
   const myStats=()=>combatStats(myLoadout());
   const progressPanel=progress?createProgressionPanel({main:root,store:progress,job:job.id,getArea:()=>currentArea,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true}),canDraw:()=>{const p=petNpcPoint(world);return !!me&&!me.dead&&connection==='connected'&&Math.abs(me.x-p.x)<230&&Math.abs(me.y-p.y)<100;}}):null;
   const growthText=h('span',{});
-  const bagBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'equipment-bag'},'가방 · 펫');
+  const bagBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'equipment-bag'},'가방');
   on(bagBtn,'click',()=>{input.clear();if(progressPanel)progressPanel.open();else chatLog.addSystem(progressError);});
   const growthHud=h('div',{class:'progression-hud',testid:'progression-hud'},growthText,bagBtn);
   function syncProgress(){
@@ -323,8 +324,25 @@ export function mount(root, app, opts = {}) {
   const combatDock=h('div',{class:'mobile-combat-dock',testid:'mobile-combat-dock'},movePad,actionPad);
   const chatToggle=h('button',{type:'button',class:'bk-btn bk-btn--sm mobile-chat-toggle',testid:'mobile-chat-toggle','aria-expanded':'false'},'채팅');
   const col = h('main', { class: 'scr-game scr-room' }, stage,combatDock, touchRow, chatRow);
+  const chatClose=h('button',{type:'button',class:'bk-btn rpg-chat-close',testid:'chat-close','aria-label':'채팅 닫기'},'닫기');chatRow.append(chatClose);
+  on(chatClose,'click',()=>{col.classList.remove('chat-open');chatToggle.setAttribute('aria-expanded','false');chatInput.blur();canvas.focus({preventScroll:true});computeLayout();});
   hudL.append(chatToggle);
   on(chatToggle,'click',()=>{const open=!col.classList.contains('chat-open');col.classList.toggle('chat-open',open);chatToggle.setAttribute('aria-expanded',String(open));if(open)chatInput.focus();else{chatInput.blur();canvas.focus({preventScroll:true});}computeLayout();});
+  const portraitCanvas=h('canvas',{width:84,height:84,'aria-hidden':'true'});
+  const hpFill=h('i'),hpValue=h('span',{class:'rpg-hp-value'}),hpTrack=h('div',{class:'rpg-hp-track',role:'progressbar','aria-label':'체력','aria-valuemin':'0'},hpFill);
+  const playerStatus=h('section',{class:'rpg-player-status',testid:'player-status','aria-label':'캐릭터 상태'},h('div',{class:'rpg-emblem','aria-hidden':'true'},portraitCanvas),h('div',{class:'rpg-player-info'},h('strong',{},myNick),hpTrack,hpValue));
+  const menuToggle=h('button',{type:'button',class:'rpg-menu-toggle',testid:'game-menu-toggle','aria-label':'게임 메뉴 열기','aria-expanded':'false','aria-controls':'room-game-menu'},h('span',{'aria-hidden':'true'},'☰'),h('small',{},'메뉴'));
+  const menuHelp=h('p',{class:'rpg-menu-help'},'이동 ← → · 점프 Space · 공격 J · 스킬 K / L / ;');
+  const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},chatToggle,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
+  function closeGameMenu(focus=false){menu.hidden=true;menuToggle.setAttribute('aria-expanded','false');menuToggle.setAttribute('aria-label','게임 메뉴 열기');if(focus)menuToggle.focus();}
+  on(menuToggle,'click',()=>{const open=menu.hidden;menu.hidden=!open;menuToggle.setAttribute('aria-expanded',String(open));menuToggle.setAttribute('aria-label',open?'게임 메뉴 닫기':'게임 메뉴 열기');if(open)input.clear();});
+  on(menu,'click',e=>{if(e.target.closest('button'))closeGameMenu();});
+  on(col,'pointerdown',e=>{if(!menu.hidden&&!menu.contains(e.target)&&!menuToggle.contains(e.target))closeGameMenu();});
+  on(document,'keydown',e=>{if(e.key==='Escape'&&!menu.hidden&&!document.body.classList.contains('has-modal')){closeGameMenu(true);e.stopPropagation();}});
+  hud.querySelector('.hud-r').append(menuToggle);
+  stage.append(playerStatus,menu);
+  let lastHpKey='',lastPortrait='';
+  function syncPlayerStatus(){if(!me)return;const avatarKey=JSON.stringify(me.avatar);if(avatarR&&lastPortrait!==avatarKey){const c=portraitCanvas.getContext('2d');c.clearRect(0,0,84,84);if(avatarR.draw(c,me.avatar,42,128,1.3,0,false))lastPortrait=avatarKey;}const key=me.hp+':'+me.max;if(key===lastHpKey)return;lastHpKey=key;const ratio=Math.max(0,Math.min(1,me.hp/me.max));hpFill.style.width=ratio*100+'%';setText(hpValue,`${Math.ceil(me.hp)} / ${me.max} HP`);hpTrack.setAttribute('aria-valuemax',String(me.max));hpTrack.setAttribute('aria-valuenow',String(Math.ceil(me.hp)));playerStatus.classList.toggle('is-low',ratio<.3);}
   root.append(col);
 
   // --- 레이아웃 -----------------------------------------------------------
@@ -333,7 +351,8 @@ export function mount(root, app, opts = {}) {
     const vw = document.documentElement.clientWidth || window.innerWidth;
     const vv = window.visualViewport;
     const vh = Math.floor(vv && vv.height ? Math.min(vv.height, window.innerHeight || vv.height) : window.innerHeight);
-    const mobile = vw < MOBILE_MAX_WIDTH;
+    const mobile = touchLayout(vw,vh,window.matchMedia('(pointer: coarse)').matches);
+    col.style.height=mobile?`${vh}px`:'';
     let P;
     let cssW;
     let cssH;
@@ -341,7 +360,7 @@ export function mount(root, app, opts = {}) {
     if (mobile) {
       P = 2;
       cssW = Math.floor(vw / P) * P;
-      cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor((vh - 164 - (col.classList.contains('chat-open')?60:0)) / P) * P);
+      cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor(vh / P) * P);
     } else {
       P = pixelScale(vw, vh);
       cssW = Math.min(Math.floor(vw / P) * P, (DESKTOP_MAX_VIEW_W * P) / 2); // 1280 (P=2), 1920 (P=3)
@@ -350,6 +369,7 @@ export function mount(root, app, opts = {}) {
     cssW = Math.max(P, cssW);
     let viewH = (cssH * 2) / P;
     if (viewH < WORLD.minViewH) { viewH = WORLD.minViewH; cssH = (viewH * P) / 2; }
+    if(mobile)viewH=Math.max(180,viewH-combatReserve(vw,vh,col.classList.contains('chat-open')));
     const viewW = (cssW * 2) / P;
     const dpr = Math.min(3, window.devicePixelRatio || 1);
     const k = (P / 2) * dpr;
@@ -1467,6 +1487,7 @@ export function mount(root, app, opts = {}) {
   //   → 큐브 파티클 → 라벨/말풍선(캐릭터를 따라감, CSS px)
   function render(now) {
     if (!me || !avatarR) return;
+    syncPlayerStatus();
     if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
     const { cssW, viewW, viewH, P, dpr, k } = layout;
     if (camY === null) camY = camYTarget(camRef, viewH, 0, world.bottomY);
@@ -1478,6 +1499,7 @@ export function mount(root, app, opts = {}) {
     const ctx = canvas.getContext('2d');
     if (currentArea === 'village') drawMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
+    if(layout.mobile){const edge=Math.round((world.bottomY-cy)*k);if(edge>3&&edge<canvas.height)ctx.drawImage(canvas,0,edge-3,canvas.width,2,0,edge-1,canvas.width,canvas.height-edge+1);}
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
     if(progress){

@@ -18,7 +18,7 @@ export function formatTime(iso, now = new Date()) {
 const badgeText = (n) => (n > 99 ? '99+' : String(n));
 
 function readLogOpen() {
-  try { return sessionStorage.getItem(SS_LOG_OPEN) !== '0'; } catch { return true; }
+  try { return sessionStorage.getItem(SS_LOG_OPEN) === '1'; } catch { return false; }
 }
 function writeLogOpen(open) {
   try { sessionStorage.setItem(SS_LOG_OPEN, open ? '1' : '0'); } catch { /* 무시 */ }
@@ -96,6 +96,7 @@ export function createChatLog(o) {
       el.classList.toggle('is-collapsed', !desktopOpen);
       setText(headBtn, desktopOpen ? '접기' : '펼치기');
       headBtn.setAttribute('aria-expanded', String(desktopOpen));
+      toggle.setAttribute('aria-expanded',String(desktopOpen));
     }
     renderBadges();
     renderNew();
@@ -121,8 +122,8 @@ export function createChatLog(o) {
     }
   });
   on(toggle, 'click', () => {
-    mobileOpen = !mobileOpen;
-    if (mobileOpen) { expanded(); headBtn.focus({ preventScroll: true }); } else applyMode();
+    if(mobile){mobileOpen=!mobileOpen;if(mobileOpen){expanded();headBtn.focus({preventScroll:true});}else applyMode();}
+    else{desktopOpen=!desktopOpen;writeLogOpen(desktopOpen);if(desktopOpen)expanded();else applyMode();}
   });
   on(newBtn, 'click', () => { newCount = 0; renderNew(); toBottom(); });
   on(list, 'scroll', () => { if (newCount && atBottom()) { newCount = 0; renderNew(); } });

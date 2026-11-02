@@ -1,11 +1,12 @@
 import {h} from '../dom.js';
 import {openModal} from './modal.js';
-import {GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL,activeWeapon,activeJob,wornItem} from '../game/progression.js';
+import {fusionSummary,GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL,activeWeapon,activeJob,wornItem} from '../game/progression.js';
 import {drawItem,drawPet} from '../game/progression-visuals.js';
 import {createPetReveal} from './pet-reveal.js';
 
 export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,canDraw=()=>true}) {
  let modal=null,screen='bag',tab='equipment',bulk=false,selected=new Set(),detail=null;
+ let filter='all';
  let busy=false,notice='',confirm=null,reveal=null,revealTimer=null,renderAc=null,destroyed=false;
  const body=h('div',{class:'growth-panel'});
  const reduced=()=>globalThis.matchMedia?.('(prefers-reduced-motion: reduce)').matches;
@@ -26,6 +27,7 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
   try {
    const result=await store.run(command);
    if(command.type==='draw'){reveal=createPetReveal(result);confirm=null;}
+   else if(command.type==='fuse-all'){resetSelection();notice=`${result.count}회 합성 완료 · 장비 ${result.before}개 → ${result.after}개`;}
    else if(command.type==='fuse'){detail=result.id;confirm=null;notice=`${itemName(result)} 합성 성공`;}
    else if(['sell','sell-many','pet-sell'].includes(command.type)){resetSelection();notice=`${result.toLocaleString()} G를 받았습니다.`;}
    onChange();
@@ -39,7 +41,7 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
  }
  function paint(){
   const focus=body.contains(document.activeElement)?document.activeElement?.getAttribute('data-focus'):null;
-  const scroll=modal?.section.scrollTop;
+  const scroll=modal?.section.scrollTop,gridScroll=body.querySelector('.gp-grid')?.scrollTop||0;
   renderAc?.abort();renderAc=new AbortController();body.replaceChildren();
   const s=store.state,stats=combatStats(loadout(s,job)),area=getArea();
   body.append(h('header',{class:'gp-header'},h('div',{},h('p',{class:'gp-eyebrow'},screen==='shop'?'LULU’S PET ATELIER':'ADVENTURER’S COLLECTION'),h('h2',{id:'growth-title'},screen==='shop'?`${stageOf(area).name} 펫 상점`:'모험가의 가방')),button('닫기',close,{disabled:busy,testid:'growth-close',kind:'gp-quiet'})),
@@ -50,18 +52,29 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
   }
   if(notice)body.append(h('p',{class:'gp-notice',role:'status',testid:'growth-notice'},notice));
   if(screen==='shop')paintShop(s,area);else if(tab==='equipment')paintEquipment(s);else paintPets(s);
+  const currentGrid=body.querySelector('.gp-grid');if(currentGrid)currentGrid.scrollTop=gridScroll;
   if(focus){const target=[...body.querySelectorAll('[data-focus]')].find(e=>e.getAttribute('data-focus')===focus&&!e.disabled);target?.focus({preventScroll:true});}
   if(scroll!=null&&modal?.open)modal.section.scrollTop=scroll;
  }
  function paintEquipment(s){
   selected=new Set([...selected].filter(id=>s.items.some(i=>i.id===id)&&!worn(s,id)));
   const items=[...s.items].sort((a,b)=>Number(worn(s,b.id))-Number(worn(s,a.id))||b.tier-a.tier||a.kind.localeCompare(b.kind));
-  body.append(h('div',{class:'gp-tools'},h('span',{class:'gp-muted'},bulk?'판매할 장비를 선택하세요. 착용 장비는 보호됩니다.':'무기를 바꾸면 공격과 스킬도 바뀝니다.'),button(bulk?'선택 종료':'선택 판매',()=>{bulk=!bulk;resetSelection();paint();},{disabled:busy,testid:'gear-bulk-toggle'})));
+  if(bulk)body.append(h('div',{class:'gp-tools'},h('span',{class:'gp-muted'},bulk?'판매할 장비를 선택하세요. 착용 장비는 보호됩니다.':'무기를 바꾸면 공격과 스킬도 바뀝니다.'),button(bulk?'선택 종료':'선택 판매',()=>{bulk=!bulk;resetSelection();paint();},{disabled:busy,testid:'gear-bulk-toggle'})));
   if(bulk)body.append(h('div',{class:'gp-selection-tools'},button('전체 선택',()=>{selected=new Set(items.filter(i=>!worn(s,i.id)).map(i=>i.id));confirm=null;paint();},{disabled:busy,testid:'gear-select-all'}),button('다른 무기만',()=>{selected=new Set(items.filter(i=>!worn(s,i.id)&&i.kind!=='shield'&&i.kind!==activeWeapon(s)?.kind).map(i=>i.id));confirm=null;paint();},{disabled:busy,testid:'gear-select-other'}),button('선택 해제',()=>{selected.clear();confirm=null;paint();},{disabled:busy||!selected.size})));
   const grid=h('div',{class:'gp-grid',role:'group','aria-label':bulk?'판매할 장비 선택':'보유 장비'});
-  for(const i of items){
+  const summary=fusionSummary(s.items);
+  if(!bulk){
+   body.append(h('div',{class:'gp-fusion-toolbar'},h('span',{class:'gp-muted'},`장비 ${s.items.length} / 200`),h('div',{class:'gp-actions'},button('선택 판매',()=>{bulk=true;resetSelection();paint();},{disabled:busy,testid:'gear-bulk-toggle'}),button(`일괄 합성${summary.count?' · '+summary.count+'회':''}`,()=>{confirm={type:'fuse-all'};paint();},{disabled:busy||!summary.count,kind:'gp-primary',testid:'gear-fuse-all'}))));
+   if(confirm?.type==='fuse-all')body.append(h('section',{class:'gp-confirm',role:'region','aria-label':'일괄 합성 확인'},h('strong',{},`${summary.count}회 합성 · ${summary.before}개 → ${summary.after}개`),h('p',{},'모든 종류의 같은 등급 장비 2개를 합성합니다. 새로 만든 장비도 연속 합성하며, 착용 장비는 결과 장비로 자동 교체됩니다. 최고 등급은 유지됩니다.'),h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button('모두 합성',()=>run({type:'fuse-all'}),{disabled:busy,kind:'gp-primary',testid:'gear-fuse-all-confirm'}))));
+  }
+  const filters=h('div',{class:'gp-filters','aria-label':'장비 종류'});
+  for(const [kind,label]of [['all','전체'],...Object.entries(ITEM_NAMES)]){const b=button(label,()=>{filter=kind;detail=null;paint();},{disabled:busy,focus:'filter-'+kind});b.setAttribute('aria-pressed',String(filter===kind));filters.append(b);}body.append(filters);
+  const groups=new Map();
+  for(const i of items){const key=i.kind+':'+i.tier;if(!groups.has(key))groups.set(key,[]);groups.get(key).push(i);}
+  const visible=(bulk?items:[...groups.values()].map(g=>g[0])).filter(i=>filter==='all'||i.kind===filter);
+  for(const i of visible){
    const isWorn=worn(s,i.id),active=bulk?selected.has(i.id):detail===i.id;
-   const content=[h('span',{class:'gp-tile-top'},badge(GRADES[i.tier],i.tier),isWorn?h('span',{class:'gp-equipped'},'착용'):null),itemIcon(i),h('strong',{},ITEM_NAMES[i.kind]),h('small',{},i.kind==='shield'?`방어 +${[4,9,16,26,40][i.tier]}`:`공격 ${ATTACK[i.tier]}`)];
+   const content=[h('span',{class:'gp-tile-top'},badge(GRADES[i.tier],i.tier),isWorn?h('span',{class:'gp-equipped'},'착용'):null),itemIcon(i),h('strong',{},ITEM_NAMES[i.kind]+(!bulk&&groups.get(i.kind+':'+i.tier).length>1?' ×'+groups.get(i.kind+':'+i.tier).length:'')),h('small',{},i.kind==='shield'?`방어 +${[4,9,16,26,40][i.tier]}`:`공격 ${ATTACK[i.tier]}`)];
    if(bulk){
     const check=h('input',{type:'checkbox',checked:active,disabled:busy||isWorn,'aria-label':`${itemName(i)} 판매 선택`,'data-focus':'gear-'+i.id});
     check.addEventListener('change',()=>{check.checked?selected.add(i.id):selected.delete(i.id);confirm=null;paint();},{signal:renderAc.signal});
@@ -70,20 +83,21 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
     const tile=button('',()=>{detail=i.id;confirm=null;paint();},{disabled:busy,focus:'gear-'+i.id,kind:`gp-tile ${active?'is-selected':''}`});tile.setAttribute('aria-label',`${itemName(i)} 상세${isWorn?', 착용 중':''}`);tile.setAttribute('aria-pressed',String(active));tile.style.setProperty('--rarity',GRADE_COLORS[i.tier]);tile.append(...content);grid.append(tile);
    }
   }
+  if(!visible.length)grid.append(h('p',{class:'gp-empty'},'이 종류의 장비가 없습니다.'));
   body.append(grid);
   if(bulk){
    const total=s.items.filter(i=>selected.has(i.id)).reduce((sum,i)=>sum+SELL[i.tier],0);
    body.append(h('footer',{class:'gp-action-bar'},h('div',{},h('strong',{},`${selected.size}개 선택`),h('span',{class:'gp-muted'},`판매 금액 ${total.toLocaleString()} G`)),confirm?.type==='bulk'?h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button(`${selected.size}개 판매 확정`,()=>run({type:'sell-many',ids:[...selected]}),{disabled:busy||!selected.size,kind:'gp-danger',testid:'gear-sell-confirm'})):button('선택 장비 판매',()=>{confirm={type:'bulk'};paint();},{disabled:busy||!selected.size,kind:'gp-primary',testid:'gear-sell-selected'})));
    return;
   }
-  const i=s.items.find(i=>i.id===detail);if(!i)return;
+  const i=s.items.find(i=>i.id===detail);if(!i){if(!bulk)body.append(h('p',{class:'gp-muted gp-hint'},'장비를 누르면 능력치와 착용·합성 메뉴가 열립니다.'));return;}
   const partner=i.tier<4?s.items.find(x=>x.id!==i.id&&x.kind===i.kind&&x.tier===i.tier&&!worn(s,x.id))||s.items.find(x=>x.id!==i.id&&x.kind===i.kind&&x.tier===i.tier):null;
   const current=s.items.find(x=>x.id===(i.kind==='shield'?s.shield:s.activeWeapon));
   const value=i.kind==='shield'?[4,9,16,26,40][i.tier]:ATTACK[i.tier],prior=current?(i.kind==='shield'?[4,9,16,26,40][current.tier]:ATTACK[current.tier]):i.kind==='shield'?0:20;
   const d=h('section',{class:'gp-detail','aria-label':'선택 장비 상세'},h('div',{},h('strong',{},itemName(i)),h('p',{class:'gp-muted'},usable(i)?`현재 장비 대비 ${value-prior>=0?'+':''}${value-prior} · ${i.kind==='shield'?'방어력':'공격력'} ${value}${i.kind==='shield'?'':` / 방어력 +${DEFENSE[i.tier]}`}`:'무기를 착용하면 해당 무기의 공격과 스킬로 바뀝니다.')));
   if(confirm?.type==='fuse')d.append(h('p',{class:'gp-confirm'},`${itemName(i)} 2개를 사용해 ${GRADES[i.tier+1]} ${ITEM_NAMES[i.kind]} 1개로 합성합니다. 성공률 100%. 착용 재료는 결과 장비로 교체됩니다.`),h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button('합성 확정',()=>run({type:'fuse',a:i.id,b:confirm.partner}),{disabled:busy,kind:'gp-primary',testid:'growth-fuse'})));
-  else d.append(h('div',{class:'gp-actions'},button(worn(s,i.id)?'착용 중':'착용',()=>run({type:'equip',id:i.id}),{disabled:busy||!usable(i)||worn(s,i.id),kind:'gp-primary'}),button(i.tier===4?'최고 등급':'합성',()=>{confirm={type:'fuse',partner:partner.id};paint();},{disabled:busy||!partner,testid:'gear-fuse-start'}),button('판매',()=>{bulk=true;selected=new Set([i.id]);confirm=null;paint();},{disabled:busy||worn(s,i.id)})),!partner&&i.tier<4?h('small',{class:'gp-muted'},'합성에는 같은 종류·등급의 장비가 하나 더 필요해요.'):null);
-  body.append(d);
+  else d.append(h('div',{},h('div',{class:'gp-actions'},button(worn(s,i.id)?'착용 중':'착용',()=>run({type:'equip',id:i.id}),{disabled:busy||!usable(i)||worn(s,i.id),kind:'gp-primary'}),button(i.tier===4?'최고 등급':'합성',()=>{confirm={type:'fuse',partner:partner.id};paint();},{disabled:busy||!partner,testid:'gear-fuse-start'}),button('1개 판매',()=>{bulk=true;selected=new Set([i.id]);confirm=null;paint();},{disabled:busy||worn(s,i.id)})),!partner&&i.tier<4?h('small',{class:'gp-muted'},'합성에는 같은 종류·등급의 장비가 하나 더 필요해요.'):null));
+  body.insertBefore(d,grid);
  }
  function paintPets(s){
   body.append(h('p',{class:'gp-muted'},'펫을 눌러 동행·강화·판매하세요. 한 마리만 동행할 수 있어요.'));
@@ -95,7 +109,7 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
   const p=s.pets[detail],pet=petSpec(detail);if(!p||!pet)return;
   const d=h('section',{class:'gp-detail','aria-label':'선택 펫 상세'},h('strong',{},`${pet.name} +${p.level}`),h('p',{class:'gp-muted'},`공격력 +${(PET_ATK[pet.tier]*(1+p.level*.1)*100).toFixed(1)}% · HP +${Math.round(PET_HP[pet.tier]*(1+p.level*.1))} · 자동 줍기`));
   if(confirm?.type==='pet-sell')d.append(h('p',{class:'gp-confirm'},`판매할 펫: ${pet.name} · ${PET_SELL[pet.tier].toLocaleString()} G. 펫은 사라지며 강화에 쓴 정수는 반환되지 않습니다.`),h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button('펫 판매 확정',()=>run({type:'pet-sell',id:detail}),{disabled:busy,kind:'gp-danger',testid:'pet-sell-confirm'})));
-  else d.append(h('div',{class:'gp-actions'},button(s.pet===detail?'동행 해제':'동행하기',()=>run(s.pet===detail?{type:'pet-off'}:{type:'pet-equip',id:detail}),{disabled:busy,kind:'gp-primary',testid:'pet-equip-toggle'}),button(p.level>=5?'최대 강화':`강화 · 정수 ${PET_UPGRADE[p.level]}`,()=>run({type:'pet-upgrade',id:detail}),{disabled:busy||p.level>=5||s.essence<PET_UPGRADE[p.level]}),button(`판매 · ${PET_SELL[pet.tier].toLocaleString()} G`,()=>{confirm={type:'pet-sell'};paint();},{disabled:busy||s.pet===detail,testid:'pet-sell-start'})),s.pet===detail?h('small',{class:'gp-muted'},'판매하려면 먼저 동행을 해제해주세요.'):null);
+  else d.append(h('div',{},h('div',{class:'gp-actions'},button(s.pet===detail?'동행 해제':'동행하기',()=>run(s.pet===detail?{type:'pet-off'}:{type:'pet-equip',id:detail}),{disabled:busy,kind:'gp-primary',testid:'pet-equip-toggle'}),button(p.level>=5?'최대 강화':`강화 · 정수 ${PET_UPGRADE[p.level]}`,()=>run({type:'pet-upgrade',id:detail}),{disabled:busy||p.level>=5||s.essence<PET_UPGRADE[p.level]}),button(`판매 · ${PET_SELL[pet.tier].toLocaleString()} G`,()=>{confirm={type:'pet-sell'};paint();},{disabled:busy||s.pet===detail,testid:'pet-sell-start'})),s.pet===detail?h('small',{class:'gp-muted'},'판매하려면 먼저 동행을 해제해주세요.'):null));
   body.append(d);
  }
  function paintShop(s,area){
@@ -122,7 +136,7 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
  }
  function close(){if(busy)return;cancelReveal();renderAc?.abort();modal?.close();modal=null;reveal=null;onFocus();}
  return {
-  open(mode='equipment'){if(busy||destroyed)return;cancelReveal();screen=mode==='shop'?'shop':'bag';tab=mode==='pets'?'pets':'equipment';bulk=false;resetSelection();notice='';reveal=null;paint();modal=openModal({main,titleId:'growth-title',testid:'growth-panel',children:[body],onCancel:close,canEscape:()=>!busy,fallbackFocus:()=>main.querySelector('canvas')});modal.section.classList.add('growth-modal');},
+  open(mode='equipment'){if(busy||destroyed)return;cancelReveal();screen=mode==='shop'?'shop':'bag';tab=mode==='pets'?'pets':'equipment';bulk=false;filter='all';resetSelection();notice='';reveal=null;paint();modal=openModal({main,titleId:'growth-title',testid:'growth-panel',children:[body],onCancel:close,canEscape:()=>!busy,fallbackFocus:()=>main.querySelector('canvas')});modal.section.classList.add('growth-modal');},
   refresh(){if(modal?.open&&!busy&&!reveal)paint();},
   destroy(){destroyed=true;cancelReveal();renderAc?.abort();modal?.close({restoreFocus:false});modal=null;},
  };

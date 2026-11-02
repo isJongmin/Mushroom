@@ -67,6 +67,16 @@ export function combatStats(raw) {
 }
 export const skillUnlocked = (l,slot) => slot<=1 || cleanLoadout(l).highest>=slot-1;
 export const stageUnlocked = (s,job,area) => Math.max(0,...Object.values(s.highest))>=stageOf(area).recommended;
+// Include newly forged items until no pair remains; max grade is never consumed.
+export function fusionSummary(items) {
+ const counts=new Map();let count=0;
+ for(const i of items){const key=i.kind+':'+i.tier;counts.set(key,(counts.get(key)||0)+1);}
+ for(const kind of Object.keys(ITEM_NAMES))for(let tier=0;tier<4;tier++){
+  const key=kind+':'+tier,pairs=Math.floor((counts.get(key)||0)/2);count+=pairs;
+  counts.set(key,(counts.get(key)||0)%2);const next=kind+':'+(tier+1);counts.set(next,(counts.get(next)||0)+pairs);
+ }
+ return {count,before:items.length,after:items.length-count};
+}
 export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=()=>globalThis.crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')}={}) {
  const s=cleanState(original,job),c=command;let result=null;
  const fail=m=>{throw new Error(m);};
@@ -104,6 +114,18 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
  else if(c.type==='sell') {
  const i=s.items.find(i=>i.id===c.id);if(!i)fail('이미 판매된 장비입니다.');if(wornItem(s,i.id))fail('착용 중인 장비는 판매할 수 없습니다.');
  s.items=s.items.filter(x=>x.id!==i.id);s.gold=Math.min(1e9,s.gold+SELL[i.tier]);result=SELL[i.tier];
+ }
+ else if(c.type==='fuse-all') {
+ const summary=fusionSummary(s.items);if(!summary.count)fail('합성 가능한 장비가 없습니다.');
+ // One store transaction commits the entire chain, including equipped replacements.
+ for(const kind of Object.keys(ITEM_NAMES))for(let tier=0;tier<4;tier++){
+  let pair;
+  while((pair=s.items.filter(i=>i.kind===kind&&i.tier===tier)).length>=2){
+   pair.sort((a,b)=>Number(wornItem(s,b.id))-Number(wornItem(s,a.id)));
+   const next=applyCommand(s,{type:'fuse',a:pair[0].id,b:pair[1].id},{job,rnd,id});Object.assign(s,next.state);
+  }
+ }
+ result=summary;
  }
  else if(c.type==='fuse') {
  const a=s.items.find(i=>i.id===c.a),b=s.items.find(i=>i.id===c.b);if(!a||!b||a.id===b.id||a.kind!==b.kind||a.tier!==b.tier||a.tier>=4)fail('같은 종류·등급의 장비 2개가 필요합니다.');

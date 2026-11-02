@@ -1,0 +1,17 @@
+import assert from 'node:assert/strict';
+import {starterState,applyCommand,fusionSummary,loadout} from '../src/client/game/progression.js';
+let serial=0;const options={id:()=>`forged-${++serial}`};
+const s=starterState();s.items=[];
+for(const kind of ['sword','bow','staff','claw','shield'])for(let n=0;n<16;n++)s.items.push({id:kind+n,kind,tier:0});
+s.activeWeapon='bow0';s.equipped.archer='bow0';s.shield='shield0';s.pets={'village:2':{level:2}};s.pet='village:2';s.gold=777;
+const before=structuredClone(s),summary=fusionSummary(s.items);assert.deepEqual(summary,{count:75,before:80,after:5});
+const fused=applyCommand(s,{type:'fuse-all'},options);assert.deepEqual(s,before,'input remains unchanged');assert.deepEqual(fused.result,summary);assert.equal(fused.state.items.length,5);assert.ok(fused.state.items.every(i=>i.tier===4));assert.equal(loadout(fused.state).weapon,'bow');assert.equal(loadout(fused.state).tier,4);assert.equal(loadout(fused.state).shield,4);assert.equal(fused.state.highest.archer,4);assert.equal(fused.state.pet,s.pet);assert.equal(fused.state.gold,777);assert.throws(()=>applyCommand(fused.state,{type:'fuse-all'},options),/합성 가능한/);
+const mixed=starterState();mixed.items=[{id:'a',kind:'bow',tier:0},{id:'b',kind:'bow',tier:0},{id:'c',kind:'bow',tier:1},{id:'d',kind:'bow',tier:4},{id:'e',kind:'bow',tier:4},{id:'f',kind:'staff',tier:0}];mixed.activeWeapon='a';
+const chain=applyCommand(mixed,{type:'fuse-all'},options);assert.equal(chain.result.count,2);assert.equal(chain.state.items.filter(i=>i.kind==='bow'&&i.tier===4).length,2);assert.equal(chain.state.items.find(i=>i.id===chain.state.activeWeapon).tier,2);assert.equal(fusionSummary(chain.state.items).count,0);
+let attempts=0;assert.throws(()=>applyCommand(s,{type:'fuse-all'},{id:()=>{if(++attempts===3)throw Error('storage simulation');return 'temp'+attempts;}}));assert.deepEqual(s,before,'failure cannot partially consume caller state');
+console.log('PASS recursive bulk fusion, exact preview, equipped weapon/shield replacement, mixed grades, max-grade preservation and atomic failure');
+const {createProgressionStore}=await import('../src/client/progression-store.js');
+const saved=new Map([['fusion:equipment-v1',JSON.stringify(s)]]);const storage={getItem:k=>saved.get(k),setItem:(k,v)=>saved.set(k,v)};let queue=Promise.resolve();const locks={request:(_,fn)=>{const result=queue.then(fn);queue=result.catch(()=>{});return result;}};
+const a=createProgressionStore('fusion',{storage,locks,indexedDB:null}),b=createProgressionStore('fusion',{storage,locks,indexedDB:null});
+const concurrent=await Promise.allSettled([a.run({type:'fuse-all'}),b.run({type:'sell-many',ids:['sword0','sword1']})]);assert.equal(concurrent[0].status,'fulfilled');assert.equal(concurrent[1].status,'rejected');const final=JSON.parse(saved.get(a.key));assert.equal(final.items.length,5);assert.equal(final.gold,777);
+console.log('PASS concurrent fusion/sale serialize without duplicate materials or partial currency changes');

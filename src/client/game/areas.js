@@ -7,7 +7,7 @@ export function areaMap(id, village) {
   if(id==='village'){
    const edge=village.width||3840,extra=[{id:'outskirts-step',x1:edge+60,x2:edge+390,y:650},{id:'outskirts-canopy',x1:edge+460,x2:edge+850,y:590},{id:'outskirts-east',x1:edge+920,x2:edge+1200,y:630}];
    return {...village,id,name:AREA_NAMES[id],artWidth:edge,width:edge+1380,platforms:[...(village.platforms||[]),...extra],ropes:[...(village.ropes||[]),...extra.map((p,i)=>({id:p.id+'-rope',x:(p.x1+p.x2)/2,y1:p.y,y2:800}))],
-    districts:[{x:1647,name:'버섯마을 광장'},{x:edge+210,name:'그루터기 산책길'},{x:edge+680,name:'철갑버섯 숲'}],
+    districts:[{x:1647,name:'버섯마을 광장',sign:false},{x:edge+210,name:'그루터기 산책길'},{x:edge+680,name:'철갑버섯 숲'}],
     spawns:[...(village.spawns||[]).slice(0,18).map((z,i)=>({...z,mobs:[['snail','mushroom','slime'][i%3]],max:Math.min(3,z.max||2)})),{id:'outskirts-ground',platform:'ground',x1:edge+60,x2:edge+1250,mobs:['wild-stump','armored-mushroom'],max:4},...extra.map((p,i)=>({id:p.id+'-mobs',platform:p.id,x1:p.x1+30,x2:p.x2-30,mobs:[i===1?'armored-mushroom':'wild-stump'],max:2}))]};
   }
   const forest=id==='forest',width=id==='frost'?6000:forest?5400:4800;
@@ -168,7 +168,7 @@ export function drawMinimap(ctx,map,players,mobs,me,view,width=204,height=88) {
 }
 
 export function drawRegionLandmarks(ctx,map,camX,camY,k){
- ctx.save();for(const d of map.districts||[]){const x=(d.x-camX)*k,y=(map.groundY-camY)*k;if(x<-180*k||x>ctx.canvas.width+180*k)continue;ctx.fillStyle='#6d5845';ctx.fillRect(x-3*k,y-62*k,6*k,62*k);ctx.fillStyle='#e3d5b3';ctx.fillRect(x-65*k,y-65*k,130*k,25*k);ctx.fillStyle='#5b6d57';ctx.fillRect(x-65*k,y-65*k,130*k,3*k);ctx.font=`600 ${10*k}px system-ui`;ctx.textAlign='center';ctx.fillStyle='#3a5145';ctx.fillText(d.name,x,y-49*k);}
+ ctx.save();for(const d of map.districts||[]){if(d.sign===false)continue;const x=(d.x-camX)*k,y=(map.groundY-camY)*k;if(x<-180*k||x>ctx.canvas.width+180*k)continue;ctx.fillStyle='#6d5845';ctx.fillRect(x-3*k,y-62*k,6*k,62*k);ctx.fillStyle='#e3d5b3';ctx.fillRect(x-65*k,y-65*k,130*k,25*k);ctx.fillStyle='#5b6d57';ctx.fillRect(x-65*k,y-65*k,130*k,3*k);ctx.font=`600 ${10*k}px system-ui`;ctx.textAlign='center';ctx.fillStyle='#3a5145';ctx.fillText(d.name,x,y-49*k);}
  ctx.restore();
 }
 export function drawVillageOutskirts(ctx,map,camX,camY,k,W,H){

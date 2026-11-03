@@ -2,6 +2,8 @@ import {cleanTraits,cleanAllocation,allocationOK,earnedPoints,traitGoals} from '
 import {huntContract} from './hunt-chain.js';
 import {regionOf} from './regions.js';
 // One balance contract for loot, equipment, stages and pets. No real-money purchases.
+export const GROUND_DROP_TTL_MS=3*60*1000;
+export const groundDropAlive=(drop,now=Date.now())=>!drop.expiresAt||drop.expiresAt>now;
 export const GRADES = Object.freeze(['일반','고급','희귀','영웅','전설']);
 export const GRADE_COLORS = ['#9aaeb6','#65c795','#73b6ff','#bc92ff','#f4ce70'];
 export const WEAPONS = Object.freeze({warrior:'sword',archer:'bow',mage:'staff',thief:'claw'});
@@ -71,7 +73,7 @@ export function cleanState(raw,job='warrior') {
  for(const area of Object.keys(STAGES)) {const p=raw.pity?.[area];s.pity[area]=[nat(p?.[0],19),nat(p?.[1],79),nat(p?.[2],199)];s.kills[area]=nat(raw.kills?.[area]);}
  s.seen=Array.isArray(raw.seen)?raw.seen.filter(i=>typeof i==='string'&&i.length<=160).slice(-10000):[];
  s.traits=cleanTraits(raw.traits,s.kills,STAGES);
- s.pending=(Array.isArray(raw.pending)?raw.pending:[]).filter(d=>dropOK(d)&&Object.hasOwn(STAGES,d.area)&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&Math.abs(d.x)<1e5&&Math.abs(d.y)<1e5).slice(0,200).map(d=>({...d}));return s;
+ s.pending=(Array.isArray(raw.pending)?raw.pending:[]).filter(d=>dropOK(d)&&Object.hasOwn(STAGES,d.area)&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&Math.abs(d.x)<1e5&&Math.abs(d.y)<1e5).slice(0,200).map(d=>({...d,expiresAt:Number.isSafeInteger(d.expiresAt)&&d.expiresAt>0?d.expiresAt:0}));return s;
 }
 export function loadout(s) {
  const weapon=activeWeapon(s),job=weaponJob(weapon?.kind);
@@ -101,10 +103,11 @@ export function fusionSummary(items) {
  }
  return {count,before:items.length,after:items.length-count};
 }
-export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=()=>globalThis.crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')}={}) {
+export function applyCommand(original,command,{job='warrior',rnd=Math.random,now=Date.now(),id=()=>globalThis.crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')}={}) {
  const s=cleanState(original,job),c=command;let result=null;
  const fail=m=>{throw new Error(m);};
- if(c.type==='ensure') {if(!s.traits.legacyRewardsMigrated){if(c.legacyVillageBoss===true){s.traits.events.village.boss=true;s.traits.quests['village:boss-first']='claimed';}s.traits.legacyRewardsMigrated=true;}if(!activeWeapon(s)){const i={id:id(),kind:WEAPONS[job],tier:0};s.items.push(i);s.equipped[job]=i.id;s.activeWeapon=i.id;}}
+ if(c.type==='expire-drops'){const before=s.pending.length;s.pending=s.pending.filter(d=>groundDropAlive(d,now));result={expired:before-s.pending.length};}
+ else if(c.type==='ensure') {s.pending=s.pending.filter(d=>groundDropAlive(d,now)).map(d=>d.expiresAt?d:{...d,expiresAt:now+GROUND_DROP_TTL_MS});if(!s.traits.legacyRewardsMigrated){if(c.legacyVillageBoss===true){s.traits.events.village.boss=true;s.traits.quests['village:boss-first']='claimed';}s.traits.legacyRewardsMigrated=true;}if(!activeWeapon(s)){const i={id:id(),kind:WEAPONS[job],tier:0};s.items.push(i);s.equipped[job]=i.id;s.activeWeapon=i.id;}}
  else if(c.type==='trait-quest-accept'||c.type==='trait-quest-claim') {
   const goal=traitGoals(s,STAGES).find(g=>g.key===c.key);if(!goal)fail('존재하지 않는 수련입니다.');
   if(c.type==='trait-quest-accept'){if(goal.claimed)return {state:s,result:{duplicate:true,key:c.key}};if(goal.status==='available')s.traits.quests[c.key]='active';result={accepted:true,key:c.key};}
@@ -131,16 +134,18 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
   if(c.kind!=null&&!Object.hasOwn(STAGES[c.area].mobs,c.kind)&&!['garden-king','garden-runner','garden-guard'].includes(c.kind))fail('잘못된 몬스터입니다.');
   const counts=!c.receipt.startsWith('event-')&&(!c.kind||Object.hasOwn(STAGES[c.area].mobs,c.kind)),kills=s.kills[c.area]+(counts?1:0),contract=counts?huntContract(c.area,stageOf(c.area).order,kills,activeWeapon(s)?.kind||'sword'):null,items=[...c.items];
   if(contract){gold+=contract.gold;items.push(contract.item);result={contract:true};}
+  const createdAt=Number.isSafeInteger(c.createdAt)&&c.createdAt>0?Math.min(c.createdAt,now):now,expiresAt=createdAt+GROUND_DROP_TTL_MS,expired=expiresAt<=now;
+  s.pending=s.pending.filter(d=>groundDropAlive(d,now));
   const piles=gold?Math.min(8,Math.max(1,Math.ceil(gold/120))):0;
-  if(s.pending.length+items.length+piles>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
+  if(!expired&&s.pending.length+items.length+piles>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
   if(!Number.isFinite(c.x)||!Number.isFinite(c.y)||Math.abs(c.x)>1e5||Math.abs(c.y)>1e5)fail('잘못된 드롭 위치입니다.');
   if(counts&&c.kind){const records=s.traits.species[c.area][c.kind],max=c.area==='village'?10:20;if(records.length<max&&!records.includes(c.receipt))records.push(c.receipt);}
   s.seen.push(c.receipt);s.seen=s.seen.slice(-10000);s.kills[c.area]=kills;
-  items.forEach((i,n)=>s.pending.push({id:c.receipt+':'+n,kind:i.kind,tier:i.tier,area:c.area,x:c.x+(n-(items.length-1)/2)*38,y:c.y}));
-  for(let n=0;n<piles;n++)s.pending.push({id:c.receipt+':gold:'+n,kind:'gold',amount:Math.floor(gold/piles)+(n<gold%piles?1:0),area:c.area,x:c.x+(n-(piles-1)/2)*32,y:c.y});
+  if(!expired)items.forEach((i,n)=>s.pending.push({expiresAt,id:c.receipt+':'+n,kind:i.kind,tier:i.tier,area:c.area,x:c.x+(n-(items.length-1)/2)*38,y:c.y}));
+  for(let n=0;!expired&&n<piles;n++)s.pending.push({expiresAt,id:c.receipt+':gold:'+n,kind:'gold',amount:Math.floor(gold/piles)+(n<gold%piles?1:0),area:c.area,x:c.x+(n-(piles-1)/2)*32,y:c.y});
  }
  else if(c.type==='collect') {
-  const d=s.pending.find(i=>i.id===c.id);if(!d)fail('이미 주운 장비입니다.');if(d.kind!=='gold'&&s.items.length>=200)fail('가방이 가득 찼습니다. 장비를 판매하거나 합성해주세요.');
+  const d=s.pending.find(i=>i.id===c.id);if(!d)fail('이미 주웠거나 사라진 아이템입니다.');if(!groundDropAlive(d,now))fail('시간이 지나 사라진 아이템입니다.');if(d.kind!=='gold'&&s.items.length>=200)fail('가방이 가득 찼습니다. 장비를 판매하거나 합성해주세요.');
   s.pending=s.pending.filter(i=>i.id!==d.id);if(d.kind==='gold')s.gold=Math.min(1e9,s.gold+d.amount);else s.items.push({id:d.id,kind:d.kind,tier:d.tier});
   const j=Object.keys(WEAPONS).find(j=>WEAPONS[j]===d.kind);if(j)s.highest[j]=Math.max(s.highest[j]||0,d.tier);result=d;
  }
@@ -171,7 +176,7 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=
   let pair;
   while((pair=s.items.filter(i=>i.kind===kind&&i.tier===tier)).length>=2){
    pair.sort((a,b)=>Number(wornItem(s,b.id))-Number(wornItem(s,a.id)));
-   const next=applyCommand(s,{type:'fuse',a:pair[0].id,b:pair[1].id},{job,rnd,id});Object.assign(s,next.state);
+   const next=applyCommand(s,{type:'fuse',a:pair[0].id,b:pair[1].id},{job,rnd,id,now});Object.assign(s,next.state);
   }
  }
  result=summary;

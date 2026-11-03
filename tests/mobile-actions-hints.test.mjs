@@ -1,0 +1,26 @@
+import assert from 'node:assert/strict';
+import {bindJoystick} from '../src/client/ui/joystick.js';
+import {bindPointerAction} from '../src/client/ui/pointer-actions.js';
+import {createMoveInput} from '../src/client/game/input.js';
+import {createFirstUseHints} from '../src/client/game/first-use.js';
+function element(){return {handlers:{},disabled:false,classList:{add(){},remove(){}},style:{},captured:new Set(),getBoundingClientRect:()=>({left:0,top:0,width:134,height:134}),setPointerCapture(id){this.captured.add(id);},hasPointerCapture(id){return this.captured.has(id);},releasePointerCapture(id){this.captured.delete(id);}};}
+const on=(el,name,fn)=>(el.handlers[name]??=[]).push(fn),fire=(el,type,params={})=>{const e={pointerId:1,button:0,clientX:110,clientY:67,preventDefault(){},...params};for(const fn of el.handlers[type]||[])fn(e);};
+const input=createMoveInput(),pad=element(),knob={style:{}},skill=element();let casts=0;
+bindJoystick(pad,knob,{input,on});const action=bindPointerAction(skill,{on,activate(){casts++;}});
+fire(pad,'pointerdown',{pointerId:11,pointerType:'touch',isPrimary:true});assert.equal(input.direction(),1);
+fire(skill,'pointerdown',{pointerId:22,pointerType:'touch',isPrimary:false});assert.equal(casts,1,'second thumb activates immediately without waiting for first thumb to lift');assert.equal(input.direction(),1,'skill does not clear moving thumb');
+fire(skill,'click',{detail:1,pointerType:'touch'});assert.equal(casts,1,'compatibility click is not a second cast');
+fire(skill,'pointerup',{pointerId:99});assert.ok(skill.captured.has(22),'unrelated release is ignored');
+fire(skill,'pointerup',{pointerId:22});assert.equal(skill.captured.size,0);assert.equal(input.direction(),1);
+fire(skill,'pointerdown',{pointerId:23,pointerType:'touch',isPrimary:false});assert.equal(casts,2);fire(skill,'pointercancel',{pointerId:23});assert.equal(input.direction(),1);
+fire(skill,'click',{detail:0,pointerType:''});assert.equal(casts,3,'keyboard/assistive activation remains available');
+skill.disabled=true;fire(skill,'pointerdown',{pointerId:24});assert.equal(casts,3);skill.disabled=false;
+fire(pad,'pointerup',{pointerId:11});assert.equal(input.direction(),0);action.reset();
+const attack=element(),hold=bindPointerAction(attack,{on,hold:true,activate:()=>input.pressAction('attack','attack',100),release:()=>input.release('attack')});
+fire(attack,'pointerdown',{pointerId:31});fire(attack,'pointerup',{pointerId:32});assert.equal(input.wantsAttack(400),true);fire(attack,'lostpointercapture',{pointerId:31});assert.equal(input.wantsAttack(400),false);hold.reset();
+const values=new Map(),storage={getItem:k=>values.get(k)||null,setItem:(k,v)=>values.set(k,v)},h=createFirstUseHints('p',{storage});
+h.request('skills',0);assert.equal(h.update(0,true),null);assert.equal(h.hasSeen('skills'),false,'opening a modal postpones first-use explanation');assert.equal(h.update(100).id,'skills');assert.equal(h.hasSeen('skills'),true);h.dismiss();assert.equal(h.request('skills',200),false);
+const restored=createFirstUseHints('p',{storage});assert.equal(restored.request('skills',300),false,'seen flag survives reload');assert.equal(createFirstUseHints('other',{storage}).request('skills',300),true,'profiles are independent');
+assert.equal(restored.request('skills',400,true),true);assert.equal(restored.update(400).id,'skills');assert.equal(restored.update(7401),null,'guide disappears automatically');assert.equal(restored.request('bad',1),false);
+const broken=createFirstUseHints('q',{storage:{getItem(){throw Error();},setItem(){throw Error();}}});broken.request('bag',0);assert.equal(broken.update(0).id,'bag');broken.clear();assert.equal(broken.update(1),null);
+console.log('PASS simultaneous non-primary skill thumb with captured joystick, independent cancellation, no duplicate click, keyboard access and persistent non-blocking first-use guides');

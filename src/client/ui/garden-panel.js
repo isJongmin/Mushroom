@@ -1,6 +1,6 @@
 import {npcRoster} from '../game/npc-roster.js';
 import {regionOf} from '../game/regions.js';
-import {bossPatternText} from '../game/garden-boss.js';
+const PATTERN_SHORT={stomp:'내려찍기',spores:'포자 낙하',ring:'포자 고리',exposed:'약점 노출'};
 import { h,setText } from '../dom.js';
 import { gardenActive,GARDEN_LABEL,BOSS_LABEL } from '../game/garden.js';
 export function createGardenPanel({onStart,onBoss,onEquip,onReplay,onFocus,onTraits}) {
@@ -29,7 +29,9 @@ export function createGardenPanel({onStart,onBoss,onEquip,onReplay,onFocus,onTra
       hp.hidden=!active;hp.value=s?.phase==='boss'?bossHp/s.boss.max*100:s?.hp??100;hp.setAttribute('aria-label',s?.mode==='boss'?'버섯왕 체력':'버섯밭 내구도');
       status.textContent=active?(s?.mode==='boss'?'BOSS':`${s.wave}/3 WAVE`):'QUEST';
       setText(label,active?(s?.mode==='boss'?region.boss:region.event):npcRoster(area).quest.name+' · 도전 선택');
-      setText(detail,s?.phase==='boss'?`${bossPatternText[s.boss.pattern]} · HP ${bossHp}/${s.boss.max} · ${left}초`:active?(s.phase==='wave'?`내구도 ${s.hp}% · 적 ${alive}${s.queued?` + 증원 ${s.queued}(${Math.max(0,Math.ceil((s.reinforceAt-now)/1000))}초)`:''} · ${left}초`:`${s.phase==='ready'?'습격 준비':'잠시 숨 고르기'} · ${left}초 후 시작`):'시간차 증원과 급습·강화 몬스터를 막아 마을을 지켜주세요.');
+      detail.hidden=!active;traits.hidden=active;
+      el.classList.toggle('is-active',active);
+      setText(detail,s?.phase==='boss'?`${PATTERN_SHORT[s.boss.pattern]} · ${left}초`:active?(s.phase==='wave'?`적 ${alive}${s.queued?' + 증원 '+s.queued:''} · ${left}초`:`${s.phase==='ready'?'준비':'휴식'} · ${left}초`):'');
       start.hidden=bossStart.hidden=active;
       start.disabled=!connected || !host || !near || !!s&&now<s.ended+5000;
       bossStart.disabled=start.disabled;

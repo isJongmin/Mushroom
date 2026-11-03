@@ -1,3 +1,4 @@
+import {explorationPoints} from './adventure-traits.js';
 // 세 맵은 같은 방의 채팅을 공유하며 사냥/위치/호스트는 mapId로 분리한다.
 export const AREA_IDS = Object.freeze(['village', 'quarry', 'forest', 'frost']);
 export const normalizeMapId = (id) => AREA_IDS.includes(id) ? id : 'village';
@@ -172,6 +173,7 @@ export function drawPortals(ctx,map,camX,camY,k,now) {
 export function minimapPoint(map,x,y,width=204,height=88) {
   return {x:8+Math.max(0,Math.min(map.width,x))/map.width*(width-16),y:8+Math.max(0,Math.min(map.height,y))/map.height*(height-16)};
 }
+export const MINIMAP_COLORS=Object.freeze({self:'#ffe578',player:'#7dc9ff',npc:'#91e2ad',monster:'#ed9291',portal:'#b5b1ef'});
 export function drawMinimap(ctx,map,players,mobs,me,view,width=204,height=88,markers=[]) {
   ctx.clearRect(0,0,width,height);ctx.fillStyle='#253c3e';ctx.fillRect(0,0,width,height);
   const point=(x,y)=>minimapPoint(map,x,y,width,height);
@@ -181,15 +183,30 @@ export function drawMinimap(ctx,map,players,mobs,me,view,width=204,height=88,mar
   for(const r of map.ropes||[])line(r.x,r.y1,r.x,r.y2,'#a69476');
   if(view){const a=point(view.x,view.y),b=point(view.x+view.w,view.y+view.h);ctx.strokeStyle='#687f7e';ctx.lineWidth=1;ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y);}
   const dot=(x,y,color,size)=>{const a=point(x,y);ctx.fillStyle=color;ctx.fillRect(Math.round(a.x-size/2),Math.round(a.y-size/2),size,size);};
-  for(const p of areaPortals(map))dot(p.x,p.y-30,'#8cdeec',5);
-  for(const marker of markers){const p=point(marker.x,marker.y-35);ctx.fillStyle='#f5d47c';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillText(marker.label||'!',p.x,p.y);}
-  for(const m of mobs)if(m.s!=='die'&&m.hp>0)dot(m.x,m.y-12,'#ed9291',2);
-  for(const p of players)if(p.user_id!==me?.user_id&&sameArea(p,me))dot(p.x,p.y-24,'#eee9cf',3);
-  if(me)dot(me.x,me.y-24,'#ffe578',5);
+  for(const p of areaPortals(map))dot(p.x,p.y-30,MINIMAP_COLORS.portal,5);
+  const placed=[];
+  for(const marker of markers){const p=point(marker.x,marker.y-35);let y=p.y;while(placed.some(m=>Math.abs(m.x-p.x)<5&&Math.abs(m.y-y)<5))y-=6;placed.push({x:p.x,y});ctx.fillStyle=MINIMAP_COLORS.npc;ctx.beginPath();ctx.moveTo(p.x,y-3);ctx.lineTo(p.x+3,y);ctx.lineTo(p.x,y+3);ctx.lineTo(p.x-3,y);ctx.closePath();ctx.fill();}
+
+  for(const m of mobs)if(m.s!=='die'&&m.hp>0)dot(m.x,m.y-12,MINIMAP_COLORS.monster,2);
+  for(const p of players)if(p.user_id!==me?.user_id&&sameArea(p,me))dot(p.x,p.y-24,MINIMAP_COLORS.player,4);
+  if(me)dot(me.x,me.y-24,MINIMAP_COLORS.self,5);
 }
 
+// Preserve exploration trigger coordinates and saved point IDs; move only the signs.
+export function landmarkSignPlacements(map){
+ const flags=explorationPoints(map),placed=[];
+ for(const d of map.districts||[]){if(d.sign===false)continue;
+  if(flags.some(p=>Math.abs(p.y-map.groundY)<=115&&Math.abs(p.x-d.x)<160)){
+   const perch=(map.platforms||[]).filter(p=>p.x1+15<=d.x&&p.x2-15>=d.x&&map.groundY-p.y>=120).sort((a,b)=>b.y-a.y)[0];
+   if(perch){placed.push({...d,x:d.x,lift:map.groundY-perch.y});continue;}
+  }
+  const clear=x=>flags.every(p=>Math.abs(p.y-map.groundY)>115||Math.abs(p.x-x)>=160)&&placed.every(p=>Math.abs(p.x-x)>=150);
+  const candidates=[0,-190,190,-380,380].map(offset=>Math.max(85,Math.min(map.width-85,d.x+offset)));
+  const x=candidates.find(clear),row={...d,x:x??d.x,lift:x===undefined?130:0};placed.push(row);
+ }return placed;
+}
 export function drawRegionLandmarks(ctx,map,camX,camY,k){
- ctx.save();for(const d of map.districts||[]){if(d.sign===false)continue;const x=(d.x-camX)*k,y=(map.groundY-camY)*k;if(x<-180*k||x>ctx.canvas.width+180*k)continue;ctx.fillStyle='#6d5845';ctx.fillRect(x-3*k,y-62*k,6*k,62*k);ctx.fillStyle='#e3d5b3';ctx.fillRect(x-65*k,y-65*k,130*k,25*k);ctx.fillStyle='#5b6d57';ctx.fillRect(x-65*k,y-65*k,130*k,3*k);ctx.font=`600 ${10*k}px system-ui`;ctx.textAlign='center';ctx.fillStyle='#3a5145';ctx.fillText(d.name,x,y-49*k);}
+ ctx.save();for(const d of landmarkSignPlacements(map)){const x=(d.x-camX)*k,y=(map.groundY-d.lift-camY)*k;if(x<-180*k||x>ctx.canvas.width+180*k)continue;ctx.fillStyle='#6d5845';ctx.fillRect(x-3*k,y-62*k,6*k,62*k);ctx.fillStyle='#e3d5b3';ctx.fillRect(x-65*k,y-65*k,130*k,25*k);ctx.fillStyle='#5b6d57';ctx.fillRect(x-65*k,y-65*k,130*k,3*k);ctx.font=`600 ${10*k}px system-ui`;ctx.textAlign='center';ctx.fillStyle='#3a5145';ctx.fillText(d.name,x,y-49*k);}
  ctx.restore();
 }
 export function drawVillageOutskirts(ctx,map,camX,camY,k,W,H){

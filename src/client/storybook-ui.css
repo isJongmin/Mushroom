@@ -34,11 +34,11 @@ body.rpg-arcade[data-screen=room]{background:#132224}
 .rpg-arcade .rpg-menu-actions .bk-btn,.rpg-arcade .rpg-menu [data-testid=sound-toggle],.rpg-arcade .rpg-menu [data-testid=controls-help]{border:1px solid #d0d5ba25!important;border-radius:6px!important;background:#d8e3c70a!important;box-shadow:none!important;color:#dddcc1!important}
 .rpg-arcade .rpg-menu [data-testid=sound-toggle]{width:100%;margin-top:8px;min-height:38px}
 .rpg-arcade .cooperative-roster>strong{color:#e9dfb7;font-size:11px}
-.rpg-arcade .skill-hotbar .skill-button{border-radius:50%;border:1px solid #b9c5b566;background:#173135e8;box-shadow:inset 0 0 0 4px #e1d7ad0c,0 3px 12px #08232933}
+.rpg-arcade .scr-room .skill-hotbar .skill-button{border-radius:12px!important;border:1px solid #b9c5b566!important;background:#173135e8!important;box-shadow:inset 0 0 0 4px #e1d7ad0c,0 3px 12px #08232933!important}
 .rpg-arcade .skill-button--ultimate{border-color:#d7bf7c99!important;background:#3a3e32e8!important}
 .rpg-arcade .skill-hotbar .skill-button.is-locked{opacity:.42}
 .rpg-arcade .skill-name{font-size:8px;color:#dbddc3}
-.rpg-arcade .scr-room .touch-float>[data-testid=attack]{border-radius:50%!important;border:1px solid #eed19e80!important;background:linear-gradient(135deg,#bd8b62,#8f694e)!important;box-shadow:inset 0 0 0 4px #fff0c110!important;color:#fff4d5!important}
+.rpg-arcade .scr-room .touch-float>[data-testid=attack]{width:82px;height:84px;min-height:84px;border-radius:12px!important;border:1px solid #eed19e80!important;background:linear-gradient(135deg,#bd8b62,#8f694e)!important;box-shadow:inset 0 0 0 4px #fff0c110!important;color:#fff4d5!important}
 .rpg-arcade .scr-room .hunt-combo{border:0;border-left:2px solid #d4bd7c;background:#153133d9;color:#e8d5a3;border-radius:0 5px 5px 0;box-shadow:none;font-weight:600}
 .loot-feed{position:absolute;left:20px;bottom:82px;z-index:5;pointer-events:none;display:grid;gap:7px;max-width:260px}
 .loot-message{padding:9px 13px;border-left:2px solid var(--loot-color);border-radius:0 5px 5px 0;background:linear-gradient(90deg,#183236ed,#173033b3);color:#e5e5ca;animation:loot-reveal .22s ease-out}
@@ -60,6 +60,8 @@ body.rpg-arcade[data-screen=room]{background:#132224}
  .loot-feed{left:12px;bottom:190px;max-width:190px;gap:5px}.loot-message{padding:7px 10px}.loot-message strong{font-size:10px}
  .rpg-arcade .scr-room .rpg-menu{right:12px;top:66px}
 }
+.rpg-arcade [data-layout=mobile] .mobile-action-pad .skill-hotbar .skill-button{border-radius:50%!important}
+.rpg-arcade [data-layout=mobile] .mobile-action-pad [data-testid=attack]{width:78px;height:76px;min-height:0;border-radius:50%!important}
 @media(orientation:landscape) and (max-height:600px){
  .journey-card{width:170px;right:66px;padding:10px 12px}.journey-card h2{font-size:15px;margin:5px 0}.journey-line{display:none}.journey-eyebrow{font-size:7px}.journey-card .adventure-goal small{display:none}.journey-card .adventure-goal{min-height:36px!important;padding:7px 0!important}
  .rpg-arcade .scr-room .game-minimap{right:66px!important;top:12px!important;width:170px}.rpg-arcade .scr-room .bag-shortcut{top:94px!important}.loot-feed{bottom:140px;max-width:180px}

@@ -56,7 +56,7 @@ export function createTraitsPanel({main,store,getArea,getEditReason,onChange,onF
    else if(g.key.includes('explore')){const details=h('details',{},h('summary',{},'탐험 지점 보기'));details.append(h('ul',{class:'trait-species'},...[['entry','입구'],['upper','위층'],['depth','깊은 곳']].map(([id,name])=>h('li',{},h('span',{},name),h('b',{},s.traits.explored[area].includes(id)?'발견':'미발견')))));row.append(details);}
    panel.append(row);
   }
-  panel.append(h('p',{class:'traits-once'},'NPC와 대화 → 수련 수락 → 완료 보고'));
+
  }
  function paint(){
   const focused=body.contains(document.activeElement)?document.activeElement?.getAttribute('data-focus'):null,scroll=modal?.section.scrollTop;

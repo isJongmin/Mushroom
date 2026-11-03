@@ -176,9 +176,10 @@ function cleanGameEventPayload(event, p) {
     case 'loot':
       if(!UID_OK(p.host)||!UID_OK(p.owner)||typeof p.receipt!=='string'||p.receipt.length>150||!Object.hasOwn(STAGES,p.area)||!numIn(p.x,-COORD,COORD)||!numIn(p.y,-COORD,COORD)||!Array.isArray(p.items)||p.items.length>8||p.items.some(i=>!itemOK({...i,id:'check'})))return null;
       if(p.gold!=null&&(!Number.isSafeInteger(p.gold)||p.gold<0||p.gold>20000))return null;
+      if(p.createdAt!=null&&(!Number.isSafeInteger(p.createdAt)||p.createdAt<=0||p.createdAt>8640000000000000))return null;
       if(p.combo!=null&&(!Number.isInteger(p.combo)||p.combo<1||p.combo>999))return null;
       if(p.kind!=null&&!Object.hasOwn(STAGES[p.area].mobs,p.kind)&&!['garden-king','garden-runner','garden-guard'].includes(p.kind))return null;
-      return {...(p.kind?{kind:p.kind}:{}),...(p.combo?{combo:p.combo}:{}),host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,gold:p.gold??0,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
+      return {...(p.createdAt!=null?{createdAt:p.createdAt}:{}),...(p.kind?{kind:p.kind}:{}),...(p.combo?{combo:p.combo}:{}),host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,gold:p.gold??0,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
     case 'boss-start':
     case 'garden-start':
       return UID_OK(p.user_id) ? { user_id:p.user_id } : null;

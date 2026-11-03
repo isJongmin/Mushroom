@@ -1,3 +1,12 @@
+import {groundDropAlive} from '../game/progression.js';
+import {taxiPoint,taxiTravelReason,drawTownTaxi} from '../game/town-taxi.js';
+import {createTaxiPanel} from '../ui/taxi-panel.js';
+import {bindPointerAction} from '../ui/pointer-actions.js';
+import {createFirstUseHintView} from '../ui/first-use-hints.js';
+import {createCombatFeel} from '../game/combat-feel.js';
+import {createBossEntrance,drawBossEntrance} from '../game/boss-entrance.js';
+import {funNpcOf,playfulPoint,nearbyPlayful,playfulIdentity,drawFunNpc,drawPlayfulPortrait,drawPlayfulReaction} from '../game/playful-npcs.js';
+import {createPlayfulPanel} from '../ui/playful-panel.js';
 import {drawAdventureScenery,drawRegionMascot,drawAdventureCharm} from '../game/adventure-art.js';
 import {createMentorPanel} from '../ui/mentor-panel.js';
 import {mentorOf,mentorPoint,mentorMarker,drawMentor} from '../game/training-mentors.js';
@@ -169,10 +178,13 @@ export function mount(root, app, opts = {}) {
   const stats = { superJumps: 0, fxSent: 0 }; // (사이클 8) 계측
 
   // --- (사이클 9) 전투·몬스터·드롭 상태 ---------------------------------------
+  const firstUse=createFirstUseHintView({key:app.profileKey,on});
   const dmgNums = createDamageNumbers();
   const slashes = createSlashes();
   const projectiles = createJobProjectiles();
   const skillAttacks = createSkillAttacks();
+  const combatFeel=createCombatFeel(),bossEntrance=createBossEntrance();
+  const playfulReactions=new Map();
   const stones = createTombstones();
   const drops = createDrops();
   let mobDefs = null; // normalizeMobManifest 결과 | null (몬스터 없음)
@@ -233,7 +245,9 @@ export function mount(root, app, opts = {}) {
   const buffEls = new Map(); // id -> { el, cv, num, lastKey }
   const hostChip = debug ? h('span', { class: 'bk-chip debug-host', testid: 'debug-host' }, '호스트 -') : null;
   let job = jobDefinition(profile?.job);
-  let progress=null,progressError='';
+  let progress=null,progressError='',expireBusy=false,expireProbeAt=0;
+  const liveGroundDrops=()=>progress?progress.state.pending.filter(d=>groundDropAlive(d,Date.now())).map(settleDrop):[];
+  function expireGroundDrops(now){if(!progress||expireBusy||now-expireProbeAt<1000)return;expireProbeAt=now;if(progress.state.pending.every(d=>groundDropAlive(d,Date.now())))return;expireBusy=true;progress.run({type:'expire-drops'}).then(()=>{if(!alive)return;const ids=new Set(progress.state.pending.map(d=>d.id));for(const id of dropBorn.keys())if(!ids.has(id))dropBorn.delete(id);syncProgress();}).catch(()=>{}).finally(()=>{expireBusy=false;});}
   try {progress=createProgressionStore(app.profileKey,{job:job.id,guardCommand:c=>{if(c.type==='traits-allocate'){const reason=traitEditLock();if(reason)throw new Error(reason);}if(c.type==='trait-quest-accept'||c.type==='trait-quest-claim'){const reason=mentorAccessReason();if(reason)throw new Error(reason);if(c.key.split(':')[0]!==currentArea)throw new Error('해당 지역의 수련 스승을 찾아가세요.');}}});}catch(e){progressError=e.message;}
   if(progress)job=jobDefinition(activeJob(progress.state));
   const myLoadout=()=>progress?loadout(progress.state,job.id):null;
@@ -243,12 +257,18 @@ export function mount(root, app, opts = {}) {
   function openMentor(){const reason=mentorAccessReason();if(reason){chatLog.addSystem(reason);return;}input.clear();mentorPanel?.open();}
   const traitsPanel=progress?createTraitsPanel({main:root,store:progress,getArea:()=>currentArea,getEditReason:traitEditLock,onTalk:()=>openMentor(),getTalkReason:mentorAccessReason,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true})}):null;
   const mentorPanel=progress?createMentorPanel({main:root,store:progress,getArea:()=>currentArea,getAccessReason:mentorAccessReason,paintPortrait:(cv,area)=>{drawMentor(cv.getContext('2d'),{x:51,y:104},0,0,1.25,{area,avatar:regionNpcs.get(area)?.mentor,renderer:avatarR,now:performance.now(),drawItem});},onChange:syncProgress,onReward:()=>{traitBurstPending=true;},onAllocate:openTraits,onFocus:()=>canvas.focus({preventScroll:true})}):null;
-  function openTraits(){input.clear();if(traitsPanel)traitsPanel.open();else chatLog.addSystem(progressError);}
+  function openTraits(){firstUse.request('traits');input.clear();if(traitsPanel)traitsPanel.open();else chatLog.addSystem(progressError);}
+  function playfulAccessReason(area,kind){const p=playfulPoint(map,kind);return area!==currentArea?'지금 있는 지역에서 대화하세요.':connection!=='connected'?'연결을 기다려주세요.':!me||me.dead?'살아 있는 상태에서 대화할 수 있어요.':Math.abs(me.x-p.x)>130||Math.abs(me.y-p.y)>75?'조금 더 가까이 와주세요.':'';}
+  const playfulPanel=createPlayfulPanel({main:root,getAccessReason:playfulAccessReason,paintPortrait:(cv,area,kind)=>drawPlayfulPortrait(cv,area,kind,avatarR,regionNpcs.get(area)?.fun),onReaction:(area,kind,text)=>{if(area===currentArea)playfulReactions.set(kind,{text,until:performance.now()+1800});},onFocus:()=>canvas.focus({preventScroll:true})});
+  function openPlayful(kind){if(playfulAccessReason(currentArea,kind))return;firstUse.request('npc');input.clear();playfulPanel.open(currentArea,kind);}
+  const taxiReason=to=>taxiTravelReason({state:progress?.state,job:job.id,current:currentArea,to,player:me,map,connected:connection==='connected',now:performance.now(),readyAt:portalReadyAt});
+  const taxiPanel=createTaxiPanel({main:root,getState:()=>progress?.state,getJob:()=>job.id,getArea:()=>currentArea,getReason:taxiReason,onTravel:to=>{if(taxiReason(to))return false;return travelTo(to,performance.now(),'taxi');},onFocus:()=>canvas.focus({preventScroll:true})});
+  function openTaxi(){const p=taxiPoint(map);if(!me||me.dead||connection!=='connected'||Math.abs(me.x-p.x)>160||Math.abs(me.y-p.y)>85)return;input.clear();firstUse.request('taxi');taxiPanel.open();}
   const traitsBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'adventure-traits'},'모험 특성');on(traitsBtn,'click',openTraits);
   const progressPanel=progress?createProgressionPanel({main:root,store:progress,job:job.id,getArea:()=>currentArea,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true}),canDraw:()=>{const p=petNpcPoint(world);return !!me&&!me.dead&&connection==='connected'&&Math.abs(me.x-p.x)<230&&Math.abs(me.y-p.y)<100;}}):null;
   const chainHud=h('div',{class:'hunt-combo',testid:'hunt-combo',role:'status',hidden:true});
   const bagBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'equipment-bag'},'가방');
-  on(bagBtn,'click',()=>{input.clear();if(progressPanel)progressPanel.open();else chatLog.addSystem(progressError);});
+  on(bagBtn,'click',()=>{firstUse.request('bag');input.clear();if(progressPanel)progressPanel.open();else chatLog.addSystem(progressError);});
   const growthHud=h('div',{class:'bag-shortcut',testid:'progression-hud'},bagBtn);
   function syncProgress(){
     if(!alive||!progress)return;
@@ -283,13 +303,14 @@ export function mount(root, app, opts = {}) {
 
   const attackBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary bk-btn--touch touch-act', testid: 'attack', 'aria-label': '공격 (누르고 있으면 계속)' }, '공격');
   const portalBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary portal-action', testid: 'portal-enter', hidden: true }, '포탈 이동 ↑');
-  const miniCanvas = h('canvas', { width: '204', height: '88', role: 'img', 'aria-label': '현재 맵과 플레이어 위치', testid: 'minimap-canvas' });
+  function positionCombo(){if(!layout||!stage?.isConnected)return;const bottom=minimap.getBoundingClientRect().bottom-stage.getBoundingClientRect().top;stage.style.setProperty('--minimap-bottom',Math.max(0,bottom)+'px');}
+  const miniCanvas = h('canvas', { width: '204', height: '88', role: 'img', 'aria-label': '현재 맵: 내 위치 노랑, 다른 유저 파랑, NPC 초록', testid: 'minimap-canvas' });
   const miniName = h('span', {}, AREA_NAMES.village);
   const miniToggle = h('button', { type: 'button', 'aria-label': '미니맵 접기', 'aria-expanded': 'true', testid: 'minimap-toggle' }, '−');
-  const miniBody = h('div', { class: 'minimap-body' }, miniCanvas, h('p', {}, '노랑 나 · 흰색 동료 · 빨강 몬스터'));
+  const miniBody = h('div', { class: 'minimap-body' }, miniCanvas,h('div',{class:'minimap-legend'},h('span',{class:'mini-self'},'나'),h('span',{class:'mini-player'},'유저'),h('span',{class:'mini-npc'},'NPC')));
   const minimap = h('aside', { class: 'game-minimap', 'aria-label': '미니맵', testid: 'minimap' },
     h('div', { class: 'minimap-head' }, miniName, miniToggle), miniBody);
-  on(miniToggle, 'click', () => { const open = miniBody.hidden; miniBody.hidden = !open; miniToggle.setAttribute('aria-expanded', String(open)); miniToggle.setAttribute('aria-label', open ? '미니맵 접기' : '미니맵 펼치기'); setText(miniToggle, open ? '−' : '+'); });
+  on(miniToggle, 'click', () => { const open = miniBody.hidden; miniBody.hidden = !open; miniToggle.setAttribute('aria-expanded', String(open)); miniToggle.setAttribute('aria-label', open ? '미니맵 접기' : '미니맵 펼치기'); setText(miniToggle, open ? '−' : '+');firstUse.request('map');positionCombo(); });
   on(portalBtn, 'click', () => enterPortal(performance.now()));
   const skillReadyAt = [0, 0, 0, 0];
   const skillButtons = [1, 2, 3].map(slot => {
@@ -299,21 +320,27 @@ export function mount(root, app, opts = {}) {
     const timer = h('span', { class: 'skill-timer', 'aria-hidden': 'true' });
     const btn = h('button', { type: 'button', class: slot===3 ? 'skill-button skill-button--ultimate' : 'skill-button', testid: `skill-${slot}`, 'aria-label': `${a.name}, 재사용 ${a.cooldown}초`, title: `${a.name} · ${a.description} · ${a.cooldown}초 · ${SKILL_LABELS[slot]}키` },
       icon, h('span', { class: 'skill-name' }, a.name), h('kbd', {}, SKILL_LABELS[slot]), timer);
-    on(btn, 'click', () => useSkill(slot, performance.now()));
-    return { btn, timer, slot, ability: a };
+    const pointer=bindPointerAction(btn,{on,activate:()=>useSkill(slot,performance.now())});
+    return { btn, timer, slot, ability: a,pointer };
   });
   const touchFloat = h('div', { class: 'touch-float skill-hotbar' }, attackBtn, ...skillButtons.map(s => s.btn));
   const npcQuest=h('button',{type:'button',class:'quest-npc-marker',testid:'quest-npc','aria-label':'숲지기 모리와 대화: 퀘스트 선택',hidden:true},'!');
   on(npcQuest,'click',()=>{if(!me||me.dead||connection!=='connected')return;const p=questNpcPoint(world);if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>110){setText(npcQuest,'가까이');return;}gardenPanel.open();lastGardenPaint=0;paintGardenPanel(performance.now());});
   const mentorNpc=h('button',{type:'button',class:'mentor-npc-marker',testid:'mentor-npc',hidden:true,'aria-label':'수련 스승과 대화'},'!');on(mentorNpc,'click',openMentor);
   const petNpc=h('button',{type:'button',class:'pet-npc-marker',testid:'pet-npc','aria-label':'지역 펫 조련사와 대화',hidden:true},'펫 뽑기');
-  on(petNpc,'click',()=>{const p=petNpcPoint(world);if(!me||me.dead||connection!=='connected')return;if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>100){chatLog.addSystem('펫 조련사 가까이로 이동해주세요.');return;}input.clear();progressPanel?.open('shop');});
+  on(petNpc,'click',()=>{const p=petNpcPoint(world);if(!me||me.dead||connection!=='connected')return;if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>100){chatLog.addSystem('펫 조련사 가까이로 이동해주세요.');return;}input.clear();firstUse.request('bag');progressPanel?.open('shop');});
   const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true}),onTraits:openTraits});
+  const playfulButtons=['mascot','fun'].map(kind=>{const b=h('button',{type:'button',class:'playful-npc-marker',testid:'talk-'+kind,hidden:true},'대화 E');on(b,'click',()=>openPlayful(kind));return {kind,el:b};});
+  const bossTitle=h('strong',{}),bossSubtitle=h('span',{}),bossLine=h('p',{}),bossPortrait=h('canvas',{width:160,height:160,'aria-hidden':'true'});
+  const bossCard=h('div',{class:'boss-arrival',hidden:true,role:'status','aria-live':'polite',testid:'boss-arrival'},bossPortrait,h('div',{},h('small',{},'BOSS APPROACHING'),bossTitle,bossSubtitle,bossLine));
+  let bossCardId='';
+  function paintBossArrival(){const entry=bossEntrance.observe(garden.snapshot(),currentArea,Date.now());bossCard.hidden=!entry||document.body.classList.contains('has-modal');stage.classList.toggle('has-boss-arrival',!!entry);if(!entry||bossCardId===entry.id)return;bossCardId=entry.id;setText(bossTitle,entry.name);setText(bossSubtitle,entry.subtitle);setText(bossLine,entry.line);bossCard.style.setProperty('--boss-accent',entry.color);bossCard.dataset.biome=entry.area;const c=bossPortrait.getContext('2d');c.clearRect(0,0,160,160);drawBoss(c,{biome:entry.area,s:'move'},80,145,.8,0);}
+  const taxiButton=h('button',{type:'button',class:'playful-npc-marker taxi-npc-marker',testid:'taxi-npc',hidden:true,'aria-label':'마을 택시 이용'},'택시');on(taxiButton,'click',openTaxi);
   const entryTitle=h('strong',{}),entryDetail=h('span',{});
   const areaEntry=h('div',{class:'arcade-stage-entry',hidden:true,'aria-hidden':'true'},h('small',{},'ENTER THE STAGE'),entryTitle,entryDetail);
   let entryUntil=0;
   function announceArea(){setText(entryTitle,AREA_NAMES[currentArea]);setText(entryDetail,{village:'모험가 길드 · 첫 출정',quarry:'수정의 울림을 따라',forest:'잠든 정령의 숲',frost:'서리 너머의 도전'}[currentArea]);areaEntry.hidden=false;areaEntry.style.animation='none';void areaEntry.offsetWidth;areaEntry.style.animation='';entryUntil=performance.now()+2800;}
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, areaEntry, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, firstUse.el, areaEntry, bossCard,taxiButton, ...playfulButtons.map(b=>b.el), banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -362,7 +389,7 @@ export function mount(root, app, opts = {}) {
   const hpFill=h('i'),hpValue=h('span',{class:'rpg-hp-value'}),hpTrack=h('div',{class:'rpg-hp-track',role:'progressbar','aria-label':'체력','aria-valuemin':'0'},hpFill);
   const playerStatus=h('section',{class:'rpg-player-status',testid:'player-status','aria-label':'캐릭터 상태'},h('div',{class:'rpg-emblem','aria-hidden':'true'},portraitCanvas),h('div',{class:'rpg-player-info'},h('strong',{},myNick),hpTrack,hpValue));
   const menuToggle=h('button',{type:'button',class:'rpg-menu-toggle',testid:'game-menu-toggle','aria-label':'게임 메뉴 열기','aria-expanded':'false','aria-controls':'room-game-menu'},h('span',{'aria-hidden':'true'},'☰'),h('small',{},'메뉴'));
-  const menuHelp=h('p',{class:'rpg-menu-help'},'이동 ← → · 점프 Space · 공격 J · 스킬 K / L / ;');
+  const menuHelp=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'controls-help'},'조작 안내');on(menuHelp,'click',()=>firstUse.request('controls',performance.now(),true));
   const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},traitsBtn,chatToggle,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
   function closeGameMenu(focus=false){menu.hidden=true;menuToggle.setAttribute('aria-expanded','false');menuToggle.setAttribute('aria-label','게임 메뉴 열기');if(focus)menuToggle.focus();}
   on(menuToggle,'click',()=>{const open=menu.hidden;menu.hidden=!open;menuToggle.setAttribute('aria-expanded',String(open));menuToggle.setAttribute('aria-label',open?'게임 메뉴 닫기':'게임 메뉴 열기');if(open)input.clear();});
@@ -429,6 +456,7 @@ export function mount(root, app, opts = {}) {
     }
     if (connection === 'joining' || connection === 'fatal') paintLetterbox();
     else render(performance.now());
+    positionCombo();
   }
 
   function paintLetterbox() {
@@ -785,6 +813,7 @@ export function mount(root, app, opts = {}) {
   }
 
   /** 타별 피해 숫자를 min(80, 600/타수) ms 간격, 한 줄씩 위로 쌓아서 (multi 버프) */
+  function onMobDamage(v,dms){const now=performance.now();showHits(dms,v.x,v.y-v.spec.size.h,'hit',now);combatFeel.hit({id:v.id,x:v.x,y:v.y-v.spec.size.h*.55,dir:me?.dir??1,now,strong:dms.reduce((a,b)=>a+b,0)>=v.hp});}
   function showHits(dms, x, y, kind, now) {
     const gap = hitGap(dms.length); // min(80, 600/타수) ms
     dms.forEach((d, i) => dmgNums.add(d, x, y, kind, now + i * gap, dms.length > 1 ? i : null));
@@ -845,6 +874,7 @@ export function mount(root, app, opts = {}) {
     if (document.activeElement?.matches('input, textarea, [contenteditable=true]')) document.activeElement.blur();
     if (now < skillReadyAt[slot] || !skillUnlocked(myLoadout(),slot)) return false;
     doAttack(now, slot);
+    firstUse.request('skills',now);
     skillReadyAt[slot] = now + abilityStats(job.id, slot,myLoadout()).cooldown * 1000;
     return true;
   }
@@ -857,7 +887,7 @@ export function mount(root, app, opts = {}) {
       s.btn.setAttribute('aria-label',locked?`${s.ability.name}, ${GRADES[s.slot-1]} 이상 주무기 획득 시 해금`:`${s.ability.name}, 재사용 ${cooldown}초`);
       s.btn.classList.toggle('is-cooling', left > 0);
       s.btn.disabled = locked || document.body.classList.contains('has-modal') || left > 0 || !me || me.dead || !!me?.body?.rope || connection !== 'connected';
-      setText(s.timer, locked ? `${GRADES[s.slot-1]} 장비` : left > 0 ? (left / 1000).toFixed(1) : '');
+      setText(s.timer, locked ? '잠김' : left > 0 ? (left / 1000).toFixed(1) : '');
       s.btn.style.setProperty('--cooldown', `${Math.min(100,left / (cooldown * 1000) * 100)}%`);
     }
   }
@@ -877,6 +907,7 @@ export function mount(root, app, opts = {}) {
     me.invulnUntil = now + COMBAT.invuln * 1000;
     cstats.hurt++;
     showHits(applied, me.x, me.y - headOf(me), 'hurt', now);
+    combatFeel.hit({id:me.user_id,x:me.x,y:me.y-40,dir,now,local:true,hurt:true});
     if (me.hp <= 0) die(now);
     else knockBody(me.body, dir);
     sendHp(by, applied);
@@ -955,7 +986,7 @@ export function mount(root, app, opts = {}) {
   }
   function requestGarden(mode='defense') {
     if(!me||me.dead||connection!=='connected'||performance.now()-gardenRequestAt<1000)return;
-    gardenRequestAt=performance.now();
+    gardenRequestAt=performance.now();if(mode==='boss')firstUse.request('boss');
     if(isHost())startGarden(me.user_id,mode);else send(mode==='boss'?'boss-start':'garden-start',{});
     canvas.focus({preventScroll:true});
   }
@@ -975,7 +1006,7 @@ export function mount(root, app, opts = {}) {
     }
     if(currentArea!=='village'&&eligible&&!grantedRuns.has(s.id)){
       grantedRuns.add(s.id);
-      if(s.mode!=='boss'){const loot=rollMonsterLoot(currentArea,Object.keys(stageOf(currentArea).mobs).at(-1));receiveLoot({owner:me.user_id,receipt:'event-'+s.id,area:currentArea,x:me.x,y:groundAt(me.x,me.y-1),items:loot.items,gold:Math.min(20000,loot.gold*4)});}
+      if(s.mode!=='boss'){const loot=rollMonsterLoot(currentArea,Object.keys(stageOf(currentArea).mobs).at(-1));receiveLoot({owner:me.user_id,createdAt:Date.now(),receipt:'event-'+s.id,area:currentArea,x:me.x,y:groundAt(me.x,me.y-1),items:loot.items,gold:Math.min(20000,loot.gold*4)});}
     }
     const point=questNpcPoint(world),near=!me.dead&&Math.abs(me.x-point.x)<=230&&Math.abs(me.y-point.y)<=100;
     const zi=zones.find(z=>z.event)?.i;
@@ -1004,6 +1035,7 @@ export function mount(root, app, opts = {}) {
   function syncNpcLook(){const pair=regionNpcs.get(currentArea);if(!pair)return;npcAvatar=pair.quest;petNpcAvatar=pair.pet;mentorNpc.setAttribute('aria-label',mentorOf(currentArea).name+'에게 수련 받기');npcQuest.setAttribute('aria-label',npcRoster(currentArea).quest.name+'에게 말 걸기: 퀘스트 선택');petNpc.setAttribute('aria-label',npcRoster(currentArea).pet.name+'에게 말 걸기: 펫 상점');}
   function configureArea(nextMap) {
     map = nextMap;
+    combatFeel.clear();bossEntrance.clear();bossCardId='';playfulReactions.clear();playfulPanel.close();
     announceArea();
     syncNpcLook();
     if(mobDefs&&baseMobKinds){mobDefs.kinds=stageKinds(baseMobKinds,currentArea);mobSprites?.clear();mobSprites=createMobSprites(mobDefs.kinds);}
@@ -1013,7 +1045,7 @@ export function mount(root, app, opts = {}) {
     Object.assign(BODY_OPT, { platforms, ropes, groundY: world.groundY, minX: world.minX, maxX: world.maxX });
     zones = mobDefs ? gardenZones(normalizeZones(map.spawns || [], platforms, world, mobDefs.kinds), world, currentArea) : [];
     sim = null; mobView?.clear();
-    if (mobDefs) mobView = createMobView({ kinds: mobDefs.kinds, onDamage: (v, dms) => showHits(dms, v.x, v.y - v.spec.size.h, 'hit', performance.now()) });
+    if (mobDefs) mobView = createMobView({ kinds: mobDefs.kinds, onDamage: onMobDamage });
     const cached = areaSnapshots.get(currentArea);
     garden.load(cached && performance.now()-cached.at<30000 ? cached.garden : null);
     if (cached && performance.now() - cached.at < 30000 && mobView) mobView.apply(cached.list, performance.now(), true);
@@ -1026,12 +1058,16 @@ export function mount(root, app, opts = {}) {
     const portal = nearbyPortal(map, me);
     if (!portal) return false;
     if(!progress||!stageUnlocked(progress.state,job.id,portal.to)){portalReadyAt=now+1600;chatLog.addSystem(`${AREA_NAMES[portal.to]} 진입에는 ${GRADES[stageOf(portal.to).recommended]} 이상 주무기 획득이 필요합니다. 장비를 합성해보세요.`);return false;}
+    return travelTo(portal.to,now,'portal',portal.entry);
+  }
+  function travelTo(destination,now,mode='taxi',entry=null){
+    if(!areaCatalog.has(destination)||destination===currentArea||!me||me.dead||connection!=='connected'||!progress||!stageUnlocked(progress.state,job.id,destination))return false;
     portalReadyAt = now + 1600;
     input.clear(); pendingFx = null; sentKey = '';
     if (mobView) areaSnapshots.set(currentArea, { list: sim ? sim.snapshot() : mobView.latest(), garden: garden.snapshot(), at: now });
-    currentArea = portal.to; me.mapId = currentArea;
+    currentArea = destination; me.mapId = currentArea;
     configureArea(areaCatalog.get(currentArea));
-    const x = portal.entry === 'left' ? 230 : world.width - 230;
+    const x = mode==='taxi'?(world.spawn?.x??world.width/2):(entry==='left'?230:world.width-230);
     me.body = createBody(x, world.groundY, world.groundY);
     me.x = me.targetX = x; me.y = me.yTo = world.groundY;
     me.s = 'idle'; me.anim = 'idle'; me.attackUntil = 0;
@@ -1070,13 +1106,13 @@ export function mount(root, app, opts = {}) {
   }
   async function receiveLoot(p){
     if(!progress||!me||p.owner!==me.user_id||p.area!==currentArea)return;
-    try {const before=earnedPoints(progress.state,STAGES),awarded=await progress.run({type:'loot',...p});if(alive&&earnedPoints(progress.state,STAGES)>before)chatLog.addSystem('모험 특성 포인트 획득! 메뉴의 모험 특성에서 배분하세요.');if(!alive)return;if(!awarded?.duplicate&&p.combo){chainUntil=performance.now()+5000;chainHud.hidden=false;setText(chainHud,`${p.combo} COMBO · 골드 +${comboBonus(p.combo)}%`);}if(awarded?.contract){chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}syncProgress();if(isHost())lootOutbox.delete(p.receipt+'|'+p.owner);else send('loot-ack',{receipt:p.receipt});}
+    try {const before=earnedPoints(progress.state,STAGES),awarded=await progress.run({type:'loot',...p});if(alive&&earnedPoints(progress.state,STAGES)>before)chatLog.addSystem('모험 특성 포인트 획득! 메뉴의 모험 특성에서 배분하세요.');if(!alive)return;if(!awarded?.duplicate&&liveGroundDrops().length)firstUse.request('drops');if(!awarded?.duplicate&&p.combo){chainUntil=performance.now()+5000;chainHud.hidden=false;setText(chainHud,`${p.combo} COMBO · 골드 +${comboBonus(p.combo)}%`);}if(awarded?.contract){chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}syncProgress();if(isHost())lootOutbox.delete(p.receipt+'|'+p.owner);else send('loot-ack',{receipt:p.receipt});}
     catch(e){if(alive&&performance.now()-growthErrorAt>5000){growthErrorAt=performance.now();chatLog.addSystem(e.message);}}
   }
   async function collectEquipment(now){
     if(!progress||!me||me.dead||collecting||now-pickupAt<180||document.body.classList.contains('has-modal'))return;
     pickupAt=now;const range=myStats().pickup;
-    const d=progress.state.pending.map(settleDrop).find(d=>(d.kind==='gold'||progress.state.items.length<200)&&now-(dropBorn.get(d.id)??now)>350&&d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
+    const d=liveGroundDrops().find(d=>(d.kind==='gold'||progress.state.items.length<200)&&now-(dropBorn.get(d.id)??now)>350&&d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
     if(!d)return;collecting=true;
     try{const item=await progress.run({type:'collect',id:d.id});dropBorn.delete(d.id);if(alive){chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
     catch(e){if(alive&&now-growthErrorAt>5000){growthErrorAt=now;chatLog.addSystem(e.message);}}finally{collecting=false;}
@@ -1093,12 +1129,13 @@ export function mount(root, app, opts = {}) {
     if (zones[r.mob.z]?.event) garden.record(uid, r.dmgs.reduce((a,b)=>a+b,0), r.killed,players.get(uid)?.attackJob||job.id,r.mob.kind===BOSS_KIND);
     cstats.mobHits++;
     showHits(r.dmgs, r.mob.x, r.mob.y - kindsH(r.mob.kind), 'hit', now);
+    if(r.dmgs.some(d=>d>0))combatFeel.hit({id:r.mob.id,x:r.mob.x,y:r.mob.y-kindsH(r.mob.kind)*.55,dir:players.get(uid)?.dir??1,now,local:uid===me?.user_id,strong:r.killed||players.get(uid)?.lastSkill===3});
     if(uid&&r.dmgs.some(d=>d>0)){let hits=lootContributors.get(r.mob.id);if(!hits){hits=new Map();lootContributors.set(r.mob.id,hits);}hits.set(uid,now);}
     if (r.killed) {
       const hits=lootContributors.get(r.mob.id)||new Map();if(r.mob.kind===BOSS_KIND)for(const m of garden.snapshot()?.members||[])if(m.bossDamage>0)hits.set(m.uid,now);
       for(const [owner,at] of hits){const pl=players.get(owner);if(now-at>30000||!pl||(pl.dead&&r.mob.kind!==BOSS_KIND)||!sameArea(pl,me)||Math.abs(pl.x-r.mob.x)>1400)continue;
         const receipt=`${roomId}:${currentArea}:${r.mob.id}`,chain=huntChain.record(owner,now),loot=rollMonsterLoot(currentArea,r.mob.kind);loot.gold=Math.min(20000,Math.round(loot.gold*(1+chain.bonus/100)));
-        const packet={receipt,owner,kind:r.mob.kind,area:currentArea,x:Math.round(r.mob.x),y:Math.round(groundAt(r.mob.x,r.mob.y-1)),...loot,combo:chain.count,mapId:currentArea};
+        const packet={receipt,owner,createdAt:Date.now(),kind:r.mob.kind,area:currentArea,x:Math.round(r.mob.x),y:Math.round(groundAt(r.mob.x,r.mob.y-1)),...loot,combo:chain.count,mapId:currentArea};
         lootOutbox.set(receipt+'|'+owner,{packet,last:0,at:now});
       }
       lootContributors.delete(r.mob.id);
@@ -1191,6 +1228,7 @@ export function mount(root, app, opts = {}) {
         break;
       }
       case 'impact':
+        if(me&&p.id.startsWith(me.user_id+':'))combatFeel.confirm(now,p.skill===3);
         if (p.id.includes(':strike')) skillAttacks.impact(p.id, p.x, p.y, now);
         else projectiles.impact(p.id, p.x, p.y, now, p.job, p.skill);
         break;
@@ -1301,7 +1339,7 @@ export function mount(root, app, opts = {}) {
   const NO_INPUT = { dir: 0, jump: false, prone: false, superKind: null };
 
   function update(dt, now) {
-    joystick.check();
+    joystick.check();expireGroundDrops(now);
     if(now>chainUntil)chainHud.hidden=true;huntChain.prune(now);
     if (me) {
       const near = connection === 'connected' && now >= portalReadyAt ? nearbyPortal(map, me) : null;
@@ -1544,14 +1582,16 @@ export function mount(root, app, opts = {}) {
   function render(now) {
     if (!me || !avatarR) return;
     syncPlayerStatus();
+    if(combatFeel.shouldHold(now,{reduced:prefersReducedMotion(),blocked:document.body.classList.contains('has-modal')||connection!=='connected'}))return;
     if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
     const { cssW, viewW, viewH, P, dpr, k } = layout;
     if (camY === null) camY = camYTarget(camRef, viewH, 0, layout.mobile?world.groundY+36:world.bottomY,layout.mobile ? .88 : .66);
     const cam = cameraFor(me.x, viewW, viewH, k, camY, world);
     const punch=skillAttacks.presentation(now,me.user_id,prefersReducedMotion());
-    const camX = cam.camX + punch.x*dpr/k;
+    const hitCamera=combatFeel.camera(now,prefersReducedMotion());
+    const camX = cam.camX + (punch.x+hitCamera.x)*dpr/k;
     lastCamX = camX;
-    const cy = cam.camY + punch.y*dpr/k;
+    const cy = cam.camY + (punch.y+hitCamera.y)*dpr/k;
     const ctx = canvas.getContext('2d');
     ctx.setTransform(1,0,0,1,0,0); // World rendering must not inherit the previous DPR label transform.
     if (currentArea === 'village') drawMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
@@ -1560,25 +1600,28 @@ export function mount(root, app, opts = {}) {
     drawVillageOutskirts(ctx,map,camX,cy,k,canvas.width,canvas.height);drawRegionLandmarks(ctx,map,camX,cy,k);
     drawAdventureScenery(ctx,map,camX,cy,k,now,{reduced:prefersReducedMotion()});
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
+    drawBossEntrance(ctx,bossEntrance.active,bossPoint(world),camX,cy,k,Date.now(),prefersReducedMotion());
     drawPortals(ctx, map, camX, cy, k, now);
     drawExplorationPoints(ctx,map,camX,cy,k,progress?.state.traits.explored[currentArea]||[]);
     if(progress){
-      for(const d of progress.state.pending.map(settleDrop))if(d.area===currentArea){if(!dropBorn.has(d.id))dropBorn.set(d.id,now);drawEquipmentDrop(ctx,d,camX,cy,k,now,prefersReducedMotion()?Infinity:now-dropBorn.get(d.id));}
+      for(const d of liveGroundDrops())if(d.area===currentArea){if(!dropBorn.has(d.id))dropBorn.set(d.id,now);drawEquipmentDrop(ctx,d,camX,cy,k,now,prefersReducedMotion()?Infinity:now-dropBorn.get(d.id));}
       const np=petNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy-112)*k/dpr;
       petNpc.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;
       if(!petNpc.hidden){petNpc.style.left=`${nx}px`;petNpc.style.top=`${ny}px`;}
-      const target=progress.state.pending.map(settleDrop).filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
+      const target=liveGroundDrops().filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
       companionPoses=companion.sample({ids:me.dead?[]:equippedPetIds(progress.state),mapId:currentArea,x:me.x,y:me.y,dir:me.dir,moving:!!me.moving,target,now,minX:world.minX,maxX:world.maxX});
 
     }
 
     {const p=mentorPoint(world),mx=(p.x-camX)*k/dpr,my=(p.y-cy-115)*k/dpr;mentorNpc.hidden=mx<20||mx>layout.cssW-20||my<35||my>layout.cssH-30;if(!mentorNpc.hidden){mentorNpc.style.left=mx+'px';mentorNpc.style.top=my+'px';const mark=mentorMarker(progress?traitGoals(progress.state,STAGES).filter(g=>g.area===currentArea):[]);setText(mentorNpc,mark);mentorNpc.classList.toggle('is-ready',mark==='?');}}
+    {const p=taxiPoint(map),x=(p.x-camX)*k/dpr,y=(p.y-cy-88)*k/dpr;taxiButton.hidden=!me||me.dead||Math.abs(me.x-p.x)>160||Math.abs(me.y-p.y)>85||x<24||x>layout.cssW-24||y<90||y>layout.cssH-50;if(!taxiButton.hidden){taxiButton.style.left=x+'px';taxiButton.style.top=y+'px';}}
+    for(const {kind,el}of playfulButtons){const p=playfulPoint(map,kind),x=(p.x-camX)*k/dpr,y=(p.y-cy-(kind==='fun'?116:94))*k/dpr;el.hidden=!!playfulAccessReason(currentArea,kind)||x<24||x>layout.cssW-24||y<90||y>layout.cssH-50;if(!el.hidden){el.style.left=x+'px';el.style.top=y+'px';el.setAttribute('aria-label','대화: '+playfulIdentity(currentArea,kind).name);}}
     npcQuest.hidden=false;
     {const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}}
     {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now,currentArea);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
-      drawMinimap(miniCanvas.getContext('2d'), map, players.values(), mobView?.list || [], me, { x: camX, y: cy, w: viewW, h: viewH },204,88,[{...mentorPoint(world),label:mentorMarker(progress?traitGoals(progress.state,STAGES).filter(g=>g.area===currentArea):[])}]);
+      drawMinimap(miniCanvas.getContext('2d'), map, players.values(), mobView?.list || [], me, { x: camX, y: cy, w: viewW, h: viewH },204,88,[questNpcPoint(world),petNpcPoint(world),mentorPoint(world),playfulPoint(map,'mascot'),playfulPoint(map,'fun'),taxiPoint(map)]);
     }
     if (debugPlatforms && platforms.length) drawPlatformDebug(ctx, platforms, camX, cy, k);
     if (debug && ropes.length) drawRopeDebug(ctx, ropes, camX, cy, k); // (사이클 10) 로프 선 (그림은 아트 ground 레이어)
@@ -1598,6 +1641,8 @@ export function mount(root, app, opts = {}) {
     stones.draw(ctx, tombSprite, camX, cy, k, now);
     drops.draw(ctx, camX, cy, k, now, buffOrbSprite, dropBagSprite);
     const actors=[];
+    actors.push({id:'town-taxi',kind:'npc',y:world.groundY,draw:()=>drawTownTaxi(ctx,map,camX,cy,k,now,prefersReducedMotion())});
+    actors.push({id:'fun-npc',kind:'npc',y:world.groundY,draw:()=>drawFunNpc(ctx,map,camX,cy,k,now,{renderer:avatarR,avatar:regionNpcs.get(currentArea)?.fun,reduced:prefersReducedMotion()})});
     actors.push({id:'region-mascot',kind:'npc',y:world.groundY,draw:()=>drawRegionMascot(ctx,map,camX,cy,k,now,{reduced:prefersReducedMotion()})});
     {const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now,area:currentArea})});}
     {const p=mentorPoint(world);actors.push({id:'training-mentor',kind:'npc',y:p.y,draw:()=>drawMentor(ctx,p,camX,cy,k,{area:currentArea,avatar:regionNpcs.get(currentArea)?.mentor,renderer:avatarR,now,drawItem})});}
@@ -1660,7 +1705,9 @@ export function mount(root, app, opts = {}) {
       drawTraitAura(ctx,Math.round(sx*k),pyD,k,aura,now,{burstAge,reduced:prefersReducedMotion(),front:true});
       ctx.globalAlpha = 1;
     }});
-    for(const actor of sortSceneActors(actors)){ctx.save();ctx.setTransform(1,0,0,1,0,0);actor.draw();ctx.restore();}
+    for(const actor of sortSceneActors(actors)){ctx.save();ctx.setTransform(1,0,0,1,0,0);const pose=combatFeel.pose(actor.id,now,prefersReducedMotion());ctx.translate(pose.x*k,0);if(pose.brightness>1)ctx.filter=`brightness(${pose.brightness})`;actor.draw();ctx.restore();}
+    combatFeel.draw(ctx,camX,cy,k,now,prefersReducedMotion());
+    for(const [kind,reaction]of playfulReactions){if(now>=reaction.until)playfulReactions.delete(kind);else drawPlayfulReaction(ctx,map,kind,camX,cy,k,now,reaction,prefersReducedMotion());}
     slashes.draw(ctx, camX, cy, k, now);
     projectiles.draw(ctx, camX, cy, k, now);
     skillAttacks.draw(ctx, camX, cy, k, now);
@@ -1727,6 +1774,8 @@ export function mount(root, app, opts = {}) {
     const dt = Math.min(Math.max((now - (lastFrame || now)) / 1000, 0), WORLD.maxDt);
     lastFrame = now;
     update(dt, now);
+    paintBossArrival();
+    firstUse.update(now,connection!=='connected');
     render(now);
   }
 
@@ -1824,6 +1873,7 @@ export function mount(root, app, opts = {}) {
     if (isTypingTarget(ae) || chatLog.el.contains(ae)) return;
     if (document.body.classList.contains('has-modal')) return; // 확인 모달이 열려 있으면 게임 입력 없음
     const now = performance.now();
+    if(e.code==='KeyE'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){const tp=taxiPoint(map);if(me&&Math.abs(me.x-tp.x)<=160&&Math.abs(me.y-tp.y)<=85){e.preventDefault();openTaxi();return;}const near=nearbyPlayful(map,me);if(near){e.preventDefault();openPlayful(near.kind);}return;}
     // (사이클 9) 공격 Ctrl / J / X, 스킬 K / L / ; (숫자키 호환). Ctrl은 단독으로만(Ctrl+J 등 브라우저 단축키는 양보)
     if (SKILL_KEYS[e.code] && !e.ctrlKey && !e.metaKey && !e.altKey) {
       e.preventDefault(); if (!e.repeat) useSkill(SKILL_KEYS[e.code], now); return;
@@ -1880,22 +1930,11 @@ export function mount(root, app, opts = {}) {
     [crouchBtn, 'prone', 'touch:prone', null], [jumpBtn, 'jump', 'touch:jump', 'up'],
     [attackBtn, 'attack', 'touch:attack', null], // (사이클 9)
   ];
-  for (const [btn, what, id, group] of touchButtons) {
-    const release = () => { input.release(id); btn.classList.remove('is-pressed'); };
-    on(btn, 'pointerdown', (e) => {
-      e.preventDefault();
-      if (connection !== 'connected') return;
-      const now = performance.now();
-      const fresh=typeof what==='number'?input.press(id,what):input.pressAction(id,what,now);
-      if(fresh&&group)input.tap(group,now,id);
-      btn.classList.add('is-pressed');
-    });
-    on(btn, 'pointerup', release);
-    on(btn, 'pointercancel', release);
-    on(btn, 'pointerleave', release);
-    on(btn, 'contextmenu', (e) => e.preventDefault());
-  }
+  const heldControls=touchButtons.map(([btn,what,id,group])=>bindPointerAction(btn,{on,hold:true,enabled:()=>connection==='connected'&&!btn.disabled&&!document.body.classList.contains('has-modal'),activate:()=>{if(typeof what==='number')firstUse.request('controls');const now=performance.now(),fresh=typeof what==='number'?input.press(id,what):input.pressAction(id,what,now);if(fresh&&group)input.tap(group,now,id);},release:()=>input.release(id)}));
+  on(window,'blur',()=>{heldControls.forEach(c=>c.reset());skillButtons.forEach(s=>s.pointer.reset());});
+  on(document,'visibilitychange',()=>{if(document.hidden){heldControls.forEach(c=>c.reset());skillButtons.forEach(s=>s.pointer.reset());}});
 
+  on(stickPad,'pointerdown',()=>{if(connection==='connected'&&me&&!me.dead)firstUse.request('controls');});
   const joystick=bindJoystick(stickPad,stickKnob,{input,on,enabled:()=>!!me&&connection==='connected'&&!me.dead&&!document.body.classList.contains('has-modal')});
   on(window,'blur',()=>joystick.reset());on(document,'visibilitychange',()=>{if(document.hidden)joystick.reset();});
 
@@ -2104,6 +2143,7 @@ export function mount(root, app, opts = {}) {
     if (app.providers.room) app.providers.room = null;
     avatarR?.clear();
     fx.clear();
+    firstUse.clear();combatFeel.clear();bossEntrance.clear();playfulReactions.clear();playfulPanel.destroy();taxiPanel.destroy();
     dmgNums.clear(); projectiles.clear(); skillAttacks.clear(); slashes.clear(); stones.clear(); drops.clear(); buffs.clear(); buffEls.clear();
     if (debug) { try { delete window.__mushroomDebug; } catch { /* 무시 */ } }
     sim = null;
@@ -2161,7 +2201,7 @@ export function mount(root, app, opts = {}) {
         if (zones.length) {
           mobView = createMobView({
             kinds: mobDefs.kinds,
-            onDamage: (v, dms) => { showHits(dms, v.x, v.y - v.spec.size.h, 'hit', performance.now()); }, // 비호스트: 타별 dm
+            onDamage: onMobDamage, // 비호스트: 타별 dm
           });
           mobSprites = createMobSprites(mobDefs.kinds);
         }
@@ -2169,8 +2209,8 @@ export function mount(root, app, opts = {}) {
       }
     }
     avatarR = createAvatarRenderer(assets);
-    for(const area of AREA_IDS){const cast=npcRoster(area);regionNpcs.set(area,{quest:assets.sanitizeAvatar(cast.quest.avatar),pet:assets.sanitizeAvatar(cast.pet.avatar),mentor:assets.sanitizeAvatar(mentorOf(area).avatar)});}
-    await Promise.all([...regionNpcs.values()].flatMap(p=>[avatarR.ready(p.quest),avatarR.ready(p.pet),avatarR.ready(p.mentor)]));
+    for(const area of AREA_IDS){const cast=npcRoster(area);regionNpcs.set(area,{quest:assets.sanitizeAvatar(cast.quest.avatar),pet:assets.sanitizeAvatar(cast.pet.avatar),mentor:assets.sanitizeAvatar(mentorOf(area).avatar),fun:assets.sanitizeAvatar(funNpcOf(area).avatar)});}
+    await Promise.all([...regionNpcs.values()].flatMap(p=>[avatarR.ready(p.quest),avatarR.ready(p.pet),avatarR.ready(p.mentor),avatarR.ready(p.fun)]));
     syncNpcLook();
     if(!alive)return;
     const sp = spawnPoint();

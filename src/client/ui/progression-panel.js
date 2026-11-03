@@ -90,7 +90,7 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
    body.append(h('footer',{class:'gp-action-bar'},h('div',{},h('strong',{},`${selected.size}개 선택`),h('span',{class:'gp-muted'},`판매 금액 ${total.toLocaleString()} G`)),confirm?.type==='bulk'?h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button(`${selected.size}개 판매 확정`,()=>run({type:'sell-many',ids:[...selected]}),{disabled:busy||!selected.size,kind:'gp-danger',testid:'gear-sell-confirm'})):button('선택 장비 판매',()=>{confirm={type:'bulk'};paint();},{disabled:busy||!selected.size,kind:'gp-primary',testid:'gear-sell-selected'})));
    return;
   }
-  const i=s.items.find(i=>i.id===detail);if(!i){if(!bulk)body.append(h('p',{class:'gp-muted gp-hint'},'장비를 누르면 능력치와 착용·합성 메뉴가 열립니다.'));return;}
+  const i=s.items.find(i=>i.id===detail);if(!i){return;}
   const partner=i.tier<4?s.items.find(x=>x.id!==i.id&&x.kind===i.kind&&x.tier===i.tier&&!worn(s,x.id))||s.items.find(x=>x.id!==i.id&&x.kind===i.kind&&x.tier===i.tier):null;
   const current=s.items.find(x=>x.id===(i.kind==='shield'?s.shield:s.activeWeapon));
   const value=i.kind==='shield'?[4,9,16,26,40][i.tier]:ATTACK[i.tier],prior=current?(i.kind==='shield'?[4,9,16,26,40][current.tier]:ATTACK[current.tier]):i.kind==='shield'?0:20;
@@ -101,7 +101,7 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
  }
  function paintPets(s){
   const equipped=equippedPetIds(s),has=id=>equipped.includes(id),full=equipped.length>=MAX_EQUIPPED_PETS;
-  body.append(h('p',{class:'gp-muted'},`동행 ${equipped.length} / ${MAX_EQUIPPED_PETS} · 서로 다른 펫을 최대 3마리까지 장착할 수 있어요. 공격력·체력 보너스는 합산돼요.`));
+  body.append(h('p',{class:'gp-muted'},`동행 ${equipped.length} / ${MAX_EQUIPPED_PETS}`));
   const slots=h('div',{class:'gp-pet-party',testid:'pet-party','aria-label':'동행 펫 3슬롯'});
   for(let slot=0;slot<MAX_EQUIPPED_PETS;slot++){const id=equipped[slot];slots.append(h('section',{class:'gp-pet-slot'},h('small',{},`동행 ${slot+1}`),id?petIcon(id,48):h('span',{class:'gp-muted'},'빈 슬롯'),h('strong',{},id?petSpec(id).name:'펫을 선택하세요'),id?button('해제',()=>run({type:'pet-off',id}),{disabled:busy,testid:'pet-slot-off-'+slot}):null));}body.append(slots);
   const grid=h('div',{class:'gp-grid',role:'group','aria-label':'보유 펫'});

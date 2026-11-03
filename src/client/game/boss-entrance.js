@@ -8,8 +8,9 @@ export const BOSS_ENTRANCES=Object.freeze({
 export const ENTRANCE_DURATION=4200;
 export function createBossEntrance(){
  const seen=new Set();let active=null;
- return {observe(state,area,wallNow){
+ return {observe(state,area,wallNow,{suppress=false}={}){
   if(active&&(state?.id!==active.id||state?.phase!=='ready'||wallNow-active.at>=ENTRANCE_DURATION))active=null;
+  if(suppress){active=null;if(state?.phase==='ready'&&state.mode==='boss'){seen.add(state.id);while(seen.size>32)seen.delete(seen.values().next().value);}return null;}
   if(state?.phase!=='ready'||state.mode!=='boss'||seen.has(state.id))return active;
   seen.add(state.id);while(seen.size>32)seen.delete(seen.values().next().value);
   const age=wallNow-state.started;

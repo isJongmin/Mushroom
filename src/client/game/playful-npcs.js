@@ -7,7 +7,7 @@ export const FUN_NPCS=Object.freeze({
  frost:{name:'썰렁 대장 포그',role:'추위보다 차가운 농담',game:'joke',color:'#c3e7ef',avatar:avatar('pink-long','beanie-sage','puffer-mint','pants-navy','chunky-white'),greeting:'눈사람이 화나면? …열받으면 안 되니까 항상 침착하지. 한 개 더 들을래?'},
 });
 export const funNpcOf=area=>FUN_NPCS[area]||FUN_NPCS.village;
-export const playfulPoint=(map,kind)=>({x:Math.max(200,(map.spawn?.x??900)-(kind==='mascot'?330:570)),y:map.groundY});
+export const playfulPoint=(map,kind)=>({x:Math.max(200,(map.spawn?.x??900)-(kind==='mascot'?330:480)),y:map.groundY});
 export function nearbyPlayful(map,player){
  if(!player||player.dead)return null;
  return ['mascot','fun'].map(kind=>({kind,...playfulPoint(map,kind)})).filter(p=>Math.abs(p.x-player.x)<=130&&Math.abs(p.y-player.y)<=75).sort((a,b)=>Math.abs(a.x-player.x)-Math.abs(b.x-player.x))[0]||null;

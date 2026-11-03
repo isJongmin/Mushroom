@@ -1,4 +1,5 @@
 import {h} from '../dom.js';
+import {adventureProgress} from '../game/adventure-level.js';
 import {openModal} from './modal.js';
 import {equippedPetIds,MAX_EQUIPPED_PETS,petSellPrice,petPrice,petBonuses,fusionSummary,GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL,activeWeapon,activeJob,wornItem} from '../game/progression.js';
 import {drawItem,drawPet} from '../game/progression-visuals.js';
@@ -47,6 +48,8 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
   body.append(h('header',{class:'gp-header'},h('div',{},h('p',{class:'gp-eyebrow'},screen==='shop'?'LULU’S PET ATELIER':'ADVENTURER’S COLLECTION'),h('h2',{id:'growth-title'},screen==='shop'?`${stageOf(area).name} 펫 상점`:'모험가의 가방')),button('닫기',close,{disabled:busy,testid:'growth-close',kind:'gp-quiet'})),
    h('div',{class:'gp-wallet'},h('strong',{},`${s.gold.toLocaleString()} G`),h('span',{},`펫 정수 ${s.essence}`)));
   if(screen==='bag'){
+   const level=adventureProgress(s);
+   body.append(h('p',{class:'gp-level-summary',testid:'bag-level'},`Lv.${level.level} · ${level.capped?'최고 레벨':level.current+' / '+level.needed+' EXP'} · 사냥으로 성장`));
    body.append(h('div',{class:'gp-bag-top'},h('div',{class:'gp-tabs',role:'tablist','aria-label':'가방 종류'},...['equipment','pets'].map(t=>{const b=button(t==='equipment'?`장비 ${s.items.length}`:`펫 ${Object.keys(s.pets).length}`,()=>{tab=t;bulk=false;resetSelection();notice='';paint();},{disabled:busy,focus:'tab-'+t});b.setAttribute('role','tab');b.setAttribute('aria-selected',String(tab===t));b.tabIndex=tab===t?0:-1;
     b.addEventListener('keydown',e=>{if(busy||!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();tab=e.key==='Home'?'equipment':e.key==='End'?'pets':tab==='equipment'?'pets':'equipment';bulk=false;resetSelection();notice='';paint();body.querySelector('[data-focus="tab-'+tab+'"]')?.focus();},{signal:renderAc.signal});return b;})),h('p',{class:'gp-stats'},`공격 ${stats.attack} · 방어 ${stats.defense} · HP ${stats.maxHp}`)));
   }

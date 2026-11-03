@@ -1,6 +1,7 @@
 import {cleanTraits,cleanAllocation,allocationOK,earnedPoints,traitGoals} from './adventure-traits.js';
 import {huntContract} from './hunt-chain.js';
 import {regionOf} from './regions.js';
+import {adventureProgress,adventureBonuses,cleanAdventureLevel} from './adventure-level.js';
 // One balance contract for loot, equipment, stages and pets. No real-money purchases.
 export const GROUND_DROP_TTL_MS=3*60*1000;
 export const groundDropAlive=(drop,now=Date.now())=>!drop.expiresAt||drop.expiresAt>now;
@@ -79,17 +80,18 @@ export function loadout(s) {
  const weapon=activeWeapon(s),job=weaponJob(weapon?.kind);
  const shield=s.items.find(i=>i.id===s.shield&&i.kind==='shield');
  const companions=equippedPetIds(s).map(id=>({id,level:s.pets[id].level}));
- return {companions,traits:{...s.traits.allocated},weapon:weapon?.kind||'sword',job,tier:weapon?.tier??0,highest:s.highest[job]??0,shield:shield?.tier??-1,pet:companions[0]?.id||null,level:companions[0]?.level||0};
+ return {adventureLevel:adventureProgress(s).level,companions,traits:{...s.traits.allocated},weapon:weapon?.kind||'sword',job,tier:weapon?.tier??0,highest:s.highest[job]??0,shield:shield?.tier??-1,pet:companions[0]?.id||null,level:companions[0]?.level||0};
 }
 export function cleanLoadout(l) {
  const weapon=Object.values(WEAPONS).includes(l?.weapon)?l.weapon:null;
  const source=Array.isArray(l?.companions)?l.companions:[{id:l?.pet,level:l?.level}],seen=new Set(),companions=[];
  for(const p of source.slice(0,20))if(petSpec(p?.id)&&!seen.has(p.id)){seen.add(p.id);companions.push({id:p.id,level:Number.isInteger(p.level)?Math.max(0,Math.min(5,p.level)):0});if(companions.length===MAX_EQUIPPED_PETS)break;}
- return {companions,traits:cleanAllocation(l?.traits),...(weapon?{weapon,job:weaponJob(weapon)}:{}),tier:tierOK(l?.tier)?l.tier:0,highest:Math.max(tierOK(l?.tier)?l.tier:0,tierOK(l?.highest)?l.highest:0),shield:tierOK(l?.shield)?l.shield:-1,pet:companions[0]?.id||null,level:companions[0]?.level||0};
+ return {adventureLevel:cleanAdventureLevel(l?.adventureLevel),companions,traits:cleanAllocation(l?.traits),...(weapon?{weapon,job:weaponJob(weapon)}:{}),tier:tierOK(l?.tier)?l.tier:0,highest:Math.max(tierOK(l?.tier)?l.tier:0,tierOK(l?.highest)?l.highest:0),shield:tierOK(l?.shield)?l.shield:-1,pet:companions[0]?.id||null,level:companions[0]?.level||0};
 }
 export function combatStats(raw) {
  const l=cleanLoadout(raw),traits=l.traits,bonuses=l.companions.map(p=>petBonuses(p.id,p.level)),bonus=bonuses.reduce((n,p)=>n+p.attack,0),hp=bonuses.reduce((n,p)=>n+p.hp,0);
- return {attack:Math.round(ATTACK[l.tier]*(1+bonus)*(1+.05*traits.attack)),multiplier:ATTACK[l.tier]/20*(1+bonus)*(1+.05*traits.attack),defense:DEFENSE[l.tier]+(l.shield<0?0:[4,9,16,26,40][l.shield]),cooldownMultiplier:1-.02*traits.technique,maxHp:Math.round((100+hp)*(1+.05*traits.health)),pickup:l.companions.length?240:26};
+ const growth=adventureBonuses(l.adventureLevel);
+ return {attack:Math.round(ATTACK[l.tier]*(1+bonus)*(1+.05*traits.attack)*growth.attack),multiplier:ATTACK[l.tier]/20*(1+bonus)*(1+.05*traits.attack)*growth.attack,defense:DEFENSE[l.tier]+(l.shield<0?0:[4,9,16,26,40][l.shield]),cooldownMultiplier:1-.02*traits.technique,maxHp:Math.round((100+hp+growth.hp)*(1+.05*traits.health)),pickup:l.companions.length?240:26};
 }
 export const skillUnlocked = (l,slot) => slot<=1 || cleanLoadout(l).highest>=slot-1;
 export const stageUnlocked = (s,job,area) => Math.max(0,...Object.values(s.highest))>=stageOf(area).recommended;

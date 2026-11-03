@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
+import {adventureProgress} from '../src/client/game/adventure-level.js';
 
 const source=readFileSync(new URL('../src/client/screens/room.js',import.meta.url),'utf8');
 const start=source.lastIndexOf('  (async () => {');
@@ -10,7 +11,7 @@ const tick=()=>new Promise(r=>setImmediate(r));
 function fixture(){
  const map=deferred(),player=deferred(),requests=[],calls=[];
  const assets={sanitizeAvatar:a=>a};
- const c=vm.createContext({alive:true,assets:null,avatarR:null,villageMap:null,map:null,
+ const c=vm.createContext({adventureProgress,presentedLevel:1,alive:true,assets:null,avatarR:null,villageMap:null,map:null,
   platforms:[],ropes:[],world:null,camRef:0,me:null,raf:null,taxiAvatar:null,
   app:{assets:Promise.resolve(assets),mapAssets:map.promise,profileKey:'qa',userId:'qa'},
   profile:{avatar:{id:'player'}},roomId:'room',myNick:'Qa',NICK_RE:/^Qa$/,

@@ -1,3 +1,4 @@
+import {cleanTraits,cleanAllocation,allocationOK,earnedPoints} from './adventure-traits.js';
 import {huntContract} from './hunt-chain.js';
 import {regionOf} from './regions.js';
 // One balance contract for loot, equipment, stages and pets. No real-money purchases.
@@ -44,7 +45,7 @@ export function rollEquipment(area,rnd=Math.random){
  if(rnd()<.10)out.push({kind:'shield',tier:weighted(stageOf(area).drop,rnd)});
  return out;
 }
-export function starterState(job='warrior') {return {version:1,revision:0,gold:0,items:[{id:'starter-'+job,kind:WEAPONS[job]||'sword',tier:0}],activeWeapon:'starter-'+job,equipped:{[job]:'starter-'+job},shield:null,highest:{[job]:0},pets:{},pet:null,essence:0,pity:{},pending:[],seen:[],kills:{village:0,quarry:0,forest:0}};}
+export function starterState(job='warrior') {return {version:1,revision:0,gold:0,items:[{id:'starter-'+job,kind:WEAPONS[job]||'sword',tier:0}],activeWeapon:'starter-'+job,equipped:{[job]:'starter-'+job},shield:null,highest:{[job]:0},pets:{},pet:null,essence:0,pity:{},pending:[],seen:[],kills:{village:0,quarry:0,forest:0,frost:0},traits:cleanTraits(null,{},STAGES)};}
 export function cleanState(raw,job='warrior') {
  if(!raw||raw.version!==1)return starterState(job);
  const s=starterState(job),nat=(n,max=1e9)=>Number.isSafeInteger(n)?Math.max(0,Math.min(max,n)):0;
@@ -60,17 +61,18 @@ export function cleanState(raw,job='warrior') {
  s.pet=s.pets[raw.pet]?raw.pet:null;
  for(const area of Object.keys(STAGES)) {const p=raw.pity?.[area];s.pity[area]=[nat(p?.[0],19),nat(p?.[1],79),nat(p?.[2],199)];s.kills[area]=nat(raw.kills?.[area]);}
  s.seen=Array.isArray(raw.seen)?raw.seen.filter(i=>typeof i==='string'&&i.length<=160).slice(-10000):[];
+ s.traits=cleanTraits(raw.traits,s.kills,STAGES);
  s.pending=(Array.isArray(raw.pending)?raw.pending:[]).filter(d=>dropOK(d)&&Object.hasOwn(STAGES,d.area)&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&Math.abs(d.x)<1e5&&Math.abs(d.y)<1e5).slice(0,200).map(d=>({...d}));return s;
 }
 export function loadout(s) {
  const weapon=activeWeapon(s),job=weaponJob(weapon?.kind);
  const shield=s.items.find(i=>i.id===s.shield&&i.kind==='shield');
- return {weapon:weapon?.kind||'sword',job,tier:weapon?.tier??0,highest:s.highest[job]??0,shield:shield?.tier??-1,pet:s.pet,level:s.pets[s.pet]?.level??0};
+ return {traits:{...s.traits.allocated},weapon:weapon?.kind||'sword',job,tier:weapon?.tier??0,highest:s.highest[job]??0,shield:shield?.tier??-1,pet:s.pet,level:s.pets[s.pet]?.level??0};
 }
-export function cleanLoadout(l) {const p=petSpec(l?.pet),weapon=Object.values(WEAPONS).includes(l?.weapon)?l.weapon:null;return {...(weapon?{weapon,job:weaponJob(weapon)}:{}),tier:tierOK(l?.tier)?l.tier:0,highest:Math.max(tierOK(l?.tier)?l.tier:0,tierOK(l?.highest)?l.highest:0),shield:tierOK(l?.shield)?l.shield:-1,pet:p?.id??null,level:Number.isInteger(l?.level)?Math.max(0,Math.min(5,l.level)):0};}
+export function cleanLoadout(l) {const p=petSpec(l?.pet),weapon=Object.values(WEAPONS).includes(l?.weapon)?l.weapon:null;return {traits:cleanAllocation(l?.traits),...(weapon?{weapon,job:weaponJob(weapon)}:{}),tier:tierOK(l?.tier)?l.tier:0,highest:Math.max(tierOK(l?.tier)?l.tier:0,tierOK(l?.highest)?l.highest:0),shield:tierOK(l?.shield)?l.shield:-1,pet:p?.id??null,level:Number.isInteger(l?.level)?Math.max(0,Math.min(5,l.level)):0};}
 export function combatStats(raw) {
- const l=cleanLoadout(raw),pet=petSpec(l.pet),bonus=pet?petBonuses(pet.id,l.level).attack:0;
- return {attack:Math.round(ATTACK[l.tier]*(1+bonus)),multiplier:ATTACK[l.tier]/20*(1+bonus),defense:DEFENSE[l.tier]+(l.shield<0?0:[4,9,16,26,40][l.shield]),maxHp:100+(pet?petBonuses(pet.id,l.level).hp:0),pickup:pet?240:26};
+ const l=cleanLoadout(raw),traits=l.traits,pet=petSpec(l.pet),bonus=pet?petBonuses(pet.id,l.level).attack:0;
+ return {attack:Math.round(ATTACK[l.tier]*(1+bonus)*(1+.05*traits.attack)),multiplier:ATTACK[l.tier]/20*(1+bonus)*(1+.05*traits.attack),defense:DEFENSE[l.tier]+(l.shield<0?0:[4,9,16,26,40][l.shield]),cooldownMultiplier:1-.02*traits.technique,maxHp:Math.round((100+(pet?petBonuses(pet.id,l.level).hp:0))*(1+.05*traits.health)),pickup:pet?240:26};
 }
 export const skillUnlocked = (l,slot) => slot<=1 || cleanLoadout(l).highest>=slot-1;
 export const stageUnlocked = (s,job,area) => Math.max(0,...Object.values(s.highest))>=stageOf(area).recommended;
@@ -87,17 +89,32 @@ export function fusionSummary(items) {
 export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=()=>globalThis.crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')}={}) {
  const s=cleanState(original,job),c=command;let result=null;
  const fail=m=>{throw new Error(m);};
- if(c.type==='ensure') {if(!activeWeapon(s)){const i={id:id(),kind:WEAPONS[job],tier:0};s.items.push(i);s.equipped[job]=i.id;s.activeWeapon=i.id;}}
+ if(c.type==='ensure') {if(c.legacyVillageBoss===true)s.traits.events.village.boss=true;if(!activeWeapon(s)){const i={id:id(),kind:WEAPONS[job],tier:0};s.items.push(i);s.equipped[job]=i.id;s.activeWeapon=i.id;}}
+ else if(c.type==='traits-allocate') {
+  if(c.expectedRevision!==s.revision)fail('다른 탭에서 진행도가 바뀌었어요. 다시 확인해주세요.');
+  if(!allocationOK(c.allocated,earnedPoints(s,STAGES)))fail('특성은 각 0~10 정수, 합계는 획득 포인트 이하여야 합니다.');
+  s.traits.allocated=cleanAllocation(c.allocated,earnedPoints(s,STAGES));
+ }
+ else if(c.type==='trait-explore') {
+  if(!Object.hasOwn(STAGES,c.area)||c.area==='village'||!['entry','upper','depth'].includes(c.point))fail('잘못된 탐험 지점입니다.');
+  if(!s.traits.explored[c.area].includes(c.point))s.traits.explored[c.area].push(c.point);
+ }
+ else if(c.type==='trait-event') {
+  if(!Object.hasOwn(STAGES,c.area)||!['boss','defense'].includes(c.mode)||(c.area==='village'&&c.mode==='defense'))fail('잘못된 모험 기록입니다.');
+  s.traits.events[c.area][c.mode]=true;
+ }
  else if(c.type==='loot') {
   if(typeof c.receipt!=='string'||c.receipt.length>150||!Object.hasOwn(STAGES,c.area))fail('잘못된 드롭 정보입니다.');
   if(s.seen.includes(c.receipt))return {state:s,result:{duplicate:true}};
   if(!Array.isArray(c.items)||c.items.length>8||c.items.some(i=>!itemOK({...i,id:'check'})))fail('잘못된 장비입니다.');
   let gold=c.gold??0;if(!Number.isSafeInteger(gold)||gold<0||gold>20000)fail('잘못된 골드 보상입니다.');
-  const counts=!c.receipt.startsWith('event-'),kills=s.kills[c.area]+(counts?1:0),contract=counts?huntContract(c.area,stageOf(c.area).order,kills,activeWeapon(s)?.kind||'sword'):null,items=[...c.items];
+  if(c.kind!=null&&!Object.hasOwn(STAGES[c.area].mobs,c.kind)&&!['garden-king','garden-runner','garden-guard'].includes(c.kind))fail('잘못된 몬스터입니다.');
+  const counts=!c.receipt.startsWith('event-')&&(!c.kind||Object.hasOwn(STAGES[c.area].mobs,c.kind)),kills=s.kills[c.area]+(counts?1:0),contract=counts?huntContract(c.area,stageOf(c.area).order,kills,activeWeapon(s)?.kind||'sword'):null,items=[...c.items];
   if(contract){gold+=contract.gold;items.push(contract.item);result={contract:true};}
   const piles=gold?Math.min(8,Math.max(1,Math.ceil(gold/120))):0;
   if(s.pending.length+items.length+piles>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
   if(!Number.isFinite(c.x)||!Number.isFinite(c.y)||Math.abs(c.x)>1e5||Math.abs(c.y)>1e5)fail('잘못된 드롭 위치입니다.');
+  if(counts&&c.kind){const records=s.traits.species[c.area][c.kind],max=c.area==='village'?10:20;if(records.length<max&&!records.includes(c.receipt))records.push(c.receipt);}
   s.seen.push(c.receipt);s.seen=s.seen.slice(-10000);s.kills[c.area]=kills;
   items.forEach((i,n)=>s.pending.push({id:c.receipt+':'+n,kind:i.kind,tier:i.tier,area:c.area,x:c.x+(n-(items.length-1)/2)*38,y:c.y}));
   for(let n=0;n<piles;n++)s.pending.push({id:c.receipt+':gold:'+n,kind:'gold',amount:Math.floor(gold/piles)+(n<gold%piles?1:0),area:c.area,x:c.x+(n-(piles-1)/2)*32,y:c.y});

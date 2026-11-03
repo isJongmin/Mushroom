@@ -153,7 +153,7 @@ const UID_OK = (v) => typeof v === 'string' && v.length > 0 && v.length <= 64;
 const SID_RE = /^[a-z0-9]{1,16}$/i;
 const KIND_RE = /^[a-z0-9-]{1,32}$/;
 const BUFF_SET = new Set(['heal']); // (사이클 10) game/buffs.js DROP_KINDS (버프 5종 + heal)
-const DM_OK = (v) => Array.isArray(v) && v.length > 0 && v.length <= 12 && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 1000);
+const DM_OK = (v) => Array.isArray(v) && v.length > 0 && v.length <= 12 && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 10000);
 const MOB_S = new Set(['move', 'hit', 'die']);
 const numIn = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
 const COORD = 1e5;
@@ -177,7 +177,8 @@ function cleanGameEventPayload(event, p) {
       if(!UID_OK(p.host)||!UID_OK(p.owner)||typeof p.receipt!=='string'||p.receipt.length>150||!Object.hasOwn(STAGES,p.area)||!numIn(p.x,-COORD,COORD)||!numIn(p.y,-COORD,COORD)||!Array.isArray(p.items)||p.items.length>8||p.items.some(i=>!itemOK({...i,id:'check'})))return null;
       if(p.gold!=null&&(!Number.isSafeInteger(p.gold)||p.gold<0||p.gold>20000))return null;
       if(p.combo!=null&&(!Number.isInteger(p.combo)||p.combo<1||p.combo>999))return null;
-      return {...(p.combo?{combo:p.combo}:{}),host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,gold:p.gold??0,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
+      if(p.kind!=null&&!Object.hasOwn(STAGES[p.area].mobs,p.kind)&&!['garden-king','garden-runner','garden-guard'].includes(p.kind))return null;
+      return {...(p.kind?{kind:p.kind}:{}),...(p.combo?{combo:p.combo}:{}),host:p.host,owner:p.owner,receipt:p.receipt,area:p.area,x:p.x,y:p.y,gold:p.gold??0,items:p.items.map(i=>({kind:i.kind,tier:i.tier}))};
     case 'boss-start':
     case 'garden-start':
       return UID_OK(p.user_id) ? { user_id:p.user_id } : null;

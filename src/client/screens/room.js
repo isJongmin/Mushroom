@@ -733,7 +733,6 @@ export function mount(root, app, opts = {}) {
         if (connection !== 'joining') setConnection('joining');
         break;
       case 'connected':
-        if(prev==='joining')announceArea();
         if (info.first) {
           connectedAt = performance.now();
           setConnection('connected');

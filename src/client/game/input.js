@@ -7,6 +7,7 @@
 
 export function createMoveInput({ doubleTapMs = 300 } = {}) {
   const held = new Map(); // sourceId -> { dir, order }
+  const freshPresses = new Set(); // consume a physical down edge once, even if repeat is misreported
   const acts = new Map(); // sourceId -> 'jump' | 'prone'
   let seq = 0;
   let jumpAt = -Infinity; // 마지막 점프 누름 시각 (performance.now 기준)
@@ -21,24 +22,29 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
   };
   return {
     press(sourceId, dir) {
-      if (held.has(sourceId)) return; // 키 반복 무시
+      if (held.has(sourceId)) return false; // 키 반복 무시
       held.set(sourceId, { dir, order: ++seq });
+      freshPresses.add(sourceId);return true;
     },
     /** 점프/엎드리기 누름. now = performance.now() */
     pressAction(sourceId, action, now) {
-      if (acts.has(sourceId)) return; // 키 반복 무시
+      if (acts.has(sourceId)) return false; // 키 반복 무시
       acts.set(sourceId, action);
       if (action === 'jump') { jumpAt = now; jumpHoldOff = false; }
       else if (action === 'attack') attackAt = now;
+      freshPresses.add(sourceId);return true;
     },
-    /** 더블탭 묶음 누름 ('left' | 'right' | 'up'). 키 반복은 부르는 쪽이 거른다. */
-    tap(group, now) {
-      if (lastTap && lastTap.group === group && now - lastTap.at <= doubleTapMs) {
+    /** A sourced tap requires a fresh down edge and release between the two taps. */
+    tap(group, now, sourceId = null) {
+      if(!['left','right','up'].includes(group)||!Number.isFinite(now))return false;
+      if(sourceId!==null&&!freshPresses.delete(sourceId))return false;
+      if(sourceId!==null&&lastTap?.group===group&&!lastTap.released)return false;
+      if (lastTap && lastTap.group === group && lastTap.released && now>=lastTap.at && now - lastTap.at <= doubleTapMs) {
         superReq = { kind: group, firstAt: lastTap.at, at: now };
         lastTap = null;
         return true;
       }
-      lastTap = { group, at: now };
+      lastTap = { group, at: now, sourceId, released:sourceId===null };
       return false;
     },
     /** 이번 프레임 슈퍼 점프 요청 { kind, age(초: 첫 누름부터) } 또는 null. 꺼내면 지운다(쿨다운에 막혀도 쌓지 않음). */
@@ -49,12 +55,14 @@ export function createMoveInput({ doubleTapMs = 300 } = {}) {
       return { kind: r.kind, age: Math.max(0, (now - r.firstAt) / 1000) };
     },
     release(sourceId) {
+      if(lastTap?.sourceId===sourceId)lastTap.released=true;
+      freshPresses.delete(sourceId);
       held.delete(sourceId);
       acts.delete(sourceId);
     },
     clear() {
       held.clear();
-      acts.clear();
+      acts.clear();freshPresses.clear();
       jumpAt = -Infinity;
       jumpHoldOff = false;
       attackAt = -Infinity;

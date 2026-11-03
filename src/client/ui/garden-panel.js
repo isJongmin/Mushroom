@@ -9,7 +9,7 @@ export function createGardenPanel({onStart,onBoss,onEquip,onReplay,onFocus,onTra
   const hp=h('progress',{max:'100',value:'100','aria-label':'버섯밭 내구도'});
   const start=h('button',{class:'garden-cta',type:'button',testid:'garden-start'},'함께 지키기');
   const bossStart=h('button',{class:'garden-cta garden-cta--boss',type:'button',testid:'boss-start'},'버섯왕 도전');
-  const traits=h('button',{class:'garden-cta garden-cta--light',type:'button',testid:'npc-traits'},'모험 특성 · 무료 재분배');on(traits,()=>{menuOpen=false;el.hidden=true;onTraits?.();});
+  const traits=h('button',{class:'garden-cta garden-cta--light',type:'button',testid:'npc-traits'},'모험 특성 보기');on(traits,()=>{menuOpen=false;el.hidden=true;onTraits?.();});
   const status=h('span',{class:'garden-status',testid:'garden-status'});
   const el=h('aside',{class:'garden-panel',testid:'garden-panel','aria-label':'협동 이벤트'},h('span',{class:'garden-eyebrow'},'VILLAGE CO-OP'),h('div',{class:'garden-heading'},label,status),detail,hp,start,bossStart,traits);
   const resultTitle=h('h2'),resultDesc=h('p'),stats=h('div',{class:'garden-result__stats'}),reward=h('p',{class:'garden-reward'});

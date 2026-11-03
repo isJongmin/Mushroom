@@ -1,5 +1,8 @@
+import {createMentorPanel} from '../ui/mentor-panel.js';
+import {mentorOf,mentorPoint,mentorMarker,drawMentor} from '../game/training-mentors.js';
+import {drawTraitAura} from '../game/trait-aura.js';
 import {createTraitsPanel} from '../ui/traits-panel.js';
-import {traitEditReason,explorationPoints,drawExplorationPoints,earnedPoints} from '../game/adventure-traits.js';
+import {traitEditReason,explorationPoints,drawExplorationPoints,earnedPoints,traitGoals} from '../game/adventure-traits.js';
 import {createHuntChain,comboBonus} from '../game/hunt-chain.js';
 import {npcRoster} from '../game/npc-roster.js';
 import {regionOf} from '../game/regions.js';
@@ -124,10 +127,11 @@ export function mount(root, app, opts = {}) {
   const huntChain=createHuntChain();let chainUntil=0;
   const lootContributors = new Map(), lootOutbox = new Map(),dropBorn=new Map();
   const traitWrites=new Set(),traitRetryAt=new Map();let traitProbeAt=0,lastTraitStatusAt=0;
-  let lootAt=0, pickupAt=0, collecting=false, lastGrowthKey="";
+  let lootAt=0, pickupAt=0, collecting=false;
   let growthErrorAt=0;
   const companion=createCompanionGroup(),remoteCompanions=new Map();
   let companionPoses=[];
+  let traitBurstAt=-Infinity,traitBurstPending=false,lastTraitAllocation=null;
   let lastEquipSignature=null,equipAt=-Infinity,equipPending=false,petHurtAt=-Infinity,petLootAt=-Infinity;
   let currentArea = 'village';
   let villageMap = null;
@@ -229,27 +233,30 @@ export function mount(root, app, opts = {}) {
   const hostChip = debug ? h('span', { class: 'bk-chip debug-host', testid: 'debug-host' }, '호스트 -') : null;
   let job = jobDefinition(profile?.job);
   let progress=null,progressError='';
-  try {progress=createProgressionStore(app.profileKey,{job:job.id,guardCommand:c=>{if(c.type==='traits-allocate'){const reason=traitEditLock();if(reason)throw new Error(reason);}}});}catch(e){progressError=e.message;}
+  try {progress=createProgressionStore(app.profileKey,{job:job.id,guardCommand:c=>{if(c.type==='traits-allocate'){const reason=traitEditLock();if(reason)throw new Error(reason);}if(c.type==='trait-quest-accept'||c.type==='trait-quest-claim'){const reason=mentorAccessReason();if(reason)throw new Error(reason);if(c.key.split(':')[0]!==currentArea)throw new Error('해당 지역의 수련 스승을 찾아가세요.');}}});}catch(e){progressError=e.message;}
   if(progress)job=jobDefinition(activeJob(progress.state));
   const myLoadout=()=>progress?loadout(progress.state,job.id):null;
   const myStats=()=>combatStats(myLoadout());
-  function traitEditLock(){const p=questNpcPoint(world);return traitEditReason({connected:connection==='connected',alive:!!me&&!me.dead,near:!!me&&Math.abs(me.x-p.x)<=230&&Math.abs(me.y-p.y)<=100,now:performance.now(),lastAttack:me?.lastAtkAt??-Infinity,lastHit:petHurtAt});}
-  const traitsPanel=progress?createTraitsPanel({main:root,store:progress,getArea:()=>currentArea,getEditReason:traitEditLock,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true})}):null;
+  function traitEditLock(){const p=mentorPoint(world);return traitEditReason({connected:connection==='connected',alive:!!me&&!me.dead,near:!!me&&Math.abs(me.x-p.x)<=230&&Math.abs(me.y-p.y)<=100,now:performance.now(),lastAttack:me?.lastAtkAt??-Infinity,lastHit:petHurtAt});}
+  function mentorAccessReason(){const p=mentorPoint(world);return connection!=='connected'?'연결을 기다려주세요.':!me||me.dead?'살아 있는 상태에서 대화할 수 있어요.':Math.abs(me.x-p.x)>220||Math.abs(me.y-p.y)>100?'수련 스승 가까이로 이동해주세요.':'';}
+  function openMentor(){const reason=mentorAccessReason();if(reason){chatLog.addSystem(reason);return;}input.clear();mentorPanel?.open();}
+  const traitsPanel=progress?createTraitsPanel({main:root,store:progress,getArea:()=>currentArea,getEditReason:traitEditLock,onTalk:()=>openMentor(),getTalkReason:mentorAccessReason,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true})}):null;
+  const mentorPanel=progress?createMentorPanel({main:root,store:progress,getArea:()=>currentArea,getAccessReason:mentorAccessReason,paintPortrait:(cv,area)=>{drawMentor(cv.getContext('2d'),{x:51,y:104},0,0,1.25,{area,avatar:regionNpcs.get(area)?.mentor,renderer:avatarR,now:performance.now(),drawItem});},onChange:syncProgress,onReward:()=>{traitBurstPending=true;},onAllocate:openTraits,onFocus:()=>canvas.focus({preventScroll:true})}):null;
   function openTraits(){input.clear();if(traitsPanel)traitsPanel.open();else chatLog.addSystem(progressError);}
   const traitsBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'adventure-traits'},'모험 특성');on(traitsBtn,'click',openTraits);
   const progressPanel=progress?createProgressionPanel({main:root,store:progress,job:job.id,getArea:()=>currentArea,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true}),canDraw:()=>{const p=petNpcPoint(world);return !!me&&!me.dead&&connection==='connected'&&Math.abs(me.x-p.x)<230&&Math.abs(me.y-p.y)<100;}}):null;
-  const growthText=h('span',{}),huntText=h('small',{class:'hunt-tracker',testid:'hunt-tracker'}),chainHud=h('div',{class:'hunt-combo',testid:'hunt-combo',role:'status',hidden:true});
+  const chainHud=h('div',{class:'hunt-combo',testid:'hunt-combo',role:'status',hidden:true});
   const bagBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'equipment-bag'},'가방');
   on(bagBtn,'click',()=>{input.clear();if(progressPanel)progressPanel.open();else chatLog.addSystem(progressError);});
-  const growthHud=h('div',{class:'progression-hud',testid:'progression-hud'},growthText,bagBtn,huntText);
+  const growthHud=h('div',{class:'bag-shortcut',testid:'progression-hud'},bagBtn);
   function syncProgress(){
     if(!alive||!progress)return;
     const nextJob=jobDefinition(activeJob(progress.state)),changed=nextJob.id!==job.id;job=nextJob;
     if(changed){if(me){me.attackUntil=0;me.attackJob=job.id;}for(const s of skillButtons){s.ability=abilityDefinition(job.id,s.slot);drawSkillIcon(s.btn.querySelector('canvas').getContext('2d'),job.id,s.slot,48);setText(s.btn.querySelector('.skill-name'),s.ability.name);s.btn.title=`${s.ability.name} · ${s.ability.description} · ${s.ability.cooldown}초 · ${SKILL_LABELS[s.slot]}키`;}setText(jobChip,`${job.name} · 무기 스킬`);}
     const st=myStats();atk=abilityStats(job.id,0,myLoadout());if(me){me.max=st.maxHp;me.hp=Math.min(me.hp,me.max);me.loadout=myLoadout();announceHp=true;}
     const state=progress.state;const signature=`${state.activeWeapon}:${state.shield}`;if(lastEquipSignature!==null&&signature!==lastEquipSignature){equipAt=-Infinity;equipPending=true;}lastEquipSignature=signature;
-    const key=`${state.revision}|${currentArea}|${layout.mobile}`;if(key!==lastGrowthKey){lastGrowthKey=key;setText(huntText,`사냥 의뢰 ${state.kills[currentArea]%20}/20 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 보상`);setText(growthText,layout.mobile?`${AREA_NAMES[currentArea]} · ${state.gold.toLocaleString()} G`:`${stageOf(currentArea).order}차 ${AREA_NAMES[currentArea]} · 공격 ${st.attack} / 방어 ${st.defense} · ${state.gold.toLocaleString()} G`);}
-    progressPanel?.refresh();traitsPanel?.refresh();
+    const allocation=JSON.stringify(state.traits.allocated);if(lastTraitAllocation!==null&&allocation!==lastTraitAllocation){const previous=JSON.parse(lastTraitAllocation);if(Object.keys(state.traits.allocated).some(k=>state.traits.allocated[k]>(previous[k]||0)))traitBurstPending=true;}lastTraitAllocation=allocation;
+    progressPanel?.refresh();traitsPanel?.refresh();mentorPanel?.refresh();
   }
   on(window,'storage',e=>{if(progress&&e.key===progress.key){try{progress.reload();syncProgress();}catch(err){chatLog.addSystem(err.message);}}});
 
@@ -297,10 +304,11 @@ export function mount(root, app, opts = {}) {
   const touchFloat = h('div', { class: 'touch-float skill-hotbar' }, attackBtn, ...skillButtons.map(s => s.btn));
   const npcQuest=h('button',{type:'button',class:'quest-npc-marker',testid:'quest-npc','aria-label':'숲지기 모리와 대화: 퀘스트 선택',hidden:true},'!');
   on(npcQuest,'click',()=>{if(!me||me.dead||connection!=='connected')return;const p=questNpcPoint(world);if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>110){setText(npcQuest,'가까이');return;}gardenPanel.open();lastGardenPaint=0;paintGardenPanel(performance.now());});
+  const mentorNpc=h('button',{type:'button',class:'mentor-npc-marker',testid:'mentor-npc',hidden:true,'aria-label':'수련 스승과 대화'},'!');on(mentorNpc,'click',openMentor);
   const petNpc=h('button',{type:'button',class:'pet-npc-marker',testid:'pet-npc','aria-label':'지역 펫 조련사와 대화',hidden:true},'펫 뽑기');
   on(petNpc,'click',()=>{const p=petNpcPoint(world);if(!me||me.dead||connection!=='connected')return;if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>100){chatLog.addSystem('펫 조련사 가까이로 이동해주세요.');return;}input.clear();progressPanel?.open('shop');});
   const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true}),onTraits:openTraits});
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -988,7 +996,7 @@ export function mount(root, app, opts = {}) {
     if (isHost()) hostSince = performance.now();
   }
 
-  function syncNpcLook(){const pair=regionNpcs.get(currentArea);if(!pair)return;npcAvatar=pair.quest;petNpcAvatar=pair.pet;npcQuest.setAttribute('aria-label',npcRoster(currentArea).quest.name+'에게 말 걸기: 퀘스트 선택');petNpc.setAttribute('aria-label',npcRoster(currentArea).pet.name+'에게 말 걸기: 펫 상점');}
+  function syncNpcLook(){const pair=regionNpcs.get(currentArea);if(!pair)return;npcAvatar=pair.quest;petNpcAvatar=pair.pet;mentorNpc.setAttribute('aria-label',mentorOf(currentArea).name+'에게 수련 받기');npcQuest.setAttribute('aria-label',npcRoster(currentArea).quest.name+'에게 말 걸기: 퀘스트 선택');petNpc.setAttribute('aria-label',npcRoster(currentArea).pet.name+'에게 말 걸기: 펫 상점');}
   function configureArea(nextMap) {
     map = nextMap;
     syncNpcLook();
@@ -1050,7 +1058,7 @@ export function mount(root, app, opts = {}) {
     finally{traitWrites.delete(key);}
   }
   function probeTraits(now){
-    if(now-lastTraitStatusAt>=150){lastTraitStatusAt=now;traitsPanel?.refresh();}
+    if(now-lastTraitStatusAt>=150){lastTraitStatusAt=now;traitsPanel?.refresh();mentorPanel?.refresh();}
     if(now-traitProbeAt<1000||!progress||!me||me.dead||connection!=='connected')return;traitProbeAt=now;
     for(const p of explorationPoints(map))if(!progress.state.traits.explored[currentArea].includes(p.id)&&Math.abs(me.x-p.x)<70&&Math.abs(me.y-p.y)<32)writeTrait({type:'trait-explore',area:currentArea,point:p.id});
   }
@@ -1553,16 +1561,17 @@ export function mount(root, app, opts = {}) {
       petNpc.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;
       if(!petNpc.hidden){petNpc.style.left=`${nx}px`;petNpc.style.top=`${ny}px`;}
       const target=progress.state.pending.map(settleDrop).filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
-      companionPoses=companion.sample({ids:me.dead?[]:equippedPetIds(progress.state),mapId:currentArea,x:me.x,y:me.y,dir:me.dir,target,now,minX:world.minX,maxX:world.maxX});
+      companionPoses=companion.sample({ids:me.dead?[]:equippedPetIds(progress.state),mapId:currentArea,x:me.x,y:me.y,dir:me.dir,moving:!!me.moving,target,now,minX:world.minX,maxX:world.maxX});
 
     }
 
+    {const p=mentorPoint(world),mx=(p.x-camX)*k/dpr,my=(p.y-cy-115)*k/dpr;mentorNpc.hidden=mx<20||mx>layout.cssW-20||my<35||my>layout.cssH-30;if(!mentorNpc.hidden){mentorNpc.style.left=mx+'px';mentorNpc.style.top=my+'px';const mark=mentorMarker(progress?traitGoals(progress.state,STAGES).filter(g=>g.area===currentArea):[]);setText(mentorNpc,mark);mentorNpc.classList.toggle('is-ready',mark==='?');}}
     npcQuest.hidden=false;
     {const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}}
     {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now,currentArea);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
-      drawMinimap(miniCanvas.getContext('2d'), map, players.values(), mobView?.list || [], me, { x: camX, y: cy, w: viewW, h: viewH });
+      drawMinimap(miniCanvas.getContext('2d'), map, players.values(), mobView?.list || [], me, { x: camX, y: cy, w: viewW, h: viewH },204,88,[{...mentorPoint(world),label:mentorMarker(progress?traitGoals(progress.state,STAGES).filter(g=>g.area===currentArea):[])}]);
     }
     if (debugPlatforms && platforms.length) drawPlatformDebug(ctx, platforms, camX, cy, k);
     if (debug && ropes.length) drawRopeDebug(ctx, ropes, camX, cy, k); // (사이클 10) 로프 선 (그림은 아트 ground 레이어)
@@ -1583,6 +1592,7 @@ export function mount(root, app, opts = {}) {
     drops.draw(ctx, camX, cy, k, now, buffOrbSprite, dropBagSprite);
     const actors=[];
     {const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now,area:currentArea})});}
+    {const p=mentorPoint(world);actors.push({id:'training-mentor',kind:'npc',y:p.y,draw:()=>drawMentor(ctx,p,camX,cy,k,{area:currentArea,avatar:regionNpcs.get(currentArea)?.mentor,renderer:avatarR,now,drawItem})});}
     if(progress){const p=petNpcPoint(world);actors.push({id:'pet-npc',kind:'npc',y:p.y,draw:()=>drawPetMerchant(ctx,p,camX,cy,k,avatarR,petNpcAvatar,currentArea,now)});}
     const mobsVis = [];
     if (mobView) {
@@ -1617,12 +1627,14 @@ export function mount(root, app, opts = {}) {
     for(const [p]of visible)if(!p.isSelf){
       remoteVisible.add(p.user_id);let group=remoteCompanions.get(p.user_id);if(!group){group=createCompanionGroup();remoteCompanions.set(p.user_id,group);}
       const pets=cleanLoadout(p.loadout).companions;
-      for(const pose of group.sample({ids:p.dead?[]:pets.map(p=>p.id),mapId:currentArea,x:p.x,y:p.y,dir:p.dir,now,minX:world.minX,maxX:world.maxX}))actors.push({id:'pet-'+p.user_id+'-'+pose.id,kind:'pet',y:groundAt(pose.x,pose.y),draw:()=>drawPet(ctx,pose.id,(pose.x-camX)*k,(pose.y-cy)*k,k*.8,now,pets.find(p=>p.id===pose.id)?.level||0,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null})});
+      for(const pose of group.sample({ids:p.dead?[]:pets.map(p=>p.id),mapId:currentArea,x:p.x,y:p.y,dir:p.dir,moving:!!p.moving,now,minX:world.minX,maxX:world.maxX}))actors.push({id:'pet-'+p.user_id+'-'+pose.id,kind:'pet',y:groundAt(pose.x,pose.y),draw:()=>drawPet(ctx,pose.id,(pose.x-camX)*k,(pose.y-cy)*k,k*.8,now,pets.find(p=>p.id===pose.id)?.level||0,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null})});
     }
     for(const uid of remoteCompanions.keys())if(!remoteVisible.has(uid))remoteCompanions.delete(uid);
     for(const p of companionPoses){actors.push({id:'my-pet-'+p.id,kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.id,(p.x-camX)*k,(p.y-cy)*k,k*.8,now,progress.state.pets[p.id]?.level,{moving:!!me.moving,left:me.dir<0,reduced:prefersReducedMotion(),reaction:now-petHurtAt<700?'hurt':now-petLootAt<700?'loot':now-me.effectAt<450?'attack':null})});}
     for (const [p, sx, pyD] of visible) actors.push({id:p.user_id,kind:'player',y:groundAt(p.x,p.y),draw:()=>{
       if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); return; }
+      if(p.isSelf&&traitBurstPending&&!document.body.classList.contains('has-modal')){traitBurstAt=now;traitBurstPending=false;}
+      const aura=p.loadout?.traits,burstAge=p.isSelf?now-traitBurstAt:Infinity;drawTraitAura(ctx,Math.round(sx*k),pyD,k,aura,now,{burstAge,reduced:prefersReducedMotion()});
       const a = blinkAlpha(now, p.invulnUntil);
       if (a < 1) ctx.globalAlpha = a;
       const left = p.anim === 'climb' ? false : p.dir < 0;
@@ -1636,6 +1648,7 @@ export function mount(root, app, opts = {}) {
       if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem,frame:frameOf(p,now),hand:avatarR.handFit?.(dressed,frameOf(p,now))});
       if((p.isSelf||p.attackJob)&&p.anim!=='climb'&&p.anim!=='prone')avatarR.drawGrip(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(p.isSelf&&!p.dead){if(equipPending&&!document.body.classList.contains('has-modal')){equipAt=now;equipPending=false;}if(!document.body.classList.contains('has-modal'))drawEquipBurst(ctx,Math.round(sx*k),pyD,k,Math.max(myLoadout()?.tier??0,myLoadout()?.shield??0),now-equipAt,{reduced:prefersReducedMotion()});}
+      drawTraitAura(ctx,Math.round(sx*k),pyD,k,aura,now,{burstAge,reduced:prefersReducedMotion(),front:true});
       ctx.globalAlpha = 1;
     }});
     for(const actor of sortSceneActors(actors)){ctx.save();ctx.setTransform(1,0,0,1,0,0);actor.draw();ctx.restore();}
@@ -1817,7 +1830,7 @@ export function mount(root, app, opts = {}) {
     const dir = KEY_DIR[e.code];
     if (dir) {
       e.preventDefault();
-      if (!e.repeat && connection === 'connected') { input.press(`key:${e.code}`, dir); input.tap(tapGroup, now); }
+      if (!e.repeat && connection === 'connected') { const source=`key:${e.code}`;if(input.press(source,dir))input.tap(tapGroup,now,source); }
       return;
     }
     const act = KEY_ACTION[e.code];
@@ -1826,8 +1839,8 @@ export function mount(root, app, opts = {}) {
       if (e.code === 'Space' && ae && ae !== canvas && /^(BUTTON|A|SELECT|SUMMARY)$/.test(ae.tagName)) return;
       e.preventDefault(); // Space·↑·↓ 페이지 스크롤 방지
       if (!e.repeat && connection === 'connected') {
-        input.pressAction(`key:${e.code}`, act, now);
-        if (tapGroup) input.tap(tapGroup, now);
+        const source=`key:${e.code}`,fresh=input.pressAction(source,act,now);
+        if (fresh&&tapGroup) input.tap(tapGroup,now,source);
       }
     }
   });
@@ -1863,9 +1876,8 @@ export function mount(root, app, opts = {}) {
       e.preventDefault();
       if (connection !== 'connected') return;
       const now = performance.now();
-      if (typeof what === 'number') input.press(id, what);
-      else input.pressAction(id, what, now);
-      if (group) input.tap(group, now);
+      const fresh=typeof what==='number'?input.press(id,what):input.pressAction(id,what,now);
+      if(fresh&&group)input.tap(group,now,id);
       btn.classList.add('is-pressed');
     });
     on(btn, 'pointerup', release);
@@ -2089,7 +2101,7 @@ export function mount(root, app, opts = {}) {
     mobSprites?.clear();
     earlyHp.clear();
     if (delModal) { const m = delModal; delModal = null; m.close({ restoreFocus: false }); }
-    remoteCompanions.clear();companion.reset();companionPoses=[];traitRetryAt.clear();traitsPanel?.destroy();progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
+    remoteCompanions.clear();companion.reset();companionPoses=[];traitRetryAt.clear();mentorPanel?.destroy();traitsPanel?.destroy();progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
     gardenPanel.destroy(); garden.clear();
     chatLog.destroy();
     link = null;
@@ -2147,8 +2159,8 @@ export function mount(root, app, opts = {}) {
       }
     }
     avatarR = createAvatarRenderer(assets);
-    for(const area of AREA_IDS){const cast=npcRoster(area);regionNpcs.set(area,{quest:assets.sanitizeAvatar(cast.quest.avatar),pet:assets.sanitizeAvatar(cast.pet.avatar)});}
-    await Promise.all([...regionNpcs.values()].flatMap(p=>[avatarR.ready(p.quest),avatarR.ready(p.pet)]));
+    for(const area of AREA_IDS){const cast=npcRoster(area);regionNpcs.set(area,{quest:assets.sanitizeAvatar(cast.quest.avatar),pet:assets.sanitizeAvatar(cast.pet.avatar),mentor:assets.sanitizeAvatar(mentorOf(area).avatar)});}
+    await Promise.all([...regionNpcs.values()].flatMap(p=>[avatarR.ready(p.quest),avatarR.ready(p.pet),avatarR.ready(p.mentor)]));
     syncNpcLook();
     if(!alive)return;
     const sp = spawnPoint();

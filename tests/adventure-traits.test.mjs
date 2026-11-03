@@ -11,6 +11,7 @@ const zero={attack:0,health:0,technique:0};
 let s=starterState();delete s.traits;s.gold=12345;s.highest.warrior=4;s.pets={'frost:4':{level:5}};s.pet='frost:4';s.kills.village=20;
 const old=structuredClone(s);s=cleanState(s);assert.equal(earnedPoints(s,STAGES),1);assert.deepEqual(s.pets,old.pets);assert.equal(s.gold,12345);assert.equal(s.highest.warrior,4);assert.ok(Object.values(s.traits.species).every(a=>Object.values(a).every(r=>r.length===0)));
 s=run(s,{type:'ensure',legacyVillageBoss:true});assert.equal(earnedPoints(s,STAGES),2);s=run(s,{type:'ensure',legacyVillageBoss:true});assert.equal(earnedPoints(s,STAGES),2);
+for(const goal of traitGoals(s,STAGES))s=run(s,{type:'trait-quest-accept',key:goal.key});
 let serial=0;
 for(const [area,st]of Object.entries(STAGES)){
  const threshold=area==='village'?10:20;
@@ -26,6 +27,7 @@ for(const [area,st]of Object.entries(STAGES)){
  }
  s=run(s,{type:'trait-event',area,mode:'boss'});s=run(s,{type:'trait-event',area,mode:'boss'});
 }
+for(const goal of traitGoals(s,STAGES).filter(g=>g.ready))s=run(s,{type:'trait-quest-claim',key:goal.key});
 assert.equal(earnedPoints(s,STAGES),15);assert.equal(traitGoals(s,STAGES).filter(g=>g.done).length,15);assert.equal(new Set(traitGoals(s,STAGES).map(g=>g.key)).size,15);
 const full=structuredClone(s);
 for(const bad of [{attack:-1,health:0,technique:0},{attack:1.5,health:0,technique:0},{attack:11,health:0,technique:0},{attack:10,health:10,technique:0},{attack:NaN,health:0,technique:0},{attack:1,health:0,technique:0,other:1},null])assert.throws(()=>allocate(s,bad));

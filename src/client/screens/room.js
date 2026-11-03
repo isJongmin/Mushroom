@@ -1,5 +1,6 @@
+import {drawNpcAction} from '../game/npc-actions.js';
 import {groundDropAlive} from '../game/progression.js';
-import {taxiPoint,taxiTravelReason,drawTownTaxi} from '../game/town-taxi.js';
+import {taxiPoint,taxiTravelReason,drawTownTaxi,TAXI_DRIVER,TAXI_MARKER_HEIGHT,drawTaxiDriverPortrait} from '../game/town-taxi.js';
 import {createTaxiPanel} from '../ui/taxi-panel.js';
 import {bindPointerAction} from '../ui/pointer-actions.js';
 import {createFirstUseHintView} from '../ui/first-use-hints.js';
@@ -132,7 +133,7 @@ export function mount(root, app, opts = {}) {
   let avatarR = null;
   let npcAvatar = null;
   const regionNpcs=new Map();
-  let petNpcAvatar = null;
+  let petNpcAvatar = null,taxiAvatar=null;
   let baseMobKinds = null;
   const huntChain=createHuntChain();let chainUntil=0;
   const lootContributors = new Map(), lootOutbox = new Map(),dropBorn=new Map();
@@ -262,7 +263,7 @@ export function mount(root, app, opts = {}) {
   const playfulPanel=createPlayfulPanel({main:root,getAccessReason:playfulAccessReason,paintPortrait:(cv,area,kind)=>drawPlayfulPortrait(cv,area,kind,avatarR,regionNpcs.get(area)?.fun),onReaction:(area,kind,text)=>{if(area===currentArea)playfulReactions.set(kind,{text,until:performance.now()+1800});},onFocus:()=>canvas.focus({preventScroll:true})});
   function openPlayful(kind){if(playfulAccessReason(currentArea,kind))return;firstUse.request('npc');input.clear();playfulPanel.open(currentArea,kind);}
   const taxiReason=to=>taxiTravelReason({state:progress?.state,job:job.id,current:currentArea,to,player:me,map,connected:connection==='connected',now:performance.now(),readyAt:portalReadyAt});
-  const taxiPanel=createTaxiPanel({main:root,getState:()=>progress?.state,getJob:()=>job.id,getArea:()=>currentArea,getReason:taxiReason,onTravel:to=>{if(taxiReason(to))return false;return travelTo(to,performance.now(),'taxi');},onFocus:()=>canvas.focus({preventScroll:true})});
+  const taxiPanel=createTaxiPanel({main:root,getState:()=>progress?.state,getJob:()=>job.id,getArea:()=>currentArea,getReason:taxiReason,paintPortrait:cv=>drawTaxiDriverPortrait(cv,avatarR,taxiAvatar),onTravel:to=>{if(taxiReason(to))return false;return travelTo(to,performance.now(),'taxi');},onFocus:()=>canvas.focus({preventScroll:true})});
   function openTaxi(){const p=taxiPoint(map);if(!me||me.dead||connection!=='connected'||Math.abs(me.x-p.x)>160||Math.abs(me.y-p.y)>85)return;input.clear();firstUse.request('taxi');taxiPanel.open();}
   const traitsBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'adventure-traits'},'모험 특성');on(traitsBtn,'click',openTraits);
   const progressPanel=progress?createProgressionPanel({main:root,store:progress,job:job.id,getArea:()=>currentArea,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true}),canDraw:()=>{const p=petNpcPoint(world);return !!me&&!me.dead&&connection==='connected'&&Math.abs(me.x-p.x)<230&&Math.abs(me.y-p.y)<100;}}):null;
@@ -324,22 +325,23 @@ export function mount(root, app, opts = {}) {
     return { btn, timer, slot, ability: a,pointer };
   });
   const touchFloat = h('div', { class: 'touch-float skill-hotbar' }, attackBtn, ...skillButtons.map(s => s.btn));
-  const npcQuest=h('button',{type:'button',class:'quest-npc-marker',testid:'quest-npc','aria-label':'숲지기 모리와 대화: 퀘스트 선택',hidden:true},'!');
+  const npcQuest=h('button',{type:'button',class:'quest-npc-marker npc-world-action',testid:'quest-npc','aria-label':'숲지기 모리와 대화: 퀘스트 선택',hidden:true},'!');
   on(npcQuest,'click',()=>{if(!me||me.dead||connection!=='connected')return;const p=questNpcPoint(world);if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>110){setText(npcQuest,'가까이');return;}gardenPanel.open();lastGardenPaint=0;paintGardenPanel(performance.now());});
-  const mentorNpc=h('button',{type:'button',class:'mentor-npc-marker',testid:'mentor-npc',hidden:true,'aria-label':'수련 스승과 대화'},'!');on(mentorNpc,'click',openMentor);
-  const petNpc=h('button',{type:'button',class:'pet-npc-marker',testid:'pet-npc','aria-label':'지역 펫 조련사와 대화',hidden:true},'펫 뽑기');
+  const mentorNpc=h('button',{type:'button',class:'mentor-npc-marker npc-world-action',testid:'mentor-npc',hidden:true,'aria-label':'수련 스승과 대화'},'!');on(mentorNpc,'click',openMentor);
+  const petNpc=h('button',{type:'button',class:'pet-npc-marker npc-world-action',testid:'pet-npc','aria-label':'지역 펫 조련사와 대화',hidden:true},'펫 뽑기');
   on(petNpc,'click',()=>{const p=petNpcPoint(world);if(!me||me.dead||connection!=='connected')return;if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>100){chatLog.addSystem('펫 조련사 가까이로 이동해주세요.');return;}input.clear();firstUse.request('bag');progressPanel?.open('shop');});
   const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true}),onTraits:openTraits});
-  const playfulButtons=['mascot','fun'].map(kind=>{const b=h('button',{type:'button',class:'playful-npc-marker',testid:'talk-'+kind,hidden:true},'대화 E');on(b,'click',()=>openPlayful(kind));return {kind,el:b};});
+  const playfulButtons=['mascot','fun'].map(kind=>{const b=h('button',{type:'button',class:'playful-npc-marker npc-world-action',testid:'talk-'+kind,hidden:true},'대화 E');on(b,'click',()=>openPlayful(kind));return {kind,el:b};});
   const bossTitle=h('strong',{}),bossSubtitle=h('span',{}),bossLine=h('p',{}),bossPortrait=h('canvas',{width:160,height:160,'aria-hidden':'true'});
   const bossCard=h('div',{class:'boss-arrival',hidden:true,role:'status','aria-live':'polite',testid:'boss-arrival'},bossPortrait,h('div',{},h('small',{},'BOSS APPROACHING'),bossTitle,bossSubtitle,bossLine));
   let bossCardId='';
-  function paintBossArrival(){const entry=bossEntrance.observe(garden.snapshot(),currentArea,Date.now());bossCard.hidden=!entry||document.body.classList.contains('has-modal');stage.classList.toggle('has-boss-arrival',!!entry);if(!entry||bossCardId===entry.id)return;bossCardId=entry.id;setText(bossTitle,entry.name);setText(bossSubtitle,entry.subtitle);setText(bossLine,entry.line);bossCard.style.setProperty('--boss-accent',entry.color);bossCard.dataset.biome=entry.area;const c=bossPortrait.getContext('2d');c.clearRect(0,0,160,160);drawBoss(c,{biome:entry.area,s:'move'},80,145,.8,0);}
-  const taxiButton=h('button',{type:'button',class:'playful-npc-marker taxi-npc-marker',testid:'taxi-npc',hidden:true,'aria-label':'마을 택시 이용'},'택시');on(taxiButton,'click',openTaxi);
-  const entryTitle=h('strong',{}),entryDetail=h('span',{});
-  const areaEntry=h('div',{class:'arcade-stage-entry',hidden:true,'aria-hidden':'true'},h('small',{},'ENTER THE STAGE'),entryTitle,entryDetail);
-  let entryUntil=0;
-  function announceArea(){setText(entryTitle,AREA_NAMES[currentArea]);setText(entryDetail,{village:'모험가 길드 · 첫 출정',quarry:'수정의 울림을 따라',forest:'잠든 정령의 숲',frost:'서리 너머의 도전'}[currentArea]);areaEntry.hidden=false;areaEntry.style.animation='none';void areaEntry.offsetWidth;areaEntry.style.animation='';entryUntil=performance.now()+2800;}
+  function paintBossArrival(){const entry=bossEntrance.observe(garden.snapshot(),currentArea,Date.now(),{suppress:performance.now()<entryUntil||connection!=='connected'});bossCard.hidden=!entry||document.body.classList.contains('has-modal');stage.classList.toggle('has-boss-arrival',!!entry);if(!entry||bossCardId===entry.id)return;bossCardId=entry.id;setText(bossTitle,entry.name);setText(bossSubtitle,entry.subtitle);setText(bossLine,entry.line);bossCard.style.setProperty('--boss-accent',entry.color);bossCard.dataset.biome=entry.area;const c=bossPortrait.getContext('2d');c.clearRect(0,0,160,160);drawBoss(c,{biome:entry.area,s:'move'},80,145,.8,0);}
+  const taxiButton=h('button',{type:'button',class:'playful-npc-marker taxi-npc-marker npc-world-action',testid:'taxi-npc',hidden:true,'aria-label':'마을 택시 이용'},'택시');on(taxiButton,'click',openTaxi);
+  const entryTitle=h('strong',{},AREA_NAMES.village);
+  const areaEntry=h('div',{class:'arcade-stage-entry','aria-hidden':'true'},entryTitle);
+  let entryUntil=Infinity;
+  function announceArea(){setText(entryTitle,AREA_NAMES[currentArea]);areaEntry.hidden=false;areaEntry.style.animation='none';if(connection==='connected'){void areaEntry.offsetWidth;areaEntry.style.animation='';entryUntil=performance.now()+2800;}else entryUntil=Infinity;}
+
   const stage = h('div', { class: 'game-stage' }, canvas, hud, firstUse.el, areaEntry, bossCard,taxiButton, ...playfulButtons.map(b=>b.el), banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
@@ -496,7 +498,7 @@ export function mount(root, app, opts = {}) {
     chatLog.el.classList.toggle('is-hidden-fatal', next === 'fatal');
     chatRow.classList.toggle('is-hidden', !full);
     touchRow.classList.toggle('is-hidden', !full);
-    loadingDots.hidden = next !== 'joining';
+    loadingDots.hidden = true;
     countDot.hidden = !(next === 'disconnected' || next === 'failed');
     const interactive = next === 'connected' || next === 'disconnected';
     chatInput.disabled = next !== 'connected';
@@ -508,10 +510,11 @@ export function mount(root, app, opts = {}) {
 
     switch (next) {
       case 'joining':
-        setBanner('info', M.JOINING);
+        setBanner(null);announceArea();
         paintLetterbox();
         break;
       case 'connected':
+        if(prev==='joining')announceArea();
         if (prev === 'disconnected' || prev === 'failed') {
           banner.classList.add('fade-out');
           bannerHideTimer = later(() => setBanner(null), 500);
@@ -730,6 +733,7 @@ export function mount(root, app, opts = {}) {
         if (connection !== 'joining') setConnection('joining');
         break;
       case 'connected':
+        if(prev==='joining')announceArea();
         if (info.first) {
           connectedAt = performance.now();
           setConnection('connected');
@@ -1605,19 +1609,22 @@ export function mount(root, app, opts = {}) {
     drawExplorationPoints(ctx,map,camX,cy,k,progress?.state.traits.explored[currentArea]||[]);
     if(progress){
       for(const d of liveGroundDrops())if(d.area===currentArea){if(!dropBorn.has(d.id))dropBorn.set(d.id,now);drawEquipmentDrop(ctx,d,camX,cy,k,now,prefersReducedMotion()?Infinity:now-dropBorn.get(d.id));}
-      const np=petNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy-112)*k/dpr;
-      petNpc.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;
-      if(!petNpc.hidden){petNpc.style.left=`${nx}px`;petNpc.style.top=`${ny}px`;}
       const target=liveGroundDrops().filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
       companionPoses=companion.sample({ids:me.dead?[]:equippedPetIds(progress.state),mapId:currentArea,x:me.x,y:me.y,dir:me.dir,moving:!!me.moving,target,now,minX:world.minX,maxX:world.maxX});
 
     }
 
-    {const p=mentorPoint(world),mx=(p.x-camX)*k/dpr,my=(p.y-cy-115)*k/dpr;mentorNpc.hidden=mx<20||mx>layout.cssW-20||my<35||my>layout.cssH-30;if(!mentorNpc.hidden){mentorNpc.style.left=mx+'px';mentorNpc.style.top=my+'px';const mark=mentorMarker(progress?traitGoals(progress.state,STAGES).filter(g=>g.area===currentArea):[]);setText(mentorNpc,mark);mentorNpc.classList.toggle('is-ready',mark==='?');}}
-    {const p=taxiPoint(map),x=(p.x-camX)*k/dpr,y=(p.y-cy-88)*k/dpr;taxiButton.hidden=!me||me.dead||Math.abs(me.x-p.x)>160||Math.abs(me.y-p.y)>85||x<24||x>layout.cssW-24||y<90||y>layout.cssH-50;if(!taxiButton.hidden){taxiButton.style.left=x+'px';taxiButton.style.top=y+'px';}}
-    for(const {kind,el}of playfulButtons){const p=playfulPoint(map,kind),x=(p.x-camX)*k/dpr,y=(p.y-cy-(kind==='fun'?116:94))*k/dpr;el.hidden=!!playfulAccessReason(currentArea,kind)||x<24||x>layout.cssW-24||y<90||y>layout.cssH-50;if(!el.hidden){el.style.left=x+'px';el.style.top=y+'px';el.setAttribute('aria-label','대화: '+playfulIdentity(currentArea,kind).name);}}
-    npcQuest.hidden=false;
-    {const np=questNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy)*k/dpr-114*k/dpr;npcQuest.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;if(!npcQuest.hidden){npcQuest.style.left=`${nx}px`;npcQuest.style.top=`${ny}px`;setText(npcQuest,'!');}}
+    const markerPoints=[
+      {el:npcQuest,p:questNpcPoint(world),height:114,range:Infinity},
+      {el:mentorNpc,p:mentorPoint(world),height:114,range:Infinity},
+      {el:petNpc,p:petNpcPoint(world),height:114,range:Infinity},
+      {el:taxiButton,p:taxiPoint(map),height:TAXI_MARKER_HEIGHT,range:160},
+      ...playfulButtons.map(({kind,el})=>({el,p:playfulPoint(map,kind),height:kind==='fun'?114:94,range:130,name:'대화: '+playfulIdentity(currentArea,kind).name}))
+    ];
+    for(const m of markerPoints){const x=(m.p.x-camX)*k/dpr,y=(m.p.y-cy-m.height)*k/dpr;m.x=x;m.y=y;
+      m.el.hidden=connection!=='connected'||me.dead||now<entryUntil||Math.abs(me.x-m.p.x)>m.range||(Number.isFinite(m.range)&&Math.abs(me.y-m.p.y)>85)||x<24||x>layout.cssW-24||y<30||y>layout.cssH-30;
+      if(!m.el.hidden){m.el.style.left=x+'px';m.el.style.top=y+'px';if(m.name)m.el.setAttribute('aria-label',m.name);}
+    }
     {drawGarden(ctx,world,garden.snapshot(),camX,cy,k,now,currentArea);if(garden.snapshot()?.phase==='boss')drawBossTelegraph(ctx,garden.snapshot().boss,bossPoint(world),camX,cy,k,Date.now());}
     if (now - lastMiniPaint > 100 && !miniBody.hidden) {
       lastMiniPaint = now;
@@ -1625,6 +1632,8 @@ export function mount(root, app, opts = {}) {
     }
     if (debugPlatforms && platforms.length) drawPlatformDebug(ctx, platforms, camX, cy, k);
     if (debug && ropes.length) drawRopeDebug(ctx, ropes, camX, cy, k); // (사이클 10) 로프 선 (그림은 아트 ground 레이어)
+
+    for(const m of markerPoints)if(!m.el.hidden)drawNpcAction(ctx,m.x*dpr,m.y*dpr,dpr);
 
     const order = [];
     for (const p of players.values()) if (!p.isSelf && sameArea(p, me)) order.push(p);
@@ -1641,7 +1650,7 @@ export function mount(root, app, opts = {}) {
     stones.draw(ctx, tombSprite, camX, cy, k, now);
     drops.draw(ctx, camX, cy, k, now, buffOrbSprite, dropBagSprite);
     const actors=[];
-    actors.push({id:'town-taxi',kind:'npc',y:world.groundY,draw:()=>drawTownTaxi(ctx,map,camX,cy,k,now,prefersReducedMotion())});
+    actors.push({id:'town-taxi',kind:'npc',y:world.groundY,draw:()=>drawTownTaxi(ctx,map,camX,cy,k,now,prefersReducedMotion(),{renderer:avatarR,avatar:taxiAvatar})});
     actors.push({id:'fun-npc',kind:'npc',y:world.groundY,draw:()=>drawFunNpc(ctx,map,camX,cy,k,now,{renderer:avatarR,avatar:regionNpcs.get(currentArea)?.fun,reduced:prefersReducedMotion()})});
     actors.push({id:'region-mascot',kind:'npc',y:world.groundY,draw:()=>drawRegionMascot(ctx,map,camX,cy,k,now,{reduced:prefersReducedMotion()})});
     {const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now,area:currentArea})});}
@@ -2209,6 +2218,7 @@ export function mount(root, app, opts = {}) {
       }
     }
     avatarR = createAvatarRenderer(assets);
+    taxiAvatar=assets.sanitizeAvatar(TAXI_DRIVER.avatar);await avatarR.ready(taxiAvatar);
     for(const area of AREA_IDS){const cast=npcRoster(area);regionNpcs.set(area,{quest:assets.sanitizeAvatar(cast.quest.avatar),pet:assets.sanitizeAvatar(cast.pet.avatar),mentor:assets.sanitizeAvatar(mentorOf(area).avatar),fun:assets.sanitizeAvatar(funNpcOf(area).avatar)});}
     await Promise.all([...regionNpcs.values()].flatMap(p=>[avatarR.ready(p.quest),avatarR.ready(p.pet),avatarR.ready(p.mentor),avatarR.ready(p.fun)]));
     syncNpcLook();

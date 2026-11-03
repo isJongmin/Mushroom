@@ -31,7 +31,7 @@ Movement, skills, bag, traits, NPCs, minimap, taxi, drops and boss encounters ea
 
 ## Taxi, minimap and signs
 
-The taxi is parked at spawn +235 and serves every unlocked town for free. Destination buttons show the current town and required weapon grade for locked towns. Both selection and travel recheck unlocks, connection, life, proximity (160 horizontal /85 vertical) and travel cooldown. Taxi and portals share area transition logic, clearing transient attacks, restoring per-area snapshots and announcing the new map through existing network presence. Equipment, pets, HP and cooldown progress are retained; taxi arrival uses the destination spawn.
+The taxi is parked at a dedicated western stop (spawn −800, clamped to x245) and serves every unlocked town for free. Destination buttons show the current town and required weapon grade for locked towns. Both selection and travel recheck unlocks, connection, life, proximity (160 horizontal /85 vertical) and travel cooldown. Taxi and portals share area transition logic, clearing transient attacks, restoring per-area snapshots and announcing the new map through existing network presence. Equipment, pets, HP and cooldown progress are retained; taxi arrival uses the destination spawn.
 
 Minimap colors: yellow self, blue other players in this area, green NPCs, pink enemies, lavender portals. Nearby NPC projections use separate lanes when needed. Quest, pet, mentor, mascot, fun NPC and taxi positions are included.
 
@@ -46,4 +46,15 @@ Rendering, companion targeting and auto-pickup ignore expired drops immediately.
 
 ## Validation
 
-34 JavaScript test files cover existing combat/progression/network behavior and the new frame gating, multi-pointer lifecycle, first-use persistence, boss entrance deduplication, RPS outcomes, taxi guards, minimap colors and sign clearance. Browser QA uses dedicated local test profiles and temporary fixtures, including synthetic input/seeded unlocked equipment. Fixed-width fixtures check 360px and 390px portrait and 740×360 landscape minimap gaps. Temporary browser fixtures and the QA-only timer frame driver are not shipped. Real physical multi-touch hardware was not available; simultaneous touch was checked through the actual input binders with distinct pointer IDs.
+35 JavaScript test files cover existing combat/progression/network behavior and the new frame gating, multi-pointer lifecycle, first-use persistence, boss entrance deduplication, RPS outcomes, taxi guards, minimap colors and sign clearance. Browser QA uses dedicated local test profiles and temporary fixtures, including synthetic input/seeded unlocked equipment. Fixed-width fixtures check 360px and 390px portrait and 740×360 landscape minimap gaps. Temporary browser fixtures and the QA-only timer frame driver are not shipped. Real physical multi-touch hardware was not available; simultaneous touch was checked through the actual input binders with distinct pointer IDs.
+
+
+## Taxi and arrival presentation follow-up
+
+The taxi uses a larger faceted mushroom canopy, luggage rack, checker trim, bevelled wheels and a stop pole. Its shared wardrobe driver is shown both in the cab window and the greeting portrait. Opening the route menu starts with “어디로 가드릴까요~?”. The fun NPC moves slightly east to keep the western stop clear.
+
+Initial entry shows only the town name as an arrival overlay. Routine joining banners/dots and constructor-time quest-card flashes are removed; actual connection errors retain retry actions. Event HUD/results require an explicit local request or observed participation, so cached/unrelated events cannot open a welcome popup.
+
+Every NPC action uses the same compact speech glyph drawn on Canvas before actors. Transparent 44px DOM targets preserve tapping and keyboard focus without painting a layer over characters; their z-index is 1. NPC interaction ranges, taxi unlock rules and travel state remain enforced. A join-time boss card is suppressed without replaying it after the town reveal.
+
+Level-based character growth remains a design proposal; no level/XP or combat balance changes are included.

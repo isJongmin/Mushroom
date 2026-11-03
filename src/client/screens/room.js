@@ -8,11 +8,11 @@ import {bindJoystick} from '../ui/joystick.js';
 import {BOSS_TITLE,BOSS_LABEL} from '../game/garden.js';
 import {rollMonsterLoot} from '../game/monster-rewards.js';
 import {touchLayout,combatReserve} from '../ui/game-layout.js';
-import {sortSceneActors,createCompanionFollower} from '../game/scene-order.js';
+import {sortSceneActors,createCompanionGroup} from '../game/scene-order.js';
 import {SKILL_KEYS,SKILL_LABELS,drawEquippedGear,drawEquipBurst} from '../game/appearance-motion.js';
 import {createProgressionStore} from '../progression-store.js';
 import {createProgressionPanel} from '../ui/progression-panel.js';
-import {GRADES,STAGES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,itemName,petSpec,activeJob} from '../game/progression.js';
+import {equippedPetIds,cleanLoadout,GRADES,STAGES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,itemName,petSpec,activeJob} from '../game/progression.js';
 import {drawEquipmentDrop,drawPet,petNpcPoint,drawPetMerchant,drawItem} from '../game/progression-visuals.js';
 import {questNpcPoint,drawQuestNpc} from '../game/quest-npc.js';
 import {BOSS_KIND,bossPoint,bossPose,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
@@ -126,8 +126,8 @@ export function mount(root, app, opts = {}) {
   const traitWrites=new Set(),traitRetryAt=new Map();let traitProbeAt=0,lastTraitStatusAt=0;
   let lootAt=0, pickupAt=0, collecting=false, lastGrowthKey="";
   let growthErrorAt=0;
-  const companion=createCompanionFollower();
-  let companionPose=null;
+  const companion=createCompanionGroup(),remoteCompanions=new Map();
+  let companionPoses=[];
   let lastEquipSignature=null,equipAt=-Infinity,equipPending=false,petHurtAt=-Infinity,petLootAt=-Infinity;
   let currentArea = 'village';
   let villageMap = null;
@@ -993,7 +993,7 @@ export function mount(root, app, opts = {}) {
     map = nextMap;
     syncNpcLook();
     if(mobDefs&&baseMobKinds){mobDefs.kinds=stageKinds(baseMobKinds,currentArea);mobSprites?.clear();mobSprites=createMobSprites(mobDefs.kinds);}
-    lootContributors.clear();dropBorn.clear();huntChain.clear();chainUntil=0;chainHud.hidden=true;companion.reset();companionPose=null;
+    lootContributors.clear();dropBorn.clear();huntChain.clear();chainUntil=0;chainHud.hidden=true;companion.reset();companionPoses=[];remoteCompanions.clear();
     platforms = normalizePlatforms(map.platforms,{width:map.width,groundY:map.groundY}); ropes = normalizeRopes(map.ropes,{width:map.width,groundY:map.groundY});
     world = worldFromMap(map);
     Object.assign(BODY_OPT, { platforms, ropes, groundY: world.groundY, minX: world.minX, maxX: world.maxX });
@@ -1552,9 +1552,8 @@ export function mount(root, app, opts = {}) {
       const np=petNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy-112)*k/dpr;
       petNpc.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;
       if(!petNpc.hidden){petNpc.style.left=`${nx}px`;petNpc.style.top=`${ny}px`;}
-      const pet=progress.state.pet;
       const target=progress.state.pending.map(settleDrop).filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
-      companionPose=companion.sample({id:!me.dead&&progress.state.pets[pet]?pet:null,mapId:currentArea,x:me.x,y:me.y,dir:me.dir,target,now});
+      companionPoses=companion.sample({ids:me.dead?[]:equippedPetIds(progress.state),mapId:currentArea,x:me.x,y:me.y,dir:me.dir,target,now,minX:world.minX,maxX:world.maxX});
 
     }
 
@@ -1614,8 +1613,14 @@ export function mount(root, app, opts = {}) {
       c.globalAlpha = 1;
     });
     smooth(ctx);
-    for(const [p,sx,pyD] of visible)if(!p.isSelf&&!p.dead&&petSpec(p.loadout?.pet))actors.push({id:'pet-'+p.user_id,kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.loadout.pet,(sx-p.dir*48)*k,pyD,k*.8,now,p.loadout.level,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null})});
-    if(companionPose){const p=companionPose;actors.push({id:'my-pet',kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.id,(p.x-camX)*k,(p.y-cy)*k,k*.8,now,progress.state.pets[p.id]?.level,{moving:!!me.moving,left:me.dir<0,reduced:prefersReducedMotion(),reaction:now-petHurtAt<700?'hurt':now-petLootAt<700?'loot':now-me.effectAt<450?'attack':null})});}
+    const remoteVisible=new Set();
+    for(const [p]of visible)if(!p.isSelf){
+      remoteVisible.add(p.user_id);let group=remoteCompanions.get(p.user_id);if(!group){group=createCompanionGroup();remoteCompanions.set(p.user_id,group);}
+      const pets=cleanLoadout(p.loadout).companions;
+      for(const pose of group.sample({ids:p.dead?[]:pets.map(p=>p.id),mapId:currentArea,x:p.x,y:p.y,dir:p.dir,now,minX:world.minX,maxX:world.maxX}))actors.push({id:'pet-'+p.user_id+'-'+pose.id,kind:'pet',y:groundAt(pose.x,pose.y),draw:()=>drawPet(ctx,pose.id,(pose.x-camX)*k,(pose.y-cy)*k,k*.8,now,pets.find(p=>p.id===pose.id)?.level||0,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null})});
+    }
+    for(const uid of remoteCompanions.keys())if(!remoteVisible.has(uid))remoteCompanions.delete(uid);
+    for(const p of companionPoses){actors.push({id:'my-pet-'+p.id,kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.id,(p.x-camX)*k,(p.y-cy)*k,k*.8,now,progress.state.pets[p.id]?.level,{moving:!!me.moving,left:me.dir<0,reduced:prefersReducedMotion(),reaction:now-petHurtAt<700?'hurt':now-petLootAt<700?'loot':now-me.effectAt<450?'attack':null})});}
     for (const [p, sx, pyD] of visible) actors.push({id:p.user_id,kind:'player',y:groundAt(p.x,p.y),draw:()=>{
       if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); return; }
       const a = blinkAlpha(now, p.invulnUntil);
@@ -2020,7 +2025,7 @@ export function mount(root, app, opts = {}) {
     };
   };
   app.providers.room = () => ({
-    progression:progress?{...progress.state,stats:myStats(),job:job.id,companion:companionPose}:null,
+    progression:progress?{...progress.state,stats:myStats(),job:job.id,companion:companionPoses[0]||null,companions:companionPoses}:null,
     room: { id: roomId, name: roomName, locked, members: players.size, nickname: myNick, owner: isOwner },
     world: {
       mapId: currentArea, name: AREA_NAMES[currentArea], portals: map ? areaPortals(map) : [],
@@ -2084,7 +2089,7 @@ export function mount(root, app, opts = {}) {
     mobSprites?.clear();
     earlyHp.clear();
     if (delModal) { const m = delModal; delModal = null; m.close({ restoreFocus: false }); }
-    traitRetryAt.clear();traitsPanel?.destroy();progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
+    remoteCompanions.clear();companion.reset();companionPoses=[];traitRetryAt.clear();traitsPanel?.destroy();progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
     gardenPanel.destroy(); garden.clear();
     chatLog.destroy();
     link = null;

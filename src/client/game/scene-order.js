@@ -12,3 +12,19 @@ export function createCompanionFollower(){
   return {...pose};
  }};
 }
+
+// A shared smooth center and fixed world-order slots never cross on turns or
+// converge on the same loot. 64 world pixels clear even the widest .8-scale pet.
+export const COMPANION_GAP=64;
+export function createCompanionGroup(){
+ const follower=createCompanionFollower();
+ return {reset(){follower.reset();},sample({ids=[],mapId,x,y,dir=1,target=null,now=0,minX=-Infinity,maxX=Infinity}){
+  const pets=[...new Set(ids.filter(id=>typeof id==='string'&&id))].slice(0,3);
+  if(!pets.length){follower.reset();return [];}
+  const half=(pets.length-1)*COMPANION_GAP/2;
+  const anchor=follower.sample({id:pets.join('|'),mapId,x,y,dir,now,target:{x:target?.x??x-dir*(48+half),y:target?.y??y}});
+  if(!anchor)return [];
+  const center=Math.max(minX+half,Math.min(maxX-half,anchor.x));
+  return pets.map((id,slot)=>({...anchor,id,slot,x:center+(slot-(pets.length-1)/2)*COMPANION_GAP}));
+ }};
+}

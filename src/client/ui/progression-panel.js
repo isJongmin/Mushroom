@@ -1,6 +1,6 @@
 import {h} from '../dom.js';
 import {openModal} from './modal.js';
-import {petSellPrice,petPrice,petBonuses,fusionSummary,GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL,activeWeapon,activeJob,wornItem} from '../game/progression.js';
+import {equippedPetIds,MAX_EQUIPPED_PETS,petSellPrice,petPrice,petBonuses,fusionSummary,GRADES,GRADE_COLORS,WEAPONS,ATTACK,DEFENSE,SELL,ITEM_NAMES,stageOf,itemName,loadout,combatStats,petSpec,PET_RATES,PET_PRICES,PET_ATK,PET_HP,PET_ESSENCE,PET_UPGRADE,PET_SELL,activeWeapon,activeJob,wornItem} from '../game/progression.js';
 import {drawItem,drawPet} from '../game/progression-visuals.js';
 import {createPetReveal} from './pet-reveal.js';
 
@@ -100,16 +100,19 @@ export function createProgressionPanel({main,store,job,getArea,onChange,onFocus,
   body.insertBefore(d,grid);
  }
  function paintPets(s){
-  body.append(h('p',{class:'gp-muted'},'펫을 눌러 동행·강화·판매하세요. 한 마리만 동행할 수 있어요.'));
+  const equipped=equippedPetIds(s),has=id=>equipped.includes(id),full=equipped.length>=MAX_EQUIPPED_PETS;
+  body.append(h('p',{class:'gp-muted'},`동행 ${equipped.length} / ${MAX_EQUIPPED_PETS} · 서로 다른 펫을 최대 3마리까지 장착할 수 있어요. 공격력·체력 보너스는 합산돼요.`));
+  const slots=h('div',{class:'gp-pet-party',testid:'pet-party','aria-label':'동행 펫 3슬롯'});
+  for(let slot=0;slot<MAX_EQUIPPED_PETS;slot++){const id=equipped[slot];slots.append(h('section',{class:'gp-pet-slot'},h('small',{},`동행 ${slot+1}`),id?petIcon(id,48):h('span',{class:'gp-muted'},'빈 슬롯'),h('strong',{},id?petSpec(id).name:'펫을 선택하세요'),id?button('해제',()=>run({type:'pet-off',id}),{disabled:busy,testid:'pet-slot-off-'+slot}):null));}body.append(slots);
   const grid=h('div',{class:'gp-grid',role:'group','aria-label':'보유 펫'});
-  for(const [id,p]of Object.entries(s.pets).sort(([a],[b])=>Number(s.pet===b)-Number(s.pet===a)||petSpec(b).tier-petSpec(a).tier)){
-   const pet=petSpec(id),tile=button('',()=>{detail=id;confirm=null;paint();},{disabled:busy,kind:`gp-tile ${detail===id?'is-selected':''}`,focus:'pet-'+id});tile.setAttribute('aria-label',`${pet.name} 상세`);tile.style.setProperty('--rarity',GRADE_COLORS[pet.tier]);tile.append(h('span',{class:'gp-tile-top'},badge(GRADES[pet.tier],pet.tier),s.pet===id?h('span',{class:'gp-equipped'},'동행'):null),petIcon(id,64),h('strong',{},pet.name),h('small',{},`강화 +${p.level}`));grid.append(tile);
+  for(const [id,p]of Object.entries(s.pets).sort(([a],[b])=>Number(has(b))-Number(has(a))||petSpec(b).tier-petSpec(a).tier)){
+   const pet=petSpec(id),tile=button('',()=>{detail=id;confirm=null;paint();},{disabled:busy,kind:`gp-tile ${detail===id?'is-selected':''}`,focus:'pet-'+id});tile.setAttribute('aria-label',`${pet.name} 상세`);tile.style.setProperty('--rarity',GRADE_COLORS[pet.tier]);tile.append(h('span',{class:'gp-tile-top'},badge(GRADES[pet.tier],pet.tier),has(id)?h('span',{class:'gp-equipped'},'동행'):null),petIcon(id,64),h('strong',{},pet.name),h('small',{},`강화 +${p.level}`));grid.append(tile);
   }
   if(!grid.children.length)grid.append(h('p',{class:'gp-empty'},'아직 펫이 없어요. 마을의 펫 조련사 루루를 찾아보세요.'));body.append(grid);
   const p=s.pets[detail],pet=petSpec(detail);if(!p||!pet)return;
   const d=h('section',{class:'gp-detail','aria-label':'선택 펫 상세'},h('strong',{},`${pet.name} +${p.level}`),h('p',{class:'gp-muted'},`공격력 +${(petBonuses(pet.id,p.level).attack*100).toFixed(1)}% · HP +${petBonuses(pet.id,p.level).hp} · 자동 줍기`));
   if(confirm?.type==='pet-sell')d.append(h('p',{class:'gp-confirm'},`판매할 펫: ${pet.name} · ${petSellPrice(pet.id).toLocaleString()} G. 펫은 사라지며 강화에 쓴 정수는 반환되지 않습니다.`),h('div',{class:'gp-actions'},button('취소',()=>{confirm=null;paint();},{disabled:busy}),button('펫 판매 확정',()=>run({type:'pet-sell',id:detail}),{disabled:busy,kind:'gp-danger',testid:'pet-sell-confirm'})));
-  else d.append(h('div',{},h('div',{class:'gp-actions'},button(s.pet===detail?'동행 해제':'동행하기',()=>run(s.pet===detail?{type:'pet-off'}:{type:'pet-equip',id:detail}),{disabled:busy,kind:'gp-primary',testid:'pet-equip-toggle'}),button(p.level>=5?'최대 강화':`강화 · 정수 ${PET_UPGRADE[p.level]}`,()=>run({type:'pet-upgrade',id:detail}),{disabled:busy||p.level>=5||s.essence<PET_UPGRADE[p.level]}),button(`판매 · ${petSellPrice(pet.id).toLocaleString()} G`,()=>{confirm={type:'pet-sell'};paint();},{disabled:busy||s.pet===detail,testid:'pet-sell-start'})),s.pet===detail?h('small',{class:'gp-muted'},'판매하려면 먼저 동행을 해제해주세요.'):null));
+  else d.append(h('div',{},h('div',{class:'gp-actions'},button(has(detail)?'동행 해제':full?'동행 슬롯 가득 참':'동행하기',()=>run(has(detail)?{type:'pet-off',id:detail}:{type:'pet-equip',id:detail}),{disabled:busy||(!has(detail)&&full),kind:'gp-primary',testid:'pet-equip-toggle'}),button(p.level>=5?'최대 강화':`강화 · 정수 ${PET_UPGRADE[p.level]}`,()=>run({type:'pet-upgrade',id:detail}),{disabled:busy||p.level>=5||s.essence<PET_UPGRADE[p.level]}),button(`판매 · ${petSellPrice(pet.id).toLocaleString()} G`,()=>{confirm={type:'pet-sell'};paint();},{disabled:busy||has(detail),testid:'pet-sell-start'})),has(detail)?h('small',{class:'gp-muted'},'판매하려면 먼저 동행을 해제해주세요.'):null));
   body.append(d);
  }
  function paintShop(s,area){

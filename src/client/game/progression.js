@@ -1,4 +1,4 @@
-import {cleanTraits,cleanAllocation,allocationOK,earnedPoints} from './adventure-traits.js';
+import {cleanTraits,cleanAllocation,allocationOK,earnedPoints,traitGoals} from './adventure-traits.js';
 import {huntContract} from './hunt-chain.js';
 import {regionOf} from './regions.js';
 // One balance contract for loot, equipment, stages and pets. No real-money purchases.
@@ -104,7 +104,12 @@ export function fusionSummary(items) {
 export function applyCommand(original,command,{job='warrior',rnd=Math.random,id=()=>globalThis.crypto.randomUUID?.()||Array.from(crypto.getRandomValues(new Uint8Array(16)),b=>b.toString(16).padStart(2,'0')).join('')}={}) {
  const s=cleanState(original,job),c=command;let result=null;
  const fail=m=>{throw new Error(m);};
- if(c.type==='ensure') {if(c.legacyVillageBoss===true)s.traits.events.village.boss=true;if(!activeWeapon(s)){const i={id:id(),kind:WEAPONS[job],tier:0};s.items.push(i);s.equipped[job]=i.id;s.activeWeapon=i.id;}}
+ if(c.type==='ensure') {if(!s.traits.legacyRewardsMigrated){if(c.legacyVillageBoss===true){s.traits.events.village.boss=true;s.traits.quests['village:boss-first']='claimed';}s.traits.legacyRewardsMigrated=true;}if(!activeWeapon(s)){const i={id:id(),kind:WEAPONS[job],tier:0};s.items.push(i);s.equipped[job]=i.id;s.activeWeapon=i.id;}}
+ else if(c.type==='trait-quest-accept'||c.type==='trait-quest-claim') {
+  const goal=traitGoals(s,STAGES).find(g=>g.key===c.key);if(!goal)fail('존재하지 않는 수련입니다.');
+  if(c.type==='trait-quest-accept'){if(goal.claimed)return {state:s,result:{duplicate:true,key:c.key}};if(goal.status==='available')s.traits.quests[c.key]='active';result={accepted:true,key:c.key};}
+  else{if(goal.claimed)return {state:s,result:{duplicate:true,key:c.key}};if(!goal.ready)fail('수련을 수락하고 목표를 완료한 뒤 다시 찾아오세요.');s.traits.quests[c.key]='claimed';result={point:1,key:c.key};}
+ }
  else if(c.type==='traits-allocate') {
   if(c.expectedRevision!==s.revision)fail('다른 탭에서 진행도가 바뀌었어요. 다시 확인해주세요.');
   if(!allocationOK(c.allocated,earnedPoints(s,STAGES)))fail('특성은 각 0~10 정수, 합계는 획득 포인트 이하여야 합니다.');

@@ -152,7 +152,7 @@ export function drawPortals(ctx,map,camX,camY,k,now) {
 export function minimapPoint(map,x,y,width=204,height=88) {
   return {x:8+Math.max(0,Math.min(map.width,x))/map.width*(width-16),y:8+Math.max(0,Math.min(map.height,y))/map.height*(height-16)};
 }
-export function drawMinimap(ctx,map,players,mobs,me,view,width=204,height=88) {
+export function drawMinimap(ctx,map,players,mobs,me,view,width=204,height=88,markers=[]) {
   ctx.clearRect(0,0,width,height);ctx.fillStyle='#253c3e';ctx.fillRect(0,0,width,height);
   const point=(x,y)=>minimapPoint(map,x,y,width,height);
   const line=(x1,y1,x2,y2,color)=>{const a=point(x1,y1),b=point(x2,y2);ctx.strokeStyle=color;ctx.lineWidth=2;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();};
@@ -162,6 +162,7 @@ export function drawMinimap(ctx,map,players,mobs,me,view,width=204,height=88) {
   if(view){const a=point(view.x,view.y),b=point(view.x+view.w,view.y+view.h);ctx.strokeStyle='#687f7e';ctx.lineWidth=1;ctx.strokeRect(a.x,a.y,b.x-a.x,b.y-a.y);}
   const dot=(x,y,color,size)=>{const a=point(x,y);ctx.fillStyle=color;ctx.fillRect(Math.round(a.x-size/2),Math.round(a.y-size/2),size,size);};
   for(const p of areaPortals(map))dot(p.x,p.y-30,'#8cdeec',5);
+  for(const marker of markers){const p=point(marker.x,marker.y-35);ctx.fillStyle='#f5d47c';ctx.font='bold 10px system-ui';ctx.textAlign='center';ctx.fillText(marker.label||'!',p.x,p.y);}
   for(const m of mobs)if(m.s!=='die'&&m.hp>0)dot(m.x,m.y-12,'#ed9291',2);
   for(const p of players)if(p.user_id!==me?.user_id&&sameArea(p,me))dot(p.x,p.y-24,'#eee9cf',3);
   if(me)dot(me.x,me.y-24,'#ffe578',5);

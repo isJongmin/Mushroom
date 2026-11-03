@@ -11,10 +11,12 @@ import { closeAnyModal } from './ui/modal.js';
 import * as profileScreen from './screens/profile.js';
 import * as lobbyScreen from './screens/lobby.js';
 import * as roomScreen from './screens/room.js';
+import * as homeScreen from './screens/home.js';
 
-const SCREENS = { profile: profileScreen, lobby: lobbyScreen, room: roomScreen };
+const SCREENS = { home:homeScreen, profile: profileScreen, lobby: lobbyScreen, room: roomScreen };
 
 document.body.classList.add('rpg-arcade');
+document.body.classList.add('portal-edition');
 const root = document.getElementById('app');
 const mode = selectedMode();
 
@@ -152,7 +154,7 @@ async function boot() {
   // 익명 로그인은 화면과 별개로 바로 시작한다 (프로필 화면은 기다리지 않고, 로비가 기다린다)
   app.ensureInit().catch(() => {});
 
-  if (!app.profile) { app.go('profile', { mode: 'first' }); return; }
+  if (!app.profile) { app.go('home'); return; }
 
   // 새로고침 재입장 (room.md 1.1): 비밀번호 없이 멤버 행으로 확인. 실패하면 로비 + 배너.
   const rs = readRoomSession();
@@ -173,7 +175,7 @@ async function boot() {
     }
     return;
   }
-  app.go('lobby');
+  app.go('home');
 }
 
 // ---------------------------------------------------------------------------

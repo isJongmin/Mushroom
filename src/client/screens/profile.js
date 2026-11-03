@@ -7,12 +7,11 @@ import { drawAbilityEffect } from '../game/skill-visuals.js';
 // - 모드: first(최초, "입장하기") / edit(로비 "꾸미기"에서, "취소" + "저장").
 // - 카테고리 탭 7개 + 아이템 슬롯 그리드(썸네일) + 프리셋 + 회전 미리보기(앞/옆/뒤 + 걷기)는 v3 그대로.
 // - 탭/슬롯/프리셋은 assets/avatar/manifest.json 의 parts/presets 로만 만든다(하드코딩 없음).
-import { pageIntro } from '../ui/page-intro.js';
 import { h, setText } from '../dom.js';
 import { NICK_RE, NICK_MAX, PART_KEYS, CATEGORY_ORDER, PART_LABELS, HAT_NONE } from '../constants.js';
 import { PROFILE_MESSAGES as M } from '../errors.js';
 import { createAvatarRenderer, smooth } from '../avatar.js';
-import { drawFootShadow, drawMap } from '../game/world.js';
+import { drawFootShadow } from '../game/world.js';
 import { pickAvatar } from '../avatar-data.js';
 import { writeProfile } from '../store.js';
 import { trimWs, charLength } from '../backend/common.js';
@@ -79,7 +78,9 @@ export function mount(root, app, opts = {}) {
   const viewGroup = h('div', { class: 'bk-tabs', role: 'radiogroup', 'aria-label': '미리보기 방향' }, VIEWS.map(([k]) => viewBtns[k]));
   const walkBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--latch', testid: 'preview-walk', 'aria-pressed': 'false' },
     h('span', { class: 'bk-ico bk-ico--arrow', 'aria-hidden': 'true' }), '걷기');
-  const prevArea = h('div', { class: 'create-prev create-left' }, previewEl, h('div', { class: 'bk-preview__ctrl' }, viewGroup, walkBtn));
+  const previewIdentity=h('strong',{class:'atelier-preview-name'},'아직 이름 없는 모험가');
+  const previewCaption=h('div',{class:'atelier-preview-caption'},h('small',{},'YOUR ADVENTURER'),previewIdentity);
+  const prevArea = h('div', { class: 'create-prev create-left' }, previewCaption,previewEl, h('div', { class: 'bk-preview__ctrl' }, viewGroup, walkBtn));
 
   // 프리셋, 탭, 슬롯
   const presetGrid = h('div', { class: 'bk-presets', role: 'group', 'aria-label': '추천 조합' });
@@ -111,6 +112,7 @@ export function mount(root, app, opts = {}) {
     id: 'nickname', class: 'bk-input bk-input--with-end', type: 'text', testid: 'nickname-input', placeholder: '마을에서 불릴 이름', maxlength: String(NICK_MAX),
     autocomplete: 'off', autocapitalize: 'off', spellcheck: 'false', enterkeyhint: 'done', 'aria-describedby': 'nickname-status',
   });
+  on(nickInput,'input',()=>setText(previewIdentity,nickInput.value.trim()||'아직 이름 없는 모험가'));
   const nickCounter = h('span', { class: 'bk-counter', testid: 'nickname-counter', 'aria-hidden': 'true', hidden: true });
   const statusIcon = h('span', { class: 'status-icon', 'aria-hidden': 'true', hidden: true });
   const statusText = h('span', {});
@@ -120,6 +122,11 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'bk-input-wrap' }, nickInput, h('span', { class: 'bk-input-end' }, nickCounter)),
     status);
 
+  const randomStyle=h('button',{type:'button',class:'bk-btn',testid:'atelier-random'},'랜덤 코디');
+  const resetStyle=h('button',{type:'button',class:'bk-btn',testid:'atelier-reset'},'처음 모습');
+  on(randomStyle,'click',()=>{if(ready&&assets.presets.length)applyPreset(Math.floor(Math.random()*assets.presets.length));});
+  on(resetStyle,'click',()=>{if(!ready)return;avatar=editMode?assets.sanitizeAvatar(app.profile.avatar):{...assets.defaultAvatar};paintSlots();drawPreview();announcePart(activeTab);});
+  partsArea.prepend(h('div',{class:'atelier-tools'},h('span',{},'작은 변화로, 나다운 모습'),h('div',{},randomStyle,resetStyle)));
   const weaponHint=h('p',{class:'create-job bk-help',testid:'weapon-hint'},'직업은 착용한 무기로 결정돼요. 가방에서 무기를 바꾸면 공격과 스킬도 바뀝니다.');
 
   // 버튼 (6장): 비활성은 aria-disabled (눌렀을 때 형식 오류를 보여 주기 위해 클릭은 받는다)
@@ -149,13 +156,13 @@ export function mount(root, app, opts = {}) {
   const card = h('section', { class: 'bk-panel card-create', 'aria-labelledby': 'profile-title', testid: 'profile-card' },
     h('div', { class: 'card-head' }, h('div', {}, h('p', { class: 'ui-eyebrow' }, 'CHARACTER STUDIO'), title), h('span', { class: 'ui-step' }, '나만의 모험가')),
     h('div', { class: 'create-grid' }, prevArea, partsArea, nickArea, weaponHint, ctaArea),
-    rewardArea,costumeArea, footRow);
+    h('details',{class:'atelier-archive',open:editMode},h('summary',{},'모험으로 해금하는 칭호와 의상'),rewardArea,costumeArea), footRow);
   title.id = 'profile-title';
   const logo = h('h1', { class: 'bk-logo bk-logo--sm' }, h('span', { class: 'bk-ico bk-ico--mush', 'aria-hidden': 'true' }), '버섯마을');
-  const backBtn = editMode ? h('button', { type: 'button', class: 'bk-btn', testid: 'profile-back' }, '로비로 돌아가기') : null;
-  if (backBtn) on(backBtn, 'click', () => doCancel());
+  const backBtn = h('button', { type: 'button', class: 'bk-btn', testid: 'profile-back' }, editMode?'로비로 돌아가기':'시작 화면');
+  on(backBtn, 'click', () => editMode?doCancel():app.go('home'));
   root.append(h('main', { class: 'scr-auth', 'data-mode': editMode ? 'edit' : 'first' },
-    h('header', { class: 'ui-profile-header' }, logo, backBtn), pageIntro('profile'), card));
+    h('header', { class: 'ui-profile-header' }, logo, backBtn),h('section',{class:'portal-page-heading'},h('p',{},'01 / CHARACTER ATELIER'),h('h1',{},'너의 이야기는,',h('br'),'어떤 모습일까?'),h('span',{},'마음에 드는 모습을 고르고, 마을에서 불릴 이름을 지어주세요.')),card));
   if (app.mode === 'local') app.placeModeBadge(modeSlot);
 
   // --- 미리보기 그리기 ---------------------------------------------------------
@@ -180,9 +187,10 @@ export function mount(root, app, opts = {}) {
 
   // 배경 = 방과 같은 맵 그리기(drawMap)를 카메라 (mapX, mapY)로 (패럴랙스 레이어 포함 작은 장면)
   function drawStageBg(c) {
-    // (사이클 9) 맵 지면이 바뀌어도(큰 맵 groundY 900) 지면선이 무대 기준점에 오게
-    const gy = map && typeof map.groundY === 'number' ? map.groundY : 440;
-    drawMap(c, map, STAGE.mapX, gy - STAGE.ay, k, stageCanvas.width, stageCanvas.height);
+    const w=stageCanvas.width,ht=stageCanvas.height;
+    c.clearRect(0,0,w,ht);
+    const light=c.createRadialGradient(w*.5,ht*.4,0,w*.5,ht*.5,w*.7);light.addColorStop(0,'#c5d4b980');light.addColorStop(1,'#a9bca000');c.fillStyle=light;c.fillRect(0,0,w,ht);
+    c.fillStyle='#82917c22';c.beginPath();c.ellipse(w*.5,STAGE.ay*k,w*.36,ht*.055,0,0,Math.PI*2);c.fill();
   }
 
   function previewFrame(now) {
@@ -549,14 +557,14 @@ export function mount(root, app, opts = {}) {
 
   // --- 시작 -----------------------------------------------------------------
   if (editMode) nickInput.value = app.profile.nickname;
+  setText(previewIdentity,nickInput.value||'아직 이름 없는 모험가');
   setStatus('empty');
   evaluate('input');
   sizeStage();
   drawPreview();
-  Promise.all([app.assets, app.mapAssets.catch(() => null)]).then(([a, m]) => {
+  app.assets.then((a) => {
     if (!alive) return;
     assets = a;
-    map = m;
     if (!a || a.source !== 'manifest') { stageDots.hidden = true; showManifestError(); return; }
     // 레이어는 그릴 조합이 생길 때 받는다. 합성이 끝날 때마다 다음 프레임에 미리보기/썸네일을 다시 칠한다.
     let repaintRaf = 0;

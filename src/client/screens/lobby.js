@@ -3,7 +3,7 @@ import { readRewards } from '../rewards.js';
 // - 방 목록: listRooms 5초 폴링(응답 후 setTimeout 사슬, 숨김 탭/입장·만들기 요청 중 정지) + 수동 새로고침
 // - 행은 방 id 키로 DOM 재사용(스크롤/포커스 유지). 사용자 문자열(방 이름, 닉네임)은 textContent로만.
 // - 모달: 방 만들기 / 비밀번호 / 닉네임 겹침 (ui/modal.js: focus trap, Esc 취소, 딤 클릭 무시, 포커스 복귀)
-import { pageIntro } from '../ui/page-intro.js';
+import {readAdventurer,recommendedRoom,roomMatches} from '../game/portal-model.js';
 import { h, setText } from '../dom.js';
 import {
   NICK_RE, NICK_MAX, ROOM_NAME_MAX, ROOM_PW_MIN, ROOM_PW_MAX, ROOM_CAPACITY, PART_KEYS, LOBBY_POLL_MS, RATE_LOCK_MS,
@@ -48,6 +48,7 @@ export function mount(root, app, opts = {}) {
   const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); if (alive) fn(); }, ms); timers.add(t); return t; };
   const cancel = (t) => { if (t) { clearTimeout(t); timers.delete(t); } };
   const profile = app.profile;
+  const adventurer=readAdventurer(app.profileKey);let filterQuery='';
 
   // --- 머리줄 -----------------------------------------------------------------
   const dpr = Math.max(1, Math.min(3, Math.round(window.devicePixelRatio || 1)));
@@ -66,7 +67,7 @@ export function mount(root, app, opts = {}) {
       editBtn));
 
   // --- 패널 -------------------------------------------------------------------
-  const title = h('h2', { id: 'lobby-title', tabindex: '-1' }, '방 목록');
+  const title = h('h2', { id: 'lobby-title', tabindex: '-1' }, '함께할 모험을 선택하세요');
   const countEl = h('span', { class: 'lobby-tools__count', testid: 'room-count' });
   const refreshDots = dots();
   refreshDots.hidden = true;
@@ -77,12 +78,23 @@ export function mount(root, app, opts = {}) {
   const wrap = h('div', { class: 'bk-roomwrap', testid: 'room-wrap' }, list);
   const note = h('p', { class: 'lobby-note', testid: 'room-limit-note', hidden: true }, M.LIMIT_NOTE);
   const srStatus = h('div', { class: 'bk-sr', role: 'status', testid: 'lobby-status' });
+  const searchInput=h('input',{type:'search',class:'bk-input lobby-search',testid:'room-search',placeholder:'모험 이름으로 찾기','aria-label':'모험 이름 검색',maxlength:24,disabled:true});
+  on(searchInput,'input',()=>{filterQuery=searchInput.value;renderRooms();});
+  const noMatches=h('p',{class:'lobby-no-matches',testid:'room-no-matches',hidden:true},'찾는 모험이 없어요. 다른 이름으로 찾아보세요.');
   const panel = h('section', { class: 'bk-panel lobby-panel', 'aria-labelledby': 'lobby-title' },
     h('div', { class: 'lobby-tools' }, title, countEl, refreshBtn, createBtn),
-    banner, wrap, note, srStatus);
+    searchInput,banner, wrap,noMatches, note, srStatus);
   const gardenRecord=readRewards(app.profileKey);
   const gardenCard=h('section',{class:'lobby-garden','aria-label':'마을 협동 이벤트'},h('div',{},h('strong',{},'지역 방어 · 보스 도전'),h('p',{},'각 마을 안내 NPC의 느낌표에서 방어 이벤트와 보스 도전을 선택하세요. 강한 지역일수록 더 좋은 장비와 골드, 강력한 펫이 기다립니다.')),h('span',{class:'lobby-garden__record'},gardenRecord.unlocked?`방어 ${gardenRecord.clears}회 · 버섯왕 ${gardenRecord.bossClears}회`:'첫 방어에 도전하세요'));
-  const main = h('main', { class: 'scr-lobby', id: 'lobby' }, header, pageIntro('lobby'), gardenCard, panel, h('footer', { class: 'ui-footer' }, 'MUSHROOM VILLAGE', h('span', {}, '작은 마을, 함께 만드는 모험.')));
+  const lobbyAvatar=h('canvas',{class:'portal-lobby-avatar',width:240,height:300,'aria-hidden':'true'});
+  const quickJoin=h('button',{type:'button',class:'portal-button portal-button--gold',testid:'quick-join',disabled:true},'모험 준비 중');
+  on(quickJoin,'click',()=>{if(phase!=='ready'||busy)return;const room=recommendedRoom(rooms);if(room)onEnter(room,quickJoin);else openCreate(quickJoin);});
+  const browse=h('button',{type:'button',class:'portal-button portal-button--ghost',testid:'browse-rooms'},'다른 모험 살펴보기');on(browse,'click',()=>panel.scrollIntoView({behavior:matchMedia('(prefers-reduced-motion: reduce)').matches?'auto':'smooth'}));
+  const home=h('button',{type:'button',class:'bk-btn portal-home-back',testid:'lobby-home'},'시작 화면');on(home,'click',()=>app.go('home'));header.querySelector('.lobby-brand').append(home);
+  const welcome=h('section',{class:'portal-lobby-welcome','aria-label':'내 모험가와 모험 출발'},h('div',{class:'portal-lobby-art','aria-hidden':'true'}),
+    h('div',{class:'portal-lobby-copy'},h('p',{class:'portal-kicker'},'02 / THE ADVENTURER’S LODGE'),h('h1',{},'다시 만나 반가워요,',h('br'),profile.nickname+'.'),h('p',{},'익숙한 마을에서 잠시 숨을 고르고,',h('br'),'오늘은 어제보다 조금 더 멀리 떠나볼까요?'),h('div',{class:'portal-cover-actions'},quickJoin,browse)),
+    h('aside',{class:'adventurer-passport','aria-label':'내 모험가 요약'},h('small',{},'ADVENTURER PASS'),lobbyAvatar,h('strong',{},profile.nickname),h('span',{},'Lv.'+adventurer.level),h('dl',{},...[[adventurer.regions+'/4','해금 지역'],[adventurer.petCount,'보유 펫'],[adventurer.gold.toLocaleString(),'골드']].map(([value,label])=>h('div',{},h('dt',{},label),h('dd',{},String(value)))))));
+  const main = h('main', { class: 'scr-lobby', id: 'lobby' },header,welcome,h('div',{class:'portal-lobby-content'},panel,h('aside',{class:'portal-lobby-notes'},h('p',{class:'portal-kicker'},'GUILD NOTICE'),h('h2',{},'길드의 작은 안내'),gardenCard,h('p',{},'다른 모험가와 함께 싸우면 참여한 사람마다 보상을 받아요.'),h('p',{},'장비와 펫은 같은 브라우저에 보관됩니다. 다른 기기와 자동으로 공유되지는 않아요.'))),h('footer', { class: 'ui-footer' }, 'MUSHROOM VILLAGE', h('span', {}, '오늘의 이야기도, 함께.')));
   root.append(main);
   if (app.mode === 'local') app.placeModeBadge(modeSlot);
 
@@ -133,7 +145,7 @@ export function mount(root, app, opts = {}) {
     // (사이클 8) 내 방(mine)에만 보이는 삭제 버튼
     const del = h('button', { class: 'bk-btn bk-btn--sm bk-btn--danger bk-room__del', type: 'button', testid: 'room-delete', hidden: true }, '삭제');
     const li = h('li', { class: 'bk-room', testid: 'room-row', 'data-room-id': room.id },
-      lock, h('span', { class: 'bk-room__main' }, name, meta), count, h('span', { class: 'bk-room__acts' }, del, go));
+      h('span',{class:'portal-room-scene','aria-hidden':'true'}),lock, h('span', { class: 'bk-room__main' }, name, meta), count, h('span', { class: 'bk-room__acts' }, del, go));
     const row = { li, lock, name, meta, count, countText, go, goDots, goText, del, room };
     on(go, 'click', () => onEnter(row.room, go));
     on(del, 'click', () => openDelete(row.room, del));
@@ -192,7 +204,8 @@ export function mount(root, app, opts = {}) {
   let emptyEl = null;
   function renderRooms() {
     list.setAttribute('aria-busy', 'false');
-    setCount(`${rooms.length}개`);
+    const matching=rooms.filter(r=>roomMatches(r,filterQuery));
+    setCount(filterQuery?`${matching.length} / ${rooms.length}개`:`${rooms.length}개`);noMatches.hidden=!rooms.length||!!matching.length;
     note.hidden = rooms.length < LIST_LIMIT;
     const ae = document.activeElement;
     const focusInList = ae && list.contains(ae);
@@ -230,7 +243,7 @@ export function mount(root, app, opts = {}) {
     rooms.forEach((room, i) => {
       let row = rows.get(room.id);
       if (!row) { row = makeRow(room); rows.set(room.id, row); }
-      updateRow(row, room);
+      updateRow(row, room);row.li.hidden=!roomMatches(room,filterQuery);
       if (list.children[i] !== row.li) list.insertBefore(row.li, list.children[i] || null);
     });
     // 순서 변경으로 포커스가 빠졌으면 같은 요소로 되돌린다
@@ -241,6 +254,7 @@ export function mount(root, app, opts = {}) {
 
   function updateTools() {
     const ready = phase === 'ready';
+    home.disabled=!!busy&&busy.kind!=='refresh';searchInput.disabled=!ready||!!busy;quickJoin.disabled=!ready||!!busy;setText(quickJoin,recommendedRoom(rooms)?'추천 모험 참가 →':'새 모험 만들기 →');
     const refreshing = busy && busy.kind === 'refresh';
     refreshBtn.disabled = phase === 'loading' || !!busy;
     refreshDots.hidden = !refreshing;
@@ -735,6 +749,7 @@ export function mount(root, app, opts = {}) {
     if (!alive || !assets || assets.source !== 'manifest') return;
     const av = assets.sanitizeAvatar(profile.avatar);
     const paint = () => {
+      if(renderer){const portrait=lobbyAvatar.getContext('2d');portrait.clearRect(0,0,240,300);renderer.draw(portrait,av,120,285,1.8,0,false);}
       const src = renderer && renderer.thumb(av, PART_KEYS); // 합성 중이면 null → onUpdate에서 다시
       if (!src) return;
       const c = thumb.getContext('2d');

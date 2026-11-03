@@ -54,7 +54,7 @@ export function abilityDefinition(jobId, slot = 0) {
 export function abilityStats(jobId, slot = 0, loadout = null) {
   const j = jobDefinition(jobId), a = abilityDefinition(j.id, slot);
   if (!a) return null;
-  return { job: j.id, skill: slot, cooldown: a.cooldown, w: a.range, hits: a.hits,
+  return { job: j.id, skill: slot, cooldown: Math.round(a.cooldown*1000*(loadout?combatStats(loadout).cooldownMultiplier:1))/1000, w: a.range, hits: a.hits,
     dmin: Math.round(j.min * a.multiplier * (loadout ? combatStats(loadout).multiplier : 1)), dmax: Math.round(j.max * a.multiplier * (loadout ? combatStats(loadout).multiplier : 1)), el: a.el, animMs: slot ? Math.min(500, a.duration * .5) : BASIC_INTERVAL_MS };
 }
 export function acceptJobAttack(player, attack, now) {
@@ -62,11 +62,16 @@ export function acceptJobAttack(player, attack, now) {
   if (attack.loadout?.weapon && weaponJob(attack.loadout.weapon)!==attack.job) return false;
   if (Math.abs(attack.x - (player.targetX ?? player.x)) > 230 || Math.abs(attack.y - (player.yTo ?? player.y)) > 210) return false;
   const slot = attack.skill ?? 0, a = abilityDefinition(attack.job, slot);
-  if (!a || attack.cooldown !== a.cooldown || (attack.loadout && !skillUnlocked(attack.loadout,slot))) return false;
+  const cooldown=abilityStats(attack.job,slot,attack.loadout)?.cooldown;
+  if (!a || attack.cooldown !== cooldown || (attack.loadout && !skillUnlocked(attack.loadout,slot))) return false;
   const times = player.acceptedSkills || {};
-  if (now - (times[slot] ?? -Infinity) < (slot ? a.cooldown * 1000 : BASIC_INTERVAL_MS) - 15) return false;
+  const interval=slot?cooldown*1000:BASIC_INTERVAL_MS;
+  const readyAt=player.acceptedSkillReadyAt?.[slot]??((times[slot]??-Infinity)+interval);
+  if (now < readyAt-15) return false;
   player.acceptedAttackSeq = attack.seq;
   player.acceptedAttackAt = now;
   player.acceptedSkills = { ...times, [slot]: now };
+  // A new allocation does not shorten a cooldown that has already started.
+  player.acceptedSkillReadyAt = {...player.acceptedSkillReadyAt,[slot]:now+interval};
   return true;
 }

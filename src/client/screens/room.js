@@ -1,3 +1,5 @@
+import {createTraitsPanel} from '../ui/traits-panel.js';
+import {traitEditReason,explorationPoints,drawExplorationPoints,earnedPoints} from '../game/adventure-traits.js';
 import {createHuntChain,comboBonus} from '../game/hunt-chain.js';
 import {npcRoster} from '../game/npc-roster.js';
 import {regionOf} from '../game/regions.js';
@@ -6,11 +8,11 @@ import {bindJoystick} from '../ui/joystick.js';
 import {BOSS_TITLE,BOSS_LABEL} from '../game/garden.js';
 import {rollMonsterLoot} from '../game/monster-rewards.js';
 import {touchLayout,combatReserve} from '../ui/game-layout.js';
-import {sortSceneActors,createCompanionFollower} from '../game/scene-order.js';
+import {sortSceneActors,createCompanionGroup} from '../game/scene-order.js';
 import {SKILL_KEYS,SKILL_LABELS,drawEquippedGear,drawEquipBurst} from '../game/appearance-motion.js';
 import {createProgressionStore} from '../progression-store.js';
 import {createProgressionPanel} from '../ui/progression-panel.js';
-import {GRADES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,itemName,petSpec,activeJob} from '../game/progression.js';
+import {equippedPetIds,cleanLoadout,GRADES,STAGES,stageOf,stageKinds,stageUnlocked,loadout,combatStats,skillUnlocked,itemName,petSpec,activeJob} from '../game/progression.js';
 import {drawEquipmentDrop,drawPet,petNpcPoint,drawPetMerchant,drawItem} from '../game/progression-visuals.js';
 import {questNpcPoint,drawQuestNpc} from '../game/quest-npc.js';
 import {BOSS_KIND,bossPoint,bossPose,installBoss,bossDanger,bossImpactAt,bossPatternText} from '../game/garden-boss.js';
@@ -121,10 +123,11 @@ export function mount(root, app, opts = {}) {
   let baseMobKinds = null;
   const huntChain=createHuntChain();let chainUntil=0;
   const lootContributors = new Map(), lootOutbox = new Map(),dropBorn=new Map();
+  const traitWrites=new Set(),traitRetryAt=new Map();let traitProbeAt=0,lastTraitStatusAt=0;
   let lootAt=0, pickupAt=0, collecting=false, lastGrowthKey="";
   let growthErrorAt=0;
-  const companion=createCompanionFollower();
-  let companionPose=null;
+  const companion=createCompanionGroup(),remoteCompanions=new Map();
+  let companionPoses=[];
   let lastEquipSignature=null,equipAt=-Infinity,equipPending=false,petHurtAt=-Infinity,petLootAt=-Infinity;
   let currentArea = 'village';
   let villageMap = null;
@@ -226,10 +229,14 @@ export function mount(root, app, opts = {}) {
   const hostChip = debug ? h('span', { class: 'bk-chip debug-host', testid: 'debug-host' }, '호스트 -') : null;
   let job = jobDefinition(profile?.job);
   let progress=null,progressError='';
-  try {progress=createProgressionStore(app.profileKey,{job:job.id});}catch(e){progressError=e.message;}
+  try {progress=createProgressionStore(app.profileKey,{job:job.id,guardCommand:c=>{if(c.type==='traits-allocate'){const reason=traitEditLock();if(reason)throw new Error(reason);}}});}catch(e){progressError=e.message;}
   if(progress)job=jobDefinition(activeJob(progress.state));
   const myLoadout=()=>progress?loadout(progress.state,job.id):null;
   const myStats=()=>combatStats(myLoadout());
+  function traitEditLock(){const p=questNpcPoint(world);return traitEditReason({connected:connection==='connected',alive:!!me&&!me.dead,near:!!me&&Math.abs(me.x-p.x)<=230&&Math.abs(me.y-p.y)<=100,now:performance.now(),lastAttack:me?.lastAtkAt??-Infinity,lastHit:petHurtAt});}
+  const traitsPanel=progress?createTraitsPanel({main:root,store:progress,getArea:()=>currentArea,getEditReason:traitEditLock,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true})}):null;
+  function openTraits(){input.clear();if(traitsPanel)traitsPanel.open();else chatLog.addSystem(progressError);}
+  const traitsBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'adventure-traits'},'모험 특성');on(traitsBtn,'click',openTraits);
   const progressPanel=progress?createProgressionPanel({main:root,store:progress,job:job.id,getArea:()=>currentArea,onChange:syncProgress,onFocus:()=>canvas.focus({preventScroll:true}),canDraw:()=>{const p=petNpcPoint(world);return !!me&&!me.dead&&connection==='connected'&&Math.abs(me.x-p.x)<230&&Math.abs(me.y-p.y)<100;}}):null;
   const growthText=h('span',{}),huntText=h('small',{class:'hunt-tracker',testid:'hunt-tracker'}),chainHud=h('div',{class:'hunt-combo',testid:'hunt-combo',role:'status',hidden:true});
   const bagBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'equipment-bag'},'가방');
@@ -242,7 +249,7 @@ export function mount(root, app, opts = {}) {
     const st=myStats();atk=abilityStats(job.id,0,myLoadout());if(me){me.max=st.maxHp;me.hp=Math.min(me.hp,me.max);me.loadout=myLoadout();announceHp=true;}
     const state=progress.state;const signature=`${state.activeWeapon}:${state.shield}`;if(lastEquipSignature!==null&&signature!==lastEquipSignature){equipAt=-Infinity;equipPending=true;}lastEquipSignature=signature;
     const key=`${state.revision}|${currentArea}|${layout.mobile}`;if(key!==lastGrowthKey){lastGrowthKey=key;setText(huntText,`사냥 의뢰 ${state.kills[currentArea]%20}/20 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 보상`);setText(growthText,layout.mobile?`${AREA_NAMES[currentArea]} · ${state.gold.toLocaleString()} G`:`${stageOf(currentArea).order}차 ${AREA_NAMES[currentArea]} · 공격 ${st.attack} / 방어 ${st.defense} · ${state.gold.toLocaleString()} G`);}
-    progressPanel?.refresh();
+    progressPanel?.refresh();traitsPanel?.refresh();
   }
   on(window,'storage',e=>{if(progress&&e.key===progress.key){try{progress.reload();syncProgress();}catch(err){chatLog.addSystem(err.message);}}});
 
@@ -292,7 +299,7 @@ export function mount(root, app, opts = {}) {
   on(npcQuest,'click',()=>{if(!me||me.dead||connection!=='connected')return;const p=questNpcPoint(world);if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>110){setText(npcQuest,'가까이');return;}gardenPanel.open();lastGardenPaint=0;paintGardenPanel(performance.now());});
   const petNpc=h('button',{type:'button',class:'pet-npc-marker',testid:'pet-npc','aria-label':'지역 펫 조련사와 대화',hidden:true},'펫 뽑기');
   on(petNpc,'click',()=>{const p=petNpcPoint(world);if(!me||me.dead||connection!=='connected')return;if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>100){chatLog.addSystem('펫 조련사 가까이로 이동해주세요.');return;}input.clear();progressPanel?.open('shop');});
-  const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true})});
+  const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true}),onTraits:openTraits});
   const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
@@ -343,7 +350,7 @@ export function mount(root, app, opts = {}) {
   const playerStatus=h('section',{class:'rpg-player-status',testid:'player-status','aria-label':'캐릭터 상태'},h('div',{class:'rpg-emblem','aria-hidden':'true'},portraitCanvas),h('div',{class:'rpg-player-info'},h('strong',{},myNick),hpTrack,hpValue));
   const menuToggle=h('button',{type:'button',class:'rpg-menu-toggle',testid:'game-menu-toggle','aria-label':'게임 메뉴 열기','aria-expanded':'false','aria-controls':'room-game-menu'},h('span',{'aria-hidden':'true'},'☰'),h('small',{},'메뉴'));
   const menuHelp=h('p',{class:'rpg-menu-help'},'이동 ← → · 점프 Space · 공격 J · 스킬 K / L / ;');
-  const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},chatToggle,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
+  const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},traitsBtn,chatToggle,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
   function closeGameMenu(focus=false){menu.hidden=true;menuToggle.setAttribute('aria-expanded','false');menuToggle.setAttribute('aria-label','게임 메뉴 열기');if(focus)menuToggle.focus();}
   on(menuToggle,'click',()=>{const open=menu.hidden;menu.hidden=!open;menuToggle.setAttribute('aria-expanded',String(open));menuToggle.setAttribute('aria-label',open?'게임 메뉴 닫기':'게임 메뉴 열기');if(open)input.clear();});
   on(menu,'click',e=>{if(e.target.closest('button'))closeGameMenu();});
@@ -825,19 +832,20 @@ export function mount(root, app, opts = {}) {
     if (document.activeElement?.matches('input, textarea, [contenteditable=true]')) document.activeElement.blur();
     if (now < skillReadyAt[slot] || !skillUnlocked(myLoadout(),slot)) return false;
     doAttack(now, slot);
-    skillReadyAt[slot] = now + abilityDefinition(job.id, slot).cooldown * 1000;
+    skillReadyAt[slot] = now + abilityStats(job.id, slot,myLoadout()).cooldown * 1000;
     return true;
   }
   function paintSkills(now) {
     for (const s of skillButtons) {
       const left = Math.max(0, skillReadyAt[s.slot] - now);
-      const locked=!skillUnlocked(myLoadout(),s.slot);
+      const locked=!skillUnlocked(myLoadout(),s.slot),cooldown=abilityStats(job.id,s.slot,myLoadout()).cooldown;
+      s.btn.title=`${s.ability.name} · ${s.ability.description} · ${cooldown}초 · ${SKILL_LABELS[s.slot]}키`;
       s.btn.classList.toggle('is-locked',locked);
-      s.btn.setAttribute('aria-label',locked?`${s.ability.name}, ${GRADES[s.slot-1]} 이상 주무기 획득 시 해금`:`${s.ability.name}, 재사용 ${s.ability.cooldown}초`);
+      s.btn.setAttribute('aria-label',locked?`${s.ability.name}, ${GRADES[s.slot-1]} 이상 주무기 획득 시 해금`:`${s.ability.name}, 재사용 ${cooldown}초`);
       s.btn.classList.toggle('is-cooling', left > 0);
       s.btn.disabled = locked || document.body.classList.contains('has-modal') || left > 0 || !me || me.dead || !!me?.body?.rope || connection !== 'connected';
       setText(s.timer, locked ? `${GRADES[s.slot-1]} 장비` : left > 0 ? (left / 1000).toFixed(1) : '');
-      s.btn.style.setProperty('--cooldown', `${left / (s.ability.cooldown * 1000) * 100}%`);
+      s.btn.style.setProperty('--cooldown', `${Math.min(100,left / (cooldown * 1000) * 100)}%`);
     }
   }
 
@@ -948,6 +956,7 @@ export function mount(root, app, opts = {}) {
   function paintGardenPanel(now) {
     if(!me||now-lastGardenPaint<100)return;lastGardenPaint=now;
     const s=garden.snapshot(),eligible=gardenEligible(s,me.user_id);
+    if(eligible&&(s.mode!=='boss'||s.members.some(m=>m.uid===me.user_id&&m.bossDamage>0))&&(s.mode==='boss'||currentArea!=='village')&&!progress?.state.traits.events[currentArea]?.[s.mode==='boss'?'boss':'defense'])writeTrait({type:'trait-event',area:currentArea,mode:s.mode==='boss'?'boss':'defense'});
     if(currentArea==='village'&&eligible&&!grantedRuns.has(s.id)) {
       grantedRuns.add(s.id);if(grantedRuns.size>64)grantedRuns.delete(grantedRuns.values().next().value);const grant=grantGarden(app.profileKey,s.id,s.hp,s.mode);rewardMemory=grant.rewards;gardenRewardSaved=grant.saved;if(s.mode==='boss'){me.title=BOSS_TITLE;link?.updateSelf?.({title:me.title}).catch(()=>{});}
     }
@@ -984,7 +993,7 @@ export function mount(root, app, opts = {}) {
     map = nextMap;
     syncNpcLook();
     if(mobDefs&&baseMobKinds){mobDefs.kinds=stageKinds(baseMobKinds,currentArea);mobSprites?.clear();mobSprites=createMobSprites(mobDefs.kinds);}
-    lootContributors.clear();dropBorn.clear();huntChain.clear();chainUntil=0;chainHud.hidden=true;companion.reset();companionPose=null;
+    lootContributors.clear();dropBorn.clear();huntChain.clear();chainUntil=0;chainHud.hidden=true;companion.reset();companionPoses=[];remoteCompanions.clear();
     platforms = normalizePlatforms(map.platforms,{width:map.width,groundY:map.groundY}); ropes = normalizeRopes(map.ropes,{width:map.width,groundY:map.groundY});
     world = worldFromMap(map);
     Object.assign(BODY_OPT, { platforms, ropes, groundY: world.groundY, minX: world.minX, maxX: world.maxX });
@@ -1033,9 +1042,21 @@ export function mount(root, app, opts = {}) {
     else sim.fill(now);
   }
 
+  async function writeTrait(command){
+    if(!progress||!alive)return;const key=JSON.stringify(command);if(traitWrites.has(key)||performance.now()<(traitRetryAt.get(key)||0))return;traitWrites.add(key);
+    const before=earnedPoints(progress.state,STAGES);
+    try{await progress.run(command);if(alive){syncProgress();if(earnedPoints(progress.state,STAGES)>before)chatLog.addSystem('모험 특성 포인트 +1! 메뉴의 모험 특성에서 배분하세요.');}}
+    catch(e){traitRetryAt.set(key,performance.now()+5000);if(alive)chatLog.addSystem(e.message);}
+    finally{traitWrites.delete(key);}
+  }
+  function probeTraits(now){
+    if(now-lastTraitStatusAt>=150){lastTraitStatusAt=now;traitsPanel?.refresh();}
+    if(now-traitProbeAt<1000||!progress||!me||me.dead||connection!=='connected')return;traitProbeAt=now;
+    for(const p of explorationPoints(map))if(!progress.state.traits.explored[currentArea].includes(p.id)&&Math.abs(me.x-p.x)<70&&Math.abs(me.y-p.y)<32)writeTrait({type:'trait-explore',area:currentArea,point:p.id});
+  }
   async function receiveLoot(p){
     if(!progress||!me||p.owner!==me.user_id||p.area!==currentArea)return;
-    try {const awarded=await progress.run({type:'loot',...p});if(!alive)return;if(!awarded?.duplicate&&p.combo){chainUntil=performance.now()+5000;chainHud.hidden=false;setText(chainHud,`${p.combo} COMBO · 골드 +${comboBonus(p.combo)}%`);}if(awarded?.contract){chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}syncProgress();if(isHost())lootOutbox.delete(p.receipt+'|'+p.owner);else send('loot-ack',{receipt:p.receipt});}
+    try {const before=earnedPoints(progress.state,STAGES),awarded=await progress.run({type:'loot',...p});if(alive&&earnedPoints(progress.state,STAGES)>before)chatLog.addSystem('모험 특성 포인트 획득! 메뉴의 모험 특성에서 배분하세요.');if(!alive)return;if(!awarded?.duplicate&&p.combo){chainUntil=performance.now()+5000;chainHud.hidden=false;setText(chainHud,`${p.combo} COMBO · 골드 +${comboBonus(p.combo)}%`);}if(awarded?.contract){chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}syncProgress();if(isHost())lootOutbox.delete(p.receipt+'|'+p.owner);else send('loot-ack',{receipt:p.receipt});}
     catch(e){if(alive&&performance.now()-growthErrorAt>5000){growthErrorAt=performance.now();chatLog.addSystem(e.message);}}
   }
   async function collectEquipment(now){
@@ -1058,12 +1079,12 @@ export function mount(root, app, opts = {}) {
     if (zones[r.mob.z]?.event) garden.record(uid, r.dmgs.reduce((a,b)=>a+b,0), r.killed,players.get(uid)?.attackJob||job.id,r.mob.kind===BOSS_KIND);
     cstats.mobHits++;
     showHits(r.dmgs, r.mob.x, r.mob.y - kindsH(r.mob.kind), 'hit', now);
-    if(uid){let hits=lootContributors.get(r.mob.id);if(!hits){hits=new Map();lootContributors.set(r.mob.id,hits);}hits.set(uid,now);}
+    if(uid&&r.dmgs.some(d=>d>0)){let hits=lootContributors.get(r.mob.id);if(!hits){hits=new Map();lootContributors.set(r.mob.id,hits);}hits.set(uid,now);}
     if (r.killed) {
       const hits=lootContributors.get(r.mob.id)||new Map();if(r.mob.kind===BOSS_KIND)for(const m of garden.snapshot()?.members||[])if(m.bossDamage>0)hits.set(m.uid,now);
       for(const [owner,at] of hits){const pl=players.get(owner);if(now-at>30000||!pl||(pl.dead&&r.mob.kind!==BOSS_KIND)||!sameArea(pl,me)||Math.abs(pl.x-r.mob.x)>1400)continue;
         const receipt=`${roomId}:${currentArea}:${r.mob.id}`,chain=huntChain.record(owner,now),loot=rollMonsterLoot(currentArea,r.mob.kind);loot.gold=Math.min(20000,Math.round(loot.gold*(1+chain.bonus/100)));
-        const packet={receipt,owner,area:currentArea,x:Math.round(r.mob.x),y:Math.round(groundAt(r.mob.x,r.mob.y-1)),...loot,combo:chain.count,mapId:currentArea};
+        const packet={receipt,owner,kind:r.mob.kind,area:currentArea,x:Math.round(r.mob.x),y:Math.round(groundAt(r.mob.x,r.mob.y-1)),...loot,combo:chain.count,mapId:currentArea};
         lootOutbox.set(receipt+'|'+owner,{packet,last:0,at:now});
       }
       lootContributors.delete(r.mob.id);
@@ -1440,6 +1461,7 @@ export function mount(root, app, opts = {}) {
       const b=bossState.boss,key=`${bossState.id}:${b.seq}`,age=Date.now()-bossImpactAt(b);
       if(key!==lastBossImpact&&age>=0&&age<800){lastBossImpact=key;if(now>=me.invulnUntil&&bossDanger(b,me,bossPoint(world)))takeDamage([Math.round((b.pattern==='spores'?24:20)*Math.sqrt(regionOf(currentArea).scale))],me.x<gardenPoint(world).x?-1:1,'garden-boss',now);}
     }
+    probeTraits(now);
     paintGardenPanel(now);
     paintSkills(now);
     buffs.update(now);
@@ -1524,14 +1546,14 @@ export function mount(root, app, opts = {}) {
     drawVillageOutskirts(ctx,map,camX,cy,k,canvas.width,canvas.height);drawRegionLandmarks(ctx,map,camX,cy,k);
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
+    drawExplorationPoints(ctx,map,camX,cy,k,progress?.state.traits.explored[currentArea]||[]);
     if(progress){
       for(const d of progress.state.pending.map(settleDrop))if(d.area===currentArea){if(!dropBorn.has(d.id))dropBorn.set(d.id,now);drawEquipmentDrop(ctx,d,camX,cy,k,now,prefersReducedMotion()?Infinity:now-dropBorn.get(d.id));}
       const np=petNpcPoint(world),nx=(np.x-camX)*k/dpr,ny=(np.y-cy-112)*k/dpr;
       petNpc.hidden=nx<18||nx>layout.cssW-18||ny<40||ny>layout.cssH-30;
       if(!petNpc.hidden){petNpc.style.left=`${nx}px`;petNpc.style.top=`${ny}px`;}
-      const pet=progress.state.pet;
       const target=progress.state.pending.map(settleDrop).filter(d=>d.area===currentArea&&Math.abs(d.x-me.x)<240&&Math.abs(d.y-me.y)<60).sort((a,b)=>Math.abs(a.x-me.x)-Math.abs(b.x-me.x))[0];
-      companionPose=companion.sample({id:!me.dead&&progress.state.pets[pet]?pet:null,mapId:currentArea,x:me.x,y:me.y,dir:me.dir,target,now});
+      companionPoses=companion.sample({ids:me.dead?[]:equippedPetIds(progress.state),mapId:currentArea,x:me.x,y:me.y,dir:me.dir,target,now,minX:world.minX,maxX:world.maxX});
 
     }
 
@@ -1591,8 +1613,14 @@ export function mount(root, app, opts = {}) {
       c.globalAlpha = 1;
     });
     smooth(ctx);
-    for(const [p,sx,pyD] of visible)if(!p.isSelf&&!p.dead&&petSpec(p.loadout?.pet))actors.push({id:'pet-'+p.user_id,kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.loadout.pet,(sx-p.dir*48)*k,pyD,k*.8,now,p.loadout.level,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null})});
-    if(companionPose){const p=companionPose;actors.push({id:'my-pet',kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.id,(p.x-camX)*k,(p.y-cy)*k,k*.8,now,progress.state.pets[p.id]?.level,{moving:!!me.moving,left:me.dir<0,reduced:prefersReducedMotion(),reaction:now-petHurtAt<700?'hurt':now-petLootAt<700?'loot':now-me.effectAt<450?'attack':null})});}
+    const remoteVisible=new Set();
+    for(const [p]of visible)if(!p.isSelf){
+      remoteVisible.add(p.user_id);let group=remoteCompanions.get(p.user_id);if(!group){group=createCompanionGroup();remoteCompanions.set(p.user_id,group);}
+      const pets=cleanLoadout(p.loadout).companions;
+      for(const pose of group.sample({ids:p.dead?[]:pets.map(p=>p.id),mapId:currentArea,x:p.x,y:p.y,dir:p.dir,now,minX:world.minX,maxX:world.maxX}))actors.push({id:'pet-'+p.user_id+'-'+pose.id,kind:'pet',y:groundAt(pose.x,pose.y),draw:()=>drawPet(ctx,pose.id,(pose.x-camX)*k,(pose.y-cy)*k,k*.8,now,pets.find(p=>p.id===pose.id)?.level||0,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null})});
+    }
+    for(const uid of remoteCompanions.keys())if(!remoteVisible.has(uid))remoteCompanions.delete(uid);
+    for(const p of companionPoses){actors.push({id:'my-pet-'+p.id,kind:'pet',y:groundAt(p.x,p.y),draw:()=>drawPet(ctx,p.id,(p.x-camX)*k,(p.y-cy)*k,k*.8,now,progress.state.pets[p.id]?.level,{moving:!!me.moving,left:me.dir<0,reduced:prefersReducedMotion(),reaction:now-petHurtAt<700?'hurt':now-petLootAt<700?'loot':now-me.effectAt<450?'attack':null})});}
     for (const [p, sx, pyD] of visible) actors.push({id:p.user_id,kind:'player',y:groundAt(p.x,p.y),draw:()=>{
       if (p.anim === 'ghost') { drawGhost(ctx, ghostSprite, Math.round(sx * k), pyD, k, now / 1000, p.dir < 0); return; }
       const a = blinkAlpha(now, p.invulnUntil);
@@ -1997,7 +2025,7 @@ export function mount(root, app, opts = {}) {
     };
   };
   app.providers.room = () => ({
-    progression:progress?{...progress.state,stats:myStats(),job:job.id,companion:companionPose}:null,
+    progression:progress?{...progress.state,stats:myStats(),job:job.id,companion:companionPoses[0]||null,companions:companionPoses}:null,
     room: { id: roomId, name: roomName, locked, members: players.size, nickname: myNick, owner: isOwner },
     world: {
       mapId: currentArea, name: AREA_NAMES[currentArea], portals: map ? areaPortals(map) : [],
@@ -2061,7 +2089,7 @@ export function mount(root, app, opts = {}) {
     mobSprites?.clear();
     earlyHp.clear();
     if (delModal) { const m = delModal; delModal = null; m.close({ restoreFocus: false }); }
-    progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
+    remoteCompanions.clear();companion.reset();companionPoses=[];traitRetryAt.clear();traitsPanel?.destroy();progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
     gardenPanel.destroy(); garden.clear();
     chatLog.destroy();
     link = null;
@@ -2129,7 +2157,7 @@ export function mount(root, app, opts = {}) {
     me.y = sp.y;
     await avatarR.ready(costumeAvatar(me.avatar,me.costume)); // 내 조합의 레이어만 받고 합성 (다른 사람 조합은 그릴 때 지연 로드)
     if (!alive) return;
-    if(progress){try{await progress.run({type:'ensure'});syncProgress();me.hp=me.max;}catch(e){chatLog.addSystem(e.message);}}else chatLog.addSystem(progressError);
+    if(progress){try{await progress.run({type:'ensure',legacyVillageBoss:rewardMemory.bossClears>0||rewardMemory.legacyRoyal});syncProgress();me.hp=me.max;}catch(e){chatLog.addSystem(e.message);}}else chatLog.addSystem(progressError);
     if(!alive)return;
     players.set(me.user_id, me);
     updateCount();

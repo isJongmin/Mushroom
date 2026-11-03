@@ -38,7 +38,7 @@ const palettes = {
  quarry:{sky:'#253354',haze:'#7283a3',far:'#465879',mount:'#344763',bark:'#474d69',leaf:'#727eab',light:'#9aa9d1',soil:'#44445d',edge:'#a0c7d2'},
 };
 export function drawBiomeMap(ctx,map,camX,camY,k,W,H) {
-  const p=map.id==='frost'?{...palettes.quarry,sky:'#5b819d',haze:'#d8eff5',soil:'#657d93',edge:'#e4fbff',leaf:'#a1cbdc'}:palettes[map.id]||palettes.forest;
+  const p=map.id==='frost'?{sky:'#476e92',haze:'#d3e8eb',far:'#92b7ca',mount:'#a8cbd6',bark:'#687f99',light:'#e2f3f1',soil:'#667e9a',edge:'#f4fffc',leaf:'#c9e5ed'}:palettes[map.id]||palettes.forest;
   ctx.setTransform(1,0,0,1,0,0);ctx.save();ctx.imageSmoothingEnabled=false;
   const g=ctx.createLinearGradient(0,0,0,H);g.addColorStop(0,p.sky);g.addColorStop(1,p.haze);ctx.fillStyle=g;ctx.fillRect(0,0,W,H);
   const noise=(x,n)=>{const v=Math.sin(x*12.9898+n*78.233)*43758.5453;return v-Math.floor(v);};
@@ -48,8 +48,14 @@ export function drawBiomeMap(ctx,map,camX,camY,k,W,H) {
     const par=layer ? .35 : .18,step=layer?190:260;
     for(let x=Math.floor(camX*par/step)*step-step;x<camX*par+W/k+step;x+=step) {
       const top=240+layer*130+Math.sin(x*.009)*65;
-      rect(layer?p.mount:p.far,x+camX*(1-par),top,step+1,800-top);
-      rect(layer?p.mount:p.far,x+40+camX*(1-par),top-55,step-80,60);
+      if(map.id==='frost'){
+        const bx=x+camX*(1-par),peak=top-100;
+        poly(layer?p.mount:p.far,[[bx-90,800],[bx+step/2,peak],[bx+step+100,800]]);
+        poly('#e2f1ed',[[bx+step/2,peak],[bx+step/2+42,peak+107],[bx+step/2+8,peak+82],[bx+step/2-26,peak+112]]);
+      }else{
+        rect(layer?p.mount:p.far,x+camX*(1-par),top,step+1,800-top);
+        rect(layer?p.mount:p.far,x+40+camX*(1-par),top-55,step-80,60);
+      }
     }
   }
   // 완만한 땅 위에 큼직한 블록 수관/수정 기둥. 화면에 필요한 것만 그린다.
@@ -67,6 +73,14 @@ export function drawBiomeMap(ctx,map,camX,camY,k,W,H) {
         for(let n=0;n<11;n++) {const xx=l+noise(x+row,n)*w,yy=y+6+noise(x-row,n+4)*21;rect(n%3?'#5e8e5c':'#9dbb76',Math.round(xx/4)*4,Math.round(yy/4)*4,8,4);}
       }
       rect(p.edge,x+20,800-h-62,70,5);
+    } else if(map.id==='frost'){
+      const y=800-h;
+      rect('#526f83',x+65,y+80,18,h-80);
+      for(let row=0;row<4;row++){
+        const yy=y+row*45,w=65+row*26;
+        poly('#5e91a1',[[x+74,yy-40],[x+74-w/2,yy+30],[x+74+w/2,yy+30]]);
+        poly('#d9eeed',[[x+74,yy-40],[x+74-w/2+6,yy+22],[x+60,yy+14],[x+78,yy+27],[x+87,yy+12],[x+74+w/2-6,yy+22]]);
+      }
     } else {
       const y=800-h;
       poly('#394a68',[[x+34,800],[x+34,y+24],[x+60,y],[x+95,y+24],[x+95,800]]);
@@ -94,6 +108,12 @@ export function drawBiomeMap(ctx,map,camX,camY,k,W,H) {
       rect('#343b4d',x+381,757,62,32);rect('#788f9f',x+385,761,54,21);rect('#b0c8cb',x+385,757,54,5);
       for(const xx of [x+393,x+428]){rect('#222e40',xx-6,787,12,12);rect('#9c9988',xx-2,790,4,5);}
       poly('#79c4ca',[[x+396,756],[x+399,739],[x+407,733],[x+417,747],[x+424,738],[x+435,757]]);
+    }else if(map.id==='frost'){
+      for(const xx of [x+130,x+290]){rect('#739aac',xx,675,29,125);rect('#cce8ed',xx,675,8,125);rect('#edf8f3',xx-6,669,42,9);}
+      rect('#a0c5d1',x+125,663,199,18);rect('#f4fcf7',x+124,658,201,7);
+      for(let n=0;n<7;n++)poly('#d2f1f1',[[x+142+n*24,681],[x+151+n*24,702+n%3*7],[x+157+n*24,681]]);
+      rect('#7aa7b8',x+215,700,16,25);rect('#c9eef0',x+219,704,8,15);
+      for(let n=0;n<6;n++){const xx=x+80+n*67;rect('#f1fbf7',xx,510+n%3*59,3,3);}
     }else{
       // Ruined arch and roots make the deeper woods readable without foreground occlusion.
       for(const xx of [x+130,x+290]){rect('#687b69',xx,684,29,116);rect('#a0ac87',xx,684,8,110);for(let y=708;y<790;y+=28)rect('#4a6256',xx+1,y,27,3);rect('#477b54',xx-5,680,40,9);}

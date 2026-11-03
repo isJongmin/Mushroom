@@ -11,12 +11,12 @@ export function createGardenPanel({onStart,onBoss,onEquip,onReplay,onFocus,onTra
   const bossStart=h('button',{class:'garden-cta garden-cta--boss',type:'button',testid:'boss-start'},'버섯왕 도전');
   const traits=h('button',{class:'garden-cta garden-cta--light',type:'button',testid:'npc-traits'},'모험 특성 보기');on(traits,()=>{menuOpen=false;el.hidden=true;onTraits?.();});
   const status=h('span',{class:'garden-status',testid:'garden-status'});
-  const el=h('aside',{class:'garden-panel',testid:'garden-panel','aria-label':'협동 이벤트'},h('span',{class:'garden-eyebrow'},'VILLAGE CO-OP'),h('div',{class:'garden-heading'},label,status),detail,hp,start,bossStart,traits);
+  const el=h('aside',{class:'garden-panel',testid:'garden-panel','aria-label':'협동 이벤트'},h('span',{class:'garden-eyebrow'},'PARTY QUEST'),h('div',{class:'garden-heading'},label,status),detail,hp,start,bossStart,traits);
   const resultTitle=h('h2'),resultDesc=h('p'),stats=h('div',{class:'garden-result__stats'}),reward=h('p',{class:'garden-reward'});
   const equip=h('button',{type:'button',class:'garden-cta',testid:'garden-equip'},'칭호 바로 착용');
   const replay=h('button',{type:'button',class:'garden-cta garden-cta--light',testid:'garden-replay'},'다시 도전');
   const close=h('button',{type:'button',class:'garden-close',testid:'garden-result-close','aria-label':'결과 닫기'},'닫기');
-  const result=h('section',{class:'garden-result',role:'region','aria-label':'협동 이벤트 결과',testid:'garden-result',hidden:true},h('span',{class:'garden-eyebrow'},'OUR LITTLE VICTORY'),resultTitle,resultDesc,stats,reward,h('div',{class:'garden-result__actions'},equip,replay,close));
+  const result=h('section',{class:'garden-result',role:'region','aria-label':'협동 이벤트 결과',testid:'garden-result',hidden:true},h('span',{class:'garden-eyebrow'},'STAGE CLEAR'),resultTitle,resultDesc,stats,reward,h('div',{class:'garden-result__actions'},equip,replay,close));
   let resultId='',lastKey='',resultMode='defense',menuOpen=false;
   const dismiss=h('button',{type:'button',class:'quest-menu-close','aria-label':'퀘스트 선택 닫기'},'닫기');el.append(dismiss);on(dismiss,()=>{menuOpen=false;lastKey='';el.hidden=true;onFocus();});
   on(start,()=>{menuOpen=false;onStart();});on(bossStart,()=>{menuOpen=false;(onBoss||onStart)();});on(equip,()=>{onEquip(resultMode);equip.disabled=true;setText(equip,'착용 완료');});on(replay,()=>{result.hidden=true;onReplay(resultMode);onFocus();});on(close,()=>{result.hidden=true;onFocus();});

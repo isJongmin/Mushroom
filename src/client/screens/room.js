@@ -1,3 +1,4 @@
+import {drawAdventureScenery,drawRegionMascot,drawAdventureCharm} from '../game/adventure-art.js';
 import {createMentorPanel} from '../ui/mentor-panel.js';
 import {mentorOf,mentorPoint,mentorMarker,drawMentor} from '../game/training-mentors.js';
 import {drawTraitAura} from '../game/trait-aura.js';
@@ -308,7 +309,11 @@ export function mount(root, app, opts = {}) {
   const petNpc=h('button',{type:'button',class:'pet-npc-marker',testid:'pet-npc','aria-label':'지역 펫 조련사와 대화',hidden:true},'펫 뽑기');
   on(petNpc,'click',()=>{const p=petNpcPoint(world);if(!me||me.dead||connection!=='connected')return;if(Math.abs(me.x-p.x)>230||Math.abs(me.y-p.y)>100){chatLog.addSystem('펫 조련사 가까이로 이동해주세요.');return;}input.clear();progressPanel?.open('shop');});
   const gardenPanel = createGardenPanel({onStart:requestGarden,onBoss:()=>requestGarden('boss'),onReplay:requestGarden,onEquip:equipGardenTitle,onFocus:()=>canvas.focus({preventScroll:true}),onTraits:openTraits});
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
+  const entryTitle=h('strong',{}),entryDetail=h('span',{});
+  const areaEntry=h('div',{class:'arcade-stage-entry',hidden:true,'aria-hidden':'true'},h('small',{},'ENTER THE STAGE'),entryTitle,entryDetail);
+  let entryUntil=0;
+  function announceArea(){setText(entryTitle,AREA_NAMES[currentArea]);setText(entryDetail,{village:'모험가 길드 · 첫 출정',quarry:'수정의 울림을 따라',forest:'잠든 정령의 숲',frost:'서리 너머의 도전'}[currentArea]);areaEntry.hidden=false;areaEntry.style.animation='none';void areaEntry.offsetWidth;areaEntry.style.animation='';entryUntil=performance.now()+2800;}
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, areaEntry, banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -999,6 +1004,7 @@ export function mount(root, app, opts = {}) {
   function syncNpcLook(){const pair=regionNpcs.get(currentArea);if(!pair)return;npcAvatar=pair.quest;petNpcAvatar=pair.pet;mentorNpc.setAttribute('aria-label',mentorOf(currentArea).name+'에게 수련 받기');npcQuest.setAttribute('aria-label',npcRoster(currentArea).quest.name+'에게 말 걸기: 퀘스트 선택');petNpc.setAttribute('aria-label',npcRoster(currentArea).pet.name+'에게 말 걸기: 펫 상점');}
   function configureArea(nextMap) {
     map = nextMap;
+    announceArea();
     syncNpcLook();
     if(mobDefs&&baseMobKinds){mobDefs.kinds=stageKinds(baseMobKinds,currentArea);mobSprites?.clear();mobSprites=createMobSprites(mobDefs.kinds);}
     lootContributors.clear();dropBorn.clear();huntChain.clear();chainUntil=0;chainHud.hidden=true;companion.reset();companionPoses=[];remoteCompanions.clear();
@@ -1552,6 +1558,7 @@ export function mount(root, app, opts = {}) {
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     if(layout.mobile){const edge=Math.round((world.bottomY-cy)*k);if(edge>3&&edge<canvas.height)ctx.drawImage(canvas,0,edge-3,canvas.width,2,0,edge-1,canvas.width,canvas.height-edge+1);}
     drawVillageOutskirts(ctx,map,camX,cy,k,canvas.width,canvas.height);drawRegionLandmarks(ctx,map,camX,cy,k);
+    drawAdventureScenery(ctx,map,camX,cy,k,now,{reduced:prefersReducedMotion()});
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawPortals(ctx, map, camX, cy, k, now);
     drawExplorationPoints(ctx,map,camX,cy,k,progress?.state.traits.explored[currentArea]||[]);
@@ -1591,6 +1598,7 @@ export function mount(root, app, opts = {}) {
     stones.draw(ctx, tombSprite, camX, cy, k, now);
     drops.draw(ctx, camX, cy, k, now, buffOrbSprite, dropBagSprite);
     const actors=[];
+    actors.push({id:'region-mascot',kind:'npc',y:world.groundY,draw:()=>drawRegionMascot(ctx,map,camX,cy,k,now,{reduced:prefersReducedMotion()})});
     {const p=questNpcPoint(world);actors.push({id:'quest-npc',kind:'npc',y:p.y,draw:()=>drawQuestNpc(ctx,p,camX,cy,k,{renderer:avatarR,avatar:npcAvatar,now,area:currentArea})});}
     {const p=mentorPoint(world);actors.push({id:'training-mentor',kind:'npc',y:p.y,draw:()=>drawMentor(ctx,p,camX,cy,k,{area:currentArea,avatar:regionNpcs.get(currentArea)?.mentor,renderer:avatarR,now,drawItem})});}
     if(progress){const p=petNpcPoint(world);actors.push({id:'pet-npc',kind:'npc',y:p.y,draw:()=>drawPetMerchant(ctx,p,camX,cy,k,avatarR,petNpcAvatar,currentArea,now)});}
@@ -1645,6 +1653,7 @@ export function mount(root, app, opts = {}) {
       else avatarR.draw(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(outfitReady)drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{...outfit,rear:p.anim==='climb'});
       if(outfitReady&&p.costume&&p.anim==='climb')avatarR.drawBackHair(ctx,dressed,Math.round(sx*k),pyD,k,frameOf(p,now));
+      drawAdventureCharm(ctx,Math.round(sx*k),pyD,k,{fit:outfit.fit,left,hidden:p.anim==='climb'||p.anim==='prone'||!!p.costume,job:p.isSelf?job.id:p.attackJob,now,moving:p.anim==='walk',reduced:prefersReducedMotion()});
       if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem,frame:frameOf(p,now),hand:avatarR.handFit?.(dressed,frameOf(p,now))});
       if((p.isSelf||p.attackJob)&&p.anim!=='climb'&&p.anim!=='prone')avatarR.drawGrip(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(p.isSelf&&!p.dead){if(equipPending&&!document.body.classList.contains('has-modal')){equipAt=now;equipPending=false;}if(!document.body.classList.contains('has-modal'))drawEquipBurst(ctx,Math.round(sx*k),pyD,k,Math.max(myLoadout()?.tier??0,myLoadout()?.shield??0),now-equipAt,{reduced:prefersReducedMotion()});}
@@ -1713,6 +1722,7 @@ export function mount(root, app, opts = {}) {
   }
 
   function frame(now) {
+    if(!areaEntry.hidden&&now>=entryUntil)areaEntry.hidden=true;
     raf = requestAnimationFrame(frame);
     const dt = Math.min(Math.max((now - (lastFrame || now)) / 1000, 0), WORLD.maxDt);
     lastFrame = now;
@@ -2173,6 +2183,7 @@ export function mount(root, app, opts = {}) {
     if(!alive)return;
     players.set(me.user_id, me);
     updateCount();
+    announceArea();
     raf = requestAnimationFrame(frame);
     firstJoin();
   })();

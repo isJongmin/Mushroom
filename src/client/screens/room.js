@@ -1,6 +1,9 @@
+import {chapterOf,journeyObjective,journeyTarget,journeyDirection,drawJourneyBeacon} from '../game/journey.js';
+import {createLootFeedback} from '../game/loot-feedback.js';
+import {createGameAudio} from '../game/game-audio.js';
 import {drawNpcAction} from '../game/npc-actions.js';
-import {adventureProgress,AREA_XP} from '../game/adventure-level.js';
-import {adventureGoal,cooperativeRoster} from '../game/adventure-goals.js';
+import {adventureProgress} from '../game/adventure-level.js';
+import {cooperativeRoster} from '../game/adventure-goals.js';
 import {groundDropAlive} from '../game/progression.js';
 import {taxiPoint,taxiTravelReason,drawTownTaxi,TAXI_DRIVER,TAXI_MARKER_HEIGHT,drawTaxiDriverPortrait} from '../game/town-taxi.js';
 import {createTaxiPanel} from '../ui/taxi-panel.js';
@@ -187,6 +190,7 @@ export function mount(root, app, opts = {}) {
   const projectiles = createJobProjectiles();
   const skillAttacks = createSkillAttacks();
   const combatFeel=createCombatFeel(),bossEntrance=createBossEntrance();
+  const lootFeedback=createLootFeedback(),sound=createGameAudio();
   const playfulReactions=new Map();
   const stones = createTombstones();
   const drops = createDrops();
@@ -306,7 +310,7 @@ export function mount(root, app, opts = {}) {
 
   const attackBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary bk-btn--touch touch-act', testid: 'attack', 'aria-label': '공격 (누르고 있으면 계속)' }, '공격');
   const portalBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary portal-action', testid: 'portal-enter', hidden: true }, '포탈 이동 ↑');
-  function positionCombo(){if(!layout||!stage?.isConnected)return;const bottom=minimap.getBoundingClientRect().bottom-stage.getBoundingClientRect().top;stage.style.setProperty('--minimap-bottom',Math.max(0,bottom)+'px');}
+  function positionCombo(){if(!layout||!stage?.isConnected)return;const top=stage.getBoundingClientRect().top,bottom=minimap.getBoundingClientRect().bottom-top;stage.style.setProperty('--map-only-bottom',Math.max(0,bottom)+'px');const lower=journeyCard.hidden?bottom:Math.max(bottom,journeyCard.getBoundingClientRect().bottom-top);stage.style.setProperty('--minimap-bottom',Math.max(0,lower)+'px');}
   const miniCanvas = h('canvas', { width: '204', height: '88', role: 'img', 'aria-label': '현재 맵: 내 위치 노랑, 다른 유저 파랑, NPC 초록', testid: 'minimap-canvas' });
   const miniName = h('span', {}, AREA_NAMES.village);
   const miniToggle = h('button', { type: 'button', 'aria-label': '미니맵 접기', 'aria-expanded': 'true', testid: 'minimap-toggle' }, '−');
@@ -315,11 +319,15 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'minimap-head' }, miniName, miniToggle), miniBody);
   const goalTitle=h('strong'),goalDetail=h('small');
   const goalButton=h('button',{type:'button',class:'adventure-goal',testid:'adventure-goal',hidden:true},goalTitle,goalDetail);
-  minimap.append(goalButton);
-  on(goalButton,'click',()=>{const goal=adventureGoal(progress?.state,currentArea);if(!goal)return;
-    if(goal.action==='bag')progressPanel?.open('bag');else if(goal.action==='traits')openTraits();
-    else if(goal.action==='mentor')openMentor();else if(goal.action==='taxi'){const reason=taxiReason(currentArea);if(reason&&reason!=='현재 있는 마을입니다.')chatLog.addSystem(reason);else openTaxi();}
-    else chatLog.addSystem(`이 지역 몬스터는 마리당 ${AREA_XP[currentArea]} EXP를 줍니다. 사냥 의뢰 보상은 20마리마다 바닥에 떨어집니다.`);
+  let journeyPinned=false;
+  const chapterLabel=h('small',{class:'journey-eyebrow'}),chapterTitle=h('h2'),chapterLine=h('p',{class:'journey-line'}),journeyHint=h('span',{class:'journey-hint'});
+  const journeyCard=h('aside',{class:'journey-card',testid:'journey-card',hidden:true,'aria-label':'현재 여정'},chapterLabel,chapterTitle,chapterLine,goalButton,journeyHint);
+  on(goalButton,'click',()=>{const goal=journeyObjective(progress?.state,currentArea);if(!goal)return;
+    if(goal.action==='bag'){progressPanel?.open('bag');return;}
+    if(goal.action==='traits'&&!traitEditLock()){openTraits();return;}
+    if(goal.action==='mentor'&&!mentorAccessReason()){openMentor();return;}
+    if(goal.action==='taxi'){const p=taxiPoint(map);if(me&&!me.dead&&Math.abs(me.x-p.x)<=160&&Math.abs(me.y-p.y)<=85){openTaxi();return;}}
+    journeyPinned=!journeyPinned;adventurePaintKey='';
   });
   on(miniToggle, 'click', () => { const open = miniBody.hidden; miniBody.hidden = !open; miniToggle.setAttribute('aria-expanded', String(open)); miniToggle.setAttribute('aria-label', open ? '미니맵 접기' : '미니맵 펼치기'); setText(miniToggle, open ? '−' : '+');firstUse.request('map');positionCombo(); });
   on(portalBtn, 'click', () => enterPortal(performance.now()));
@@ -352,7 +360,7 @@ export function mount(root, app, opts = {}) {
   let entryUntil=Infinity;
   function announceArea(){setText(entryTitle,AREA_NAMES[currentArea]);areaEntry.hidden=false;areaEntry.style.animation='none';if(connection==='connected'){void areaEntry.offsetWidth;areaEntry.style.animation='';entryUntil=performance.now()+2800;}else entryUntil=Infinity;}
 
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, firstUse.el, areaEntry, bossCard,taxiButton, ...playfulButtons.map(b=>b.el), banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, firstUse.el, areaEntry, bossCard,journeyCard,taxiButton, ...playfulButtons.map(b=>b.el), banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -405,6 +413,8 @@ export function mount(root, app, opts = {}) {
   const menuToggle=h('button',{type:'button',class:'rpg-menu-toggle',testid:'game-menu-toggle','aria-label':'게임 메뉴 열기','aria-expanded':'false','aria-controls':'room-game-menu'},h('span',{'aria-hidden':'true'},'☰'),h('small',{},'메뉴'));
   const menuHelp=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'controls-help'},'조작 안내');on(menuHelp,'click',()=>firstUse.request('controls',performance.now(),true));
   const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},traitsBtn,chatToggle,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
+  const soundButton=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'sound-toggle','aria-pressed':String(sound.enabled)},sound.enabled?'효과음 켜짐':'효과음 꺼짐');
+  on(soundButton,'click',()=>{const enabled=sound.toggle();setText(soundButton,enabled?'효과음 켜짐':'효과음 꺼짐');soundButton.setAttribute('aria-pressed',String(enabled));if(enabled)sound.play('loot');});menu.append(soundButton);
   const coopTitle=h('strong'),coopList=h('ul'),coopHint=h('p');
   const coopPanel=h('section',{class:'cooperative-roster',testid:'cooperative-roster','aria-label':'같은 지역 동료'},coopTitle,coopList,coopHint);menu.append(coopPanel);
   function closeGameMenu(focus=false){menu.hidden=true;menuToggle.setAttribute('aria-expanded','false');menuToggle.setAttribute('aria-label','게임 메뉴 열기');if(focus)menuToggle.focus();}
@@ -414,18 +424,26 @@ export function mount(root, app, opts = {}) {
   on(document,'keydown',e=>{if(e.key==='Escape'&&!menu.hidden&&!document.body.classList.contains('has-modal')){closeGameMenu(true);e.stopPropagation();}});
   hud.querySelector('.hud-r').append(menuToggle);
   stage.append(playerStatus,menu);
+  const lootFeed=h('div',{class:'loot-feed',testid:'loot-feed',role:'status','aria-live':'polite','aria-atomic':'true'});stage.append(lootFeed);
+  let lootFeedKey='';
+  function syncLootFeedback(now){const entries=lootFeedback.sample(now),key=entries.map(e=>e.key+':'+(e.amount||0)).join('|');if(key===lootFeedKey)return;lootFeedKey=key;lootFeed.replaceChildren();
+    for(const e of entries){const rare=e.tier>=2;lootFeed.append(h('div',{class:'loot-message'+(rare?' is-rare':''),style:{'--loot-color':['#d1d9d0','#a6d2ac','#a8d0ec','#d2b8ec','#f3d48b'][e.tier||0]}},h('small',{},e.kind==='celebration'?'LEVEL UP':e.kind==='gold'?'GOLD':rare?'RARE FIND':'ACQUIRED'),h('strong',{},e.title||(e.kind==='gold'?`+ ${e.amount.toLocaleString()} G`:itemName(e)))));}
+  }
   let lastHpKey='',lastPortrait='';
   let presentedLevel=adventureProgress(progress?.state).level;
   let adventurePaintAt=-Infinity,adventurePaintKey='',coopPaintKey='';
   function syncAdventureHud(now){
     if(now-adventurePaintAt<250)return;adventurePaintAt=now;
-    const s=progress?.state,level=adventureProgress(s),key=[s?.revision,currentArea,connection,now<entryUntil].join(':');
+    const s=progress?.state,level=adventureProgress(s),key=[s?.revision,currentArea,connection,now<entryUntil,journeyPinned].join(':');
     if(key!==adventurePaintKey){adventurePaintKey=key;setText(playerName,`Lv.${level.level} ${myNick}`);
       setText(xpValue,level.capped?'MAX':`EXP ${Math.floor(level.ratio*100)}%`);xpValue.title=level.capped?'최고 레벨':`${level.current} / ${level.needed} EXP`;
       xpFill.style.width=level.ratio*100+'%';xpTrack.setAttribute('aria-valuenow',String(Math.floor(level.ratio*100)));xpTrack.setAttribute('aria-valuetext',level.capped?'최고 레벨':`${level.current} / ${level.needed}`);
-      const goal=adventureGoal(s,currentArea);goalButton.hidden=!goal||connection!=='connected'||now<entryUntil;
+      const goal=journeyObjective(s,currentArea);journeyCard.hidden=!goal||connection!=='connected'||now<entryUntil;goalButton.hidden=!goal;
+      const chapter=chapterOf(currentArea);setText(chapterLabel,`CHAPTER ${chapter.number} · ${AREA_NAMES[currentArea]}`);setText(chapterTitle,chapter.title);setText(chapterLine,chapter.line);goalButton.setAttribute('aria-pressed',String(journeyPinned));
       if(goal){setText(goalTitle,goal.title);setText(goalDetail,goal.detail);goalButton.setAttribute('aria-label',goal.title+' · '+goal.detail);}positionCombo();
     }
+    const target=journeyPinned?journeyTarget(journeyObjective(s,currentArea),map,world,s,me):null;setText(journeyHint,journeyPinned?journeyDirection(target,me):'눌러서 길잡이 표시');
+    syncLootFeedback(now);
     if(menu.hidden||!me)return;
     const roster=cooperativeRoster(players.values(),me),signature=JSON.stringify(roster.map(p=>[p.id,p.name,p.hp,p.max,p.dead]));
     if(signature===coopPaintKey)return;coopPaintKey=signature;setText(coopTitle,`같은 지역 동료 · ${roster.length}명`);coopList.replaceChildren();
@@ -434,6 +452,7 @@ export function mount(root, app, opts = {}) {
   }
   function syncPlayerStatus(){if(!me)return;const avatarKey=JSON.stringify(me.avatar);if(avatarR&&lastPortrait!==avatarKey){const c=portraitCanvas.getContext('2d');c.clearRect(0,0,84,84);if(avatarR.draw(c,me.avatar,42,128,1.3,0,false))lastPortrait=avatarKey;}const key=me.hp+':'+me.max;if(key===lastHpKey)return;lastHpKey=key;const ratio=Math.max(0,Math.min(1,me.hp/me.max));hpFill.style.width=ratio*100+'%';setText(hpValue,`${Math.ceil(me.hp)} / ${me.max} HP`);hpTrack.setAttribute('aria-valuemax',String(me.max));hpTrack.setAttribute('aria-valuenow',String(Math.ceil(me.hp)));playerStatus.classList.toggle('is-low',ratio<.3);}
   root.append(col);
+  on(stage,'pointerdown',()=>sound.unlock());on(canvas,'keydown',()=>sound.unlock());
 
   // --- 레이아웃 -----------------------------------------------------------
   function computeLayout() {
@@ -479,7 +498,7 @@ export function mount(root, app, opts = {}) {
       chatLog.setMobile(mobile);
       if(mobile){moveDirections.append(leftBtn,rightBtn);movePad.append(crouchBtn);actionPad.append(touchFloat);touchFloat.append(jumpBtn);}
       else{const groups=touchRow.querySelectorAll('.touch-group');groups[0].append(leftBtn,rightBtn);groups[1].append(crouchBtn,jumpBtn);stage.append(touchFloat);}
-      if(mobile){miniBody.hidden=true;miniToggle.setAttribute('aria-expanded','false');miniToggle.setAttribute('aria-label','미니맵 펼치기');setText(miniToggle,'+');}
+      if(modeChanged){miniBody.hidden=true;miniToggle.setAttribute('aria-expanded','false');miniToggle.setAttribute('aria-label','미니맵 펼치기');setText(miniToggle,'+');}
       syncProgress();
       // LOCAL MODE 칩: 데스크톱은 HUD 첫 줄, 모바일은 2줄째 (room.md 3.1, 4.1)
       app.placeModeBadge(mobile ? modeSlot2 : modeSlot);
@@ -882,6 +901,7 @@ export function mount(root, app, opts = {}) {
 
   function doAttack(now, slot = 0) {
     const atk = abilityStats(job.id, slot, myLoadout());
+    sound.play(slot?'skill':'swing');
     me.lastSkill = slot;
     me.effectAt = now;
     me.lastAtkAt = now;
@@ -1150,7 +1170,8 @@ export function mount(root, app, opts = {}) {
       const oldMax=me.max;syncProgress();
       const level=adventureProgress(progress.state).level;
       if(!awarded?.duplicate&&level>presentedLevel){
-        presentedLevel=level;
+        presentedLevel=level;sound.play('level');
+        lootFeedback.push({kind:'celebration',title:`Lv.${level} · 한 걸음 더 강해졌어요`,tier:3},performance.now());
         // Restore only the newly gained capacity, never revive or fully heal.
         if(!me.dead)me.hp=Math.min(me.max,me.hp+Math.max(0,me.max-oldMax));
         playerStatus.classList.add('is-level-up');later(()=>playerStatus.classList.remove('is-level-up'),1800);
@@ -1164,7 +1185,7 @@ export function mount(root, app, opts = {}) {
     pickupAt=now;const range=myStats().pickup;
     const d=liveGroundDrops().find(d=>(d.kind==='gold'||progress.state.items.length<200)&&now-(dropBorn.get(d.id)??now)>350&&d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
     if(!d)return;collecting=true;
-    try{const item=await progress.run({type:'collect',id:d.id});dropBorn.delete(d.id);if(alive){chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
+    try{const item=await progress.run({type:'collect',id:d.id});dropBorn.delete(d.id);if(alive){lootFeedback.push(item,performance.now());sound.play(item.tier>=2?'rare':'loot');if(item.tier>=2)chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
     catch(e){if(alive&&now-growthErrorAt>5000){growthErrorAt=now;chatLog.addSystem(e.message);}}finally{collecting=false;}
   }
   function sendLoot(now){
@@ -1661,9 +1682,9 @@ export function mount(root, app, opts = {}) {
     }
 
     const markerPoints=[
-      {el:npcQuest,p:questNpcPoint(world),height:114,range:Infinity},
-      {el:mentorNpc,p:mentorPoint(world),height:114,range:Infinity},
-      {el:petNpc,p:petNpcPoint(world),height:114,range:Infinity},
+      {el:npcQuest,p:questNpcPoint(world),height:114,range:230},
+      {el:mentorNpc,p:mentorPoint(world),height:114,range:230},
+      {el:petNpc,p:petNpcPoint(world),height:114,range:230},
       {el:taxiButton,p:taxiPoint(map),height:TAXI_MARKER_HEIGHT,range:160},
       ...playfulButtons.map(({kind,el})=>({el,p:playfulPoint(map,kind),height:kind==='fun'?114:94,range:130,name:'대화: '+playfulIdentity(currentArea,kind).name}))
     ];
@@ -1679,6 +1700,7 @@ export function mount(root, app, opts = {}) {
     if (debugPlatforms && platforms.length) drawPlatformDebug(ctx, platforms, camX, cy, k);
     if (debug && ropes.length) drawRopeDebug(ctx, ropes, camX, cy, k); // (사이클 10) 로프 선 (그림은 아트 ground 레이어)
 
+    if(journeyPinned&&connection==='connected'&&now>=entryUntil&&!me.dead&&!document.body.classList.contains('has-modal'))drawJourneyBeacon(ctx,journeyTarget(journeyObjective(progress?.state,currentArea),map,world,progress?.state,me),me,camX,cy,k,now,prefersReducedMotion());
     for(const m of markerPoints)if(!m.el.hidden)drawNpcAction(ctx,m.x*dpr,m.y*dpr,dpr);
 
     const order = [];
@@ -2198,7 +2220,7 @@ export function mount(root, app, opts = {}) {
     if (app.providers.room) app.providers.room = null;
     avatarR?.clear();
     fx.clear();
-    firstUse.clear();combatFeel.clear();bossEntrance.clear();playfulReactions.clear();playfulPanel.destroy();taxiPanel.destroy();
+    lootFeedback.clear();sound.close();firstUse.clear();combatFeel.clear();bossEntrance.clear();playfulReactions.clear();playfulPanel.destroy();taxiPanel.destroy();
     dmgNums.clear(); projectiles.clear(); skillAttacks.clear(); slashes.clear(); stones.clear(); drops.clear(); buffs.clear(); buffEls.clear();
     if (debug) { try { delete window.__mushroomDebug; } catch { /* 무시 */ } }
     sim = null;

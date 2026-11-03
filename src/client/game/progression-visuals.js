@@ -60,7 +60,7 @@ export function drawEquipmentDrop(c,d,camX,camY,k,now,age=Infinity) {
  const hop=Number.isFinite(age)?Math.sin(Math.min(1,Math.max(0,age/650))*Math.PI)*28:0;
  if(d.kind==='gold'){const x=(d.x-camX)*k,y=(d.y-camY-12-hop+Math.sin(now/240+d.x)*3)*k;c.save();c.fillStyle='#80502b';c.fillRect(x-9*k,y-8*k,18*k,13*k);c.fillStyle='#e9ba54';c.fillRect(x-8*k,y-10*k,16*k,12*k);c.fillStyle='#fff0a2';c.fillRect(x-5*k,y-8*k,4*k,7*k);c.fillStyle='#b8833e';c.fillRect(x+3*k,y-7*k,2*k,6*k);c.restore();return;}
  const x=(d.x-camX)*k,y=(d.y-camY-15-hop+Math.sin(now/300+d.x)*3)*k,color=GRADE_COLORS[d.tier];
- c.save();c.fillStyle=color+'28';c.fillRect(x-20*k,y-30*k,40*k,49*k);c.fillStyle=color;c.fillRect(x-18*k,y+17*k,36*k,2*k);drawItem(c,d.kind,x,y,.65*k,color);c.restore();
+ c.save();if(d.tier>=2){const beam=c.createLinearGradient(x,y-110*k,x,y+16*k);beam.addColorStop(0,color+'00');beam.addColorStop(1,color+'55');c.fillStyle=beam;c.fillRect(x-10*k,y-110*k,20*k,126*k);c.strokeStyle=color+'aa';c.lineWidth=k;c.beginPath();c.moveTo(x,y-90*k);c.lineTo(x,y+16*k);c.stroke();}c.fillStyle=color+'28';c.fillRect(x-20*k,y-30*k,40*k,49*k);c.fillStyle=color;c.fillRect(x-18*k,y+17*k,36*k,2*k);drawItem(c,d.kind,x,y,.65*k,color);c.restore();
 }
 export const petNpcPoint = world => ({x:Math.min(world.maxX-90,(world.spawn?.x??300)+125),y:world.groundY});
 export function drawPetMerchant(c,p,camX,camY,k,renderer,avatar,area,now) {

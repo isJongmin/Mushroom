@@ -2182,6 +2182,11 @@ export function mount(root, app, opts = {}) {
     }
     if (!alive) return;
     if (!profile || !roomId || !NICK_RE.test(myNick || '')) { clearRoomSession(); app.go('lobby'); return; }
+    // Prioritize the player while map images are still loading. NPCs request
+    // their outfits when drawn, so off-map characters never delay entry.
+    avatarR = createAvatarRenderer(assets);
+    const playerAvatar = assets.sanitizeAvatar(profile.avatar);
+    const playerReady = avatarR.ready(costumeAvatar(playerAvatar,equippedCostume(app.profileKey)));
     villageMap = await app.mapAssets.catch(() => null);
     for (const id of AREA_IDS) areaCatalog.set(id, areaMap(id, villageMap));
     map = areaCatalog.get(currentArea);
@@ -2216,17 +2221,15 @@ export function mount(root, app, opts = {}) {
         ensureSprites();
       }
     }
-    avatarR = createAvatarRenderer(assets);
-    taxiAvatar=assets.sanitizeAvatar(TAXI_DRIVER.avatar);await avatarR.ready(taxiAvatar);
+    taxiAvatar=assets.sanitizeAvatar(TAXI_DRIVER.avatar);
     for(const area of AREA_IDS){const cast=npcRoster(area);regionNpcs.set(area,{quest:assets.sanitizeAvatar(cast.quest.avatar),pet:assets.sanitizeAvatar(cast.pet.avatar),mentor:assets.sanitizeAvatar(mentorOf(area).avatar),fun:assets.sanitizeAvatar(funNpcOf(area).avatar)});}
-    await Promise.all([...regionNpcs.values()].flatMap(p=>[avatarR.ready(p.quest),avatarR.ready(p.pet),avatarR.ready(p.mentor),avatarR.ready(p.fun)]));
     syncNpcLook();
     if(!alive)return;
     const sp = spawnPoint();
-    me = makePlayer(app.userId || 'me', myNick, assets.sanitizeAvatar(profile.avatar), sp.x, true);
+    me = makePlayer(app.userId || 'me', myNick, playerAvatar, sp.x, true);
     me.body = createBody(sp.x, sp.y, world.groundY);
     me.y = sp.y;
-    await avatarR.ready(costumeAvatar(me.avatar,me.costume)); // 내 조합의 레이어만 받고 합성 (다른 사람 조합은 그릴 때 지연 로드)
+    await playerReady; // Only the player's outfit is required for entry.
     if (!alive) return;
     if(progress){try{await progress.run({type:'ensure',legacyVillageBoss:rewardMemory.bossClears>0||rewardMemory.legacyRoyal});syncProgress();me.hp=me.max;}catch(e){chatLog.addSystem(e.message);}}else chatLog.addSystem(progressError);
     if(!alive)return;

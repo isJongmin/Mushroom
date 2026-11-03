@@ -255,8 +255,12 @@ def open_as(ctx, col, label, name, *, first_screen=None):
     page = ctx.new_page()
     col.attach(page, label)
     page.goto(f"{BASE}?as={name}")
-    if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+    if wait_until(lambda: sc(page) in ("home", "profile", "lobby", "room"), 10) is None:
         raise AssertionError(f"[{label}] 부트 후 화면 전환 실패")
+    if sc(page) == "home":
+        page.get_by_test_id("home-start").click()
+        if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+            raise AssertionError("타이틀에서 모험 진입 실패")
     if first_screen:
         wait_screen(page, first_screen)
     return page
@@ -479,6 +483,8 @@ def t01(browser, col):
                        stored.get("nickname") == "버섯이" and sorted((stored.get("avatar") or {}).keys()) == sorted(PART_KEYS7)))
         checks.append(("서버 저장 없음: userId는 익명 uid (as-a)", state(page)["userId"] == "as-a"))
         page.reload()
+        wait_screen(page, "home")
+        page.get_by_test_id("home-start").click()
         wait_screen(page, "lobby")
         lobby_ready(page)
         seen = page.evaluate("window.__seen")
@@ -1691,7 +1697,7 @@ def t23(browser, col):
     checks = []
     try:
         page.goto(f"{BASE}?as=ast")
-        wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10)
+        wait_until(lambda: sc(page) in ("home", "profile", "lobby", "room"), 10)
         create_profile(page, "에셋방", pick=PICK)
         ui_create_room(page, "에셋")
         wait_sprite(page)
@@ -2044,7 +2050,7 @@ def t32(browser, col):
         page.on("console", on_console)
         try:
             page.goto(f"{BASE}?as=fb")
-            wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10)
+            wait_until(lambda: sc(page) in ("home", "profile", "lobby", "room"), 10)
             create_profile(page, "폴백방", pick=PICK)
             ui_create_room(page, "폴백")
             wait_sprite(page)
@@ -2092,7 +2098,7 @@ def t32(browser, col):
     page.on("console", on_console_b)
     try:
         page.goto(f"{BASE}?as=brk")
-        wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10)
+        wait_until(lambda: sc(page) in ("home", "profile", "lobby", "room"), 10)
         create_profile(page, "깨짐방", pick=PICK)
         ui_create_room(page, "깨짐")
         wait_sprite(page)
@@ -2394,7 +2400,7 @@ def t37(browser, col):
         page.on("pageerror", lambda e: page_errors.append(str(e)))
         page.on("requestfailed", lambda r: failed.append(r.url))
         page.goto(BASE)
-        if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+        if wait_until(lambda: sc(page) in ("home", "profile", "lobby", "room"), 10) is None:
             raise AssertionError(f"쿼리 없이 열기: 부트 후 화면 전환 실패 (현재 {sc(page)})")
         checks.append(("쿼리 없이 열기 -> mode = supabase", state(page)["mode"] == "supabase"))
 
@@ -2448,7 +2454,7 @@ def t38(browser, col):
             errs = []
             page.on("pageerror", lambda e: errs.append(str(e)))
             page.goto(BASE + path)
-            if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+            if wait_until(lambda: sc(page) in ("home", "profile", "lobby", "room"), 10) is None:
                 raise AssertionError(f"{label}: 부트 후 화면 전환 실패 (현재 {sc(page)})")
             checks.append((f"{label}: mode = local", state(page)["mode"] == "local"))
             b = page.get_by_test_id("mode-badge")
@@ -2468,7 +2474,7 @@ def t39(browser, col):
 
     def boot(page, path):
         page.goto(BASE + path)
-        if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+        if wait_until(lambda: sc(page) in ("home", "profile", "lobby", "room"), 10) is None:
             raise AssertionError(f"{path or '(쿼리 없음)'}: 부트 후 화면 전환 실패 (현재 {sc(page)})")
         return state(page)["mode"]
 
@@ -3295,7 +3301,7 @@ def c10_open_debug(ctx, col, label, name):
     page = ctx.new_page()
     col.attach(page, label)
     page.goto(f"{BASE}?as={name}&debug")
-    if wait_until(lambda: sc(page) in ("profile", "lobby", "room"), 10) is None:
+    if wait_until(lambda: sc(page) in ("home", "profile", "lobby", "room"), 10) is None:
         raise AssertionError(f"[{label}] 부트 후 화면 전환 실패")
     return page
 

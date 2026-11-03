@@ -1,4 +1,6 @@
 import {drawNpcAction} from '../game/npc-actions.js';
+import {adventureProgress,AREA_XP} from '../game/adventure-level.js';
+import {adventureGoal,cooperativeRoster} from '../game/adventure-goals.js';
 import {groundDropAlive} from '../game/progression.js';
 import {taxiPoint,taxiTravelReason,drawTownTaxi,TAXI_DRIVER,TAXI_MARKER_HEIGHT,drawTaxiDriverPortrait} from '../game/town-taxi.js';
 import {createTaxiPanel} from '../ui/taxi-panel.js';
@@ -311,6 +313,14 @@ export function mount(root, app, opts = {}) {
   const miniBody = h('div', { class: 'minimap-body' }, miniCanvas,h('div',{class:'minimap-legend'},h('span',{class:'mini-self'},'나'),h('span',{class:'mini-player'},'유저'),h('span',{class:'mini-npc'},'NPC')));
   const minimap = h('aside', { class: 'game-minimap', 'aria-label': '미니맵', testid: 'minimap' },
     h('div', { class: 'minimap-head' }, miniName, miniToggle), miniBody);
+  const goalTitle=h('strong'),goalDetail=h('small');
+  const goalButton=h('button',{type:'button',class:'adventure-goal',testid:'adventure-goal',hidden:true},goalTitle,goalDetail);
+  minimap.append(goalButton);
+  on(goalButton,'click',()=>{const goal=adventureGoal(progress?.state,currentArea);if(!goal)return;
+    if(goal.action==='bag')progressPanel?.open('bag');else if(goal.action==='traits')openTraits();
+    else if(goal.action==='mentor')openMentor();else if(goal.action==='taxi'){const reason=taxiReason(currentArea);if(reason&&reason!=='현재 있는 마을입니다.')chatLog.addSystem(reason);else openTaxi();}
+    else chatLog.addSystem(`이 지역 몬스터는 마리당 ${AREA_XP[currentArea]} EXP를 줍니다. 사냥 의뢰 보상은 20마리마다 바닥에 떨어집니다.`);
+  });
   on(miniToggle, 'click', () => { const open = miniBody.hidden; miniBody.hidden = !open; miniToggle.setAttribute('aria-expanded', String(open)); miniToggle.setAttribute('aria-label', open ? '미니맵 접기' : '미니맵 펼치기'); setText(miniToggle, open ? '−' : '+');firstUse.request('map');positionCombo(); });
   on(portalBtn, 'click', () => enterPortal(performance.now()));
   const skillReadyAt = [0, 0, 0, 0];
@@ -389,10 +399,14 @@ export function mount(root, app, opts = {}) {
   on(chatToggle,'click',()=>{const open=!col.classList.contains('chat-open');col.classList.toggle('chat-open',open);chatToggle.setAttribute('aria-expanded',String(open));if(open)chatInput.focus();else{chatInput.blur();canvas.focus({preventScroll:true});}computeLayout();});
   const portraitCanvas=h('canvas',{width:84,height:84,'aria-hidden':'true'});
   const hpFill=h('i'),hpValue=h('span',{class:'rpg-hp-value'}),hpTrack=h('div',{class:'rpg-hp-track',role:'progressbar','aria-label':'체력','aria-valuemin':'0'},hpFill);
-  const playerStatus=h('section',{class:'rpg-player-status',testid:'player-status','aria-label':'캐릭터 상태'},h('div',{class:'rpg-emblem','aria-hidden':'true'},portraitCanvas),h('div',{class:'rpg-player-info'},h('strong',{},myNick),hpTrack,hpValue));
+  const playerName=h('strong',{},myNick),xpValue=h('small',{class:'rpg-xp-value',testid:'player-xp'}),xpFill=h('i');
+  const xpTrack=h('div',{class:'rpg-xp-track',role:'progressbar','aria-label':'경험치','aria-valuemin':'0','aria-valuemax':'100'},xpFill);
+  const playerStatus=h('section',{class:'rpg-player-status',testid:'player-status','aria-label':'캐릭터 상태'},h('div',{class:'rpg-emblem','aria-hidden':'true'},portraitCanvas),h('div',{class:'rpg-player-info'},playerName,hpTrack,h('div',{class:'rpg-status-values'},hpValue,xpValue),xpTrack));
   const menuToggle=h('button',{type:'button',class:'rpg-menu-toggle',testid:'game-menu-toggle','aria-label':'게임 메뉴 열기','aria-expanded':'false','aria-controls':'room-game-menu'},h('span',{'aria-hidden':'true'},'☰'),h('small',{},'메뉴'));
   const menuHelp=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'controls-help'},'조작 안내');on(menuHelp,'click',()=>firstUse.request('controls',performance.now(),true));
   const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},traitsBtn,chatToggle,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
+  const coopTitle=h('strong'),coopList=h('ul'),coopHint=h('p');
+  const coopPanel=h('section',{class:'cooperative-roster',testid:'cooperative-roster','aria-label':'같은 지역 동료'},coopTitle,coopList,coopHint);menu.append(coopPanel);
   function closeGameMenu(focus=false){menu.hidden=true;menuToggle.setAttribute('aria-expanded','false');menuToggle.setAttribute('aria-label','게임 메뉴 열기');if(focus)menuToggle.focus();}
   on(menuToggle,'click',()=>{const open=menu.hidden;menu.hidden=!open;menuToggle.setAttribute('aria-expanded',String(open));menuToggle.setAttribute('aria-label',open?'게임 메뉴 닫기':'게임 메뉴 열기');if(open)input.clear();});
   on(menu,'click',e=>{if(e.target.closest('button'))closeGameMenu();});
@@ -401,6 +415,23 @@ export function mount(root, app, opts = {}) {
   hud.querySelector('.hud-r').append(menuToggle);
   stage.append(playerStatus,menu);
   let lastHpKey='',lastPortrait='';
+  let presentedLevel=adventureProgress(progress?.state).level;
+  let adventurePaintAt=-Infinity,adventurePaintKey='',coopPaintKey='';
+  function syncAdventureHud(now){
+    if(now-adventurePaintAt<250)return;adventurePaintAt=now;
+    const s=progress?.state,level=adventureProgress(s),key=[s?.revision,currentArea,connection,now<entryUntil].join(':');
+    if(key!==adventurePaintKey){adventurePaintKey=key;setText(playerName,`Lv.${level.level} ${myNick}`);
+      setText(xpValue,level.capped?'MAX':`EXP ${Math.floor(level.ratio*100)}%`);xpValue.title=level.capped?'최고 레벨':`${level.current} / ${level.needed} EXP`;
+      xpFill.style.width=level.ratio*100+'%';xpTrack.setAttribute('aria-valuenow',String(Math.floor(level.ratio*100)));xpTrack.setAttribute('aria-valuetext',level.capped?'최고 레벨':`${level.current} / ${level.needed}`);
+      const goal=adventureGoal(s,currentArea);goalButton.hidden=!goal||connection!=='connected'||now<entryUntil;
+      if(goal){setText(goalTitle,goal.title);setText(goalDetail,goal.detail);goalButton.setAttribute('aria-label',goal.title+' · '+goal.detail);}positionCombo();
+    }
+    if(menu.hidden||!me)return;
+    const roster=cooperativeRoster(players.values(),me),signature=JSON.stringify(roster.map(p=>[p.id,p.name,p.hp,p.max,p.dead]));
+    if(signature===coopPaintKey)return;coopPaintKey=signature;setText(coopTitle,`같은 지역 동료 · ${roster.length}명`);coopList.replaceChildren();
+    for(const p of roster)coopList.append(h('li',{},h('span',{},p.name),h('small',{},p.dead?'부활 대기':`${Math.ceil(p.hp)} / ${p.max} HP`),h('progress',{max:p.max,value:p.dead?0:p.hp,'aria-label':p.name+' 체력'})));
+    setText(coopHint,roster.length?'같이 공격에 참여하면 각자 사냥 보상을 받습니다.':'동료가 같은 지역에 오면 여기에 표시됩니다.');
+  }
   function syncPlayerStatus(){if(!me)return;const avatarKey=JSON.stringify(me.avatar);if(avatarR&&lastPortrait!==avatarKey){const c=portraitCanvas.getContext('2d');c.clearRect(0,0,84,84);if(avatarR.draw(c,me.avatar,42,128,1.3,0,false))lastPortrait=avatarKey;}const key=me.hp+':'+me.max;if(key===lastHpKey)return;lastHpKey=key;const ratio=Math.max(0,Math.min(1,me.hp/me.max));hpFill.style.width=ratio*100+'%';setText(hpValue,`${Math.ceil(me.hp)} / ${me.max} HP`);hpTrack.setAttribute('aria-valuemax',String(me.max));hpTrack.setAttribute('aria-valuenow',String(Math.ceil(me.hp)));playerStatus.classList.toggle('is-low',ratio<.3);}
   root.append(col);
 
@@ -1109,8 +1140,24 @@ export function mount(root, app, opts = {}) {
   }
   async function receiveLoot(p){
     if(!progress||!me||p.owner!==me.user_id||p.area!==currentArea)return;
-    try {const before=earnedPoints(progress.state,STAGES),awarded=await progress.run({type:'loot',...p});if(alive&&earnedPoints(progress.state,STAGES)>before)chatLog.addSystem('모험 특성 포인트 획득! 메뉴의 모험 특성에서 배분하세요.');if(!alive)return;if(!awarded?.duplicate&&liveGroundDrops().length)firstUse.request('drops');if(!awarded?.duplicate&&p.combo){chainUntil=performance.now()+5000;chainHud.hidden=false;setText(chainHud,`${p.combo} COMBO · 골드 +${comboBonus(p.combo)}%`);}if(awarded?.contract){chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}syncProgress();if(isHost())lootOutbox.delete(p.receipt+'|'+p.owner);else send('loot-ack',{receipt:p.receipt});}
-    catch(e){if(alive&&performance.now()-growthErrorAt>5000){growthErrorAt=performance.now();chatLog.addSystem(e.message);}}
+    try {
+      const before=earnedPoints(progress.state,STAGES),awarded=await progress.run({type:'loot',...p});
+      if(!alive)return;
+      if(earnedPoints(progress.state,STAGES)>before)chatLog.addSystem('모험 특성 포인트 획득! 메뉴의 모험 특성에서 배분하세요.');
+      if(!awarded?.duplicate&&liveGroundDrops().length)firstUse.request('drops');
+      if(!awarded?.duplicate&&p.combo){chainUntil=performance.now()+5000;chainHud.hidden=false;setText(chainHud,`${p.combo} COMBO · 골드 +${comboBonus(p.combo)}%`);}
+      if(awarded?.contract){chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}
+      const oldMax=me.max;syncProgress();
+      const level=adventureProgress(progress.state).level;
+      if(!awarded?.duplicate&&level>presentedLevel){
+        presentedLevel=level;
+        // Restore only the newly gained capacity, never revive or fully heal.
+        if(!me.dead)me.hp=Math.min(me.max,me.hp+Math.max(0,me.max-oldMax));
+        playerStatus.classList.add('is-level-up');later(()=>playerStatus.classList.remove('is-level-up'),1800);
+        chatLog.addSystem(`레벨 업! Lv.${level} · 레벨당 공격력 +1%, 기본 체력 +3`);
+      }
+      if(isHost())lootOutbox.delete(p.receipt+'|'+p.owner);else send('loot-ack',{receipt:p.receipt});
+    }catch(e){if(alive&&performance.now()-growthErrorAt>5000){growthErrorAt=performance.now();chatLog.addSystem(e.message);}}
   }
   async function collectEquipment(now){
     if(!progress||!me||me.dead||collecting||now-pickupAt<180||document.body.classList.contains('has-modal'))return;
@@ -1584,7 +1631,7 @@ export function mount(root, app, opts = {}) {
   //   → 큐브 파티클 → 라벨/말풍선(캐릭터를 따라감, CSS px)
   function render(now) {
     if (!me || !avatarR) return;
-    syncPlayerStatus();
+    syncPlayerStatus();syncAdventureHud(now);
     if(combatFeel.shouldHold(now,{reduced:prefersReducedMotion(),blocked:document.body.classList.contains('has-modal')||connection!=='connected'}))return;
     if (connection === 'joining' || connection === 'fatal') { paintLetterbox(); return; }
     const { cssW, viewW, viewH, P, dpr, k } = layout;
@@ -2233,6 +2280,7 @@ export function mount(root, app, opts = {}) {
     if (!alive) return;
     if(progress){try{await progress.run({type:'ensure',legacyVillageBoss:rewardMemory.bossClears>0||rewardMemory.legacyRoyal});syncProgress();me.hp=me.max;}catch(e){chatLog.addSystem(e.message);}}else chatLog.addSystem(progressError);
     if(!alive)return;
+    presentedLevel=adventureProgress(progress?.state).level;
     players.set(me.user_id, me);
     updateCount();
     announceArea();

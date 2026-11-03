@@ -96,3 +96,14 @@ body.portal-edition:not([data-screen=room]){--text:#30473d;--text-strong:#253f34
 @media(prefers-reduced-motion:reduce){.portal-edition .portal-button{transition:none}.portal-edition .portal-button:hover{transform:none}}
 
 @media(max-width:720px){.portal-edition .bk-preview__ctrl .bk-btn{min-height:44px}.portal-edition .bk-tabs--cat .bk-btn{min-width:44px;min-height:44px}.atelier-archive>summary{min-height:44px;box-sizing:border-box;padding:13px 8px}}
+
+/* Keep inherited arcade colors from leaking into the paper surfaces. */
+.portal-edition:not([data-screen=room]) :is(.bk-me__nick,.lobby-tools h2){color:#344e3a!important;text-shadow:none!important}
+.portal-edition .bk-preview__ctrl .bk-tabs{background:#e5ead8!important;border-color:#ccd6bb!important}
+.portal-edition:not([data-screen=room]) .bk-preview__ctrl .bk-btn{background:#f7f8ef!important;color:#415841!important;text-shadow:none!important}
+.portal-edition:not([data-screen=room]) .bk-preview__ctrl .bk-btn[aria-checked=true]{background:#405d3c!important;color:#fff1d1!important;border-color:#405d3c!important}
+.portal-edition .bk-modal :is(.gp-header h2,.gp-wallet strong){color:#435b3a!important;text-shadow:none!important}
+.portal-edition .bk-modal :is(.gp-wallet,.gp-tabs,.traits-tabs,.gp-action-bar,.gp-pet-slot,.first-use-hint){background:#e5ead7!important;color:#4a623d!important;border-color:#c8d3b7!important;box-shadow:none!important}
+.portal-edition .bk-modal .first-use-hint :is(strong,span){color:#4a623d!important}
+.portal-edition .bk-modal :is(.gp-tabs [aria-selected=true],.traits-tabs [aria-selected=true],.gp-filters [aria-pressed=true]){background:#405d3c!important;color:#fff1d1!important;border-color:#405d3c!important;box-shadow:none!important}
+.portal-edition .bk-modal .gp-tile-top{color:#617252!important}

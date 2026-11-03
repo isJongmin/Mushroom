@@ -14,6 +14,7 @@ import * as roomScreen from './screens/room.js';
 
 const SCREENS = { profile: profileScreen, lobby: lobbyScreen, room: roomScreen };
 
+document.body.classList.add('rpg-arcade');
 const root = document.getElementById('app');
 const mode = selectedMode();
 

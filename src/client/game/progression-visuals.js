@@ -49,7 +49,11 @@ export function drawPet(c,id,x,y,k=1,now=0,level=0,motion={}) {
  if(pose.fly&&!motion.reduced){const flap=Math.sin(now/90+pose.seed)*5;r(color,-28,-21+flap,14,4);r(color,14,-21+flap,14,4);}
  if(motion.reaction==='loot'){r('#f4d37c',18,-40,3,9);r('#f4d37c',15,-37,9,3);}
  if(motion.reaction==='hurt'){r('#c894a5',18,-34,4,7);r('#c894a5',18,-24,4,3);}
- r('#233744',-7,-18,4,5);r('#233744',5,-18,4,5);r('#fff',-6,-18,2,2);r('#fff',6,-18,2,2);r('#e5a5a5',-10,-10,4,2);r('#e5a5a5',8,-10,4,2);r('#52635a',-1,-10,4,2);
+ const blink=!motion.reduced&&(now+pose.seed*100)%3900>3760,joy=motion.reaction==='loot';
+ if(joy){r('#233744',-8,-17,6,2);r('#233744',-7,-19,4,2);r('#233744',4,-17,6,2);r('#233744',5,-19,4,2);}else{r('#233744',-7,-18,4,blink?2:5);r('#233744',5,-18,4,blink?2:5);if(!blink){r('#fff',-6,-18,2,2);r('#fff',6,-18,2,2);}}
+ if(motion.reaction==='hurt'){r('#9cddec',-7,-12,3,6);r('#9cddec',6,-12,3,6);}
+ if(motion.reaction==='attack'){r('#62454f',-8,-22,6,2);r('#62454f',5,-22,6,2);}
+ r('#dbc18b',-12,-4,24,3);r(color,9,-1,5,7);r('#e5a5a5',-10,-10,4,2);r('#e5a5a5',8,-10,4,2);r('#52635a',-1,-10,4,2);
  if(level){r('#f9df89',-2,-30,4,4);}c.restore();
 }
 export function drawEquipmentDrop(c,d,camX,camY,k,now,age=Infinity) {

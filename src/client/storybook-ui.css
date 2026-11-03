@@ -1,0 +1,67 @@
+/* A quiet forest journal: the world is the main surface, UI is the margin. */
+body.rpg-arcade[data-screen=room]{background:#132224}
+.rpg-arcade .scr-room .rpg-player-status{top:20px;left:20px;width:252px;padding:12px;gap:12px;border:1px solid #d4d6bb30;border-radius:12px;background:linear-gradient(110deg,#183233f2,#102729e6);box-shadow:0 6px 20px #12262925;backdrop-filter:blur(8px)}
+.rpg-arcade .rpg-emblem{border:1px solid #d9d9b44d;border-radius:50%;background:radial-gradient(#adc0a1,#5b8075)}
+.rpg-arcade .rpg-player-info>strong{font-size:14px;font-weight:650;letter-spacing:-.3px;color:#f6edce;margin-bottom:8px}
+.rpg-arcade .rpg-hp-track{height:5px;border:0;border-radius:4px;background:#091e23;box-shadow:none}
+.rpg-arcade .rpg-hp-track i{background:linear-gradient(90deg,#b96d5b,#e1a377);box-shadow:none}
+.rpg-arcade .rpg-hp-value{color:#bccbc2;font-size:9px;line-height:1.9}
+.rpg-arcade .rpg-xp-value{color:#c3d5a8;font-size:8px}
+.rpg-arcade .rpg-xp-track{height:2px;background:#0c2026}
+.rpg-arcade .rpg-xp-track i{background:#a7bc83}
+.rpg-arcade .scr-room .bag-shortcut{left:20px!important;top:116px!important}
+.rpg-arcade .bag-shortcut .bk-btn{min-height:36px;padding:7px 16px!important;border:1px solid #c9d3bd35!important;border-radius:20px!important;background:#183033dc!important;box-shadow:none!important;color:#ede5c9!important;font:600 11px system-ui}
+.rpg-arcade .scr-room .rpg-menu-toggle{width:44px;height:44px;border:1px solid #c9d3bd35;border-radius:50%;background:#183033e8;box-shadow:none;color:#e8dfbd}
+.rpg-menu-toggle small{display:none}
+.rpg-arcade .scr-room .hud{padding:20px}
+.rpg-arcade .scr-room .game-minimap{top:20px!important;right:82px!important;width:170px;border:1px solid #c9d3bd35;border-radius:22px;background:#183033e8;box-shadow:none;backdrop-filter:blur(8px)}
+.rpg-arcade .minimap-head{padding:6px 8px 6px 14px;min-height:30px;color:#e8dfbd;font:600 11px system-ui}
+.rpg-arcade .minimap-head button{border:0;background:#d4deca16;border-radius:50%;color:#e8dfbd}
+.rpg-arcade .minimap-body{padding:7px 6px 10px}
+.journey-card{position:absolute;z-index:5;right:20px;top:calc(var(--map-only-bottom,64px) + 14px);width:238px;box-sizing:border-box;padding:18px 18px 14px;border-radius:3px 14px 3px 14px;border:1px solid #dbd6bc80;background:linear-gradient(125deg,#f6f0ddf5,#e5dfc8f0);box-shadow:0 8px 24px #17382b20;color:#32443a}
+.journey-card[hidden]{display:none!important}
+.journey-eyebrow{display:block;color:#7b8069;font:700 8px system-ui;letter-spacing:1.6px}
+.journey-card h2{margin:10px 0 9px;color:#334a3d;font:700 21px/1.4 Georgia,'Batang',serif;letter-spacing:-.8px;word-break:keep-all}
+.journey-line{margin:0 0 17px;font:11px/1.8 system-ui;color:#6a7768;word-break:keep-all}
+.rpg-arcade .journey-card .adventure-goal{padding:12px 0 8px!important;border:0!important;border-top:1px solid #7c8d702f!important;background:transparent!important;color:#354c3c!important;min-height:48px;outline-offset:3px}
+.journey-card .adventure-goal strong{font:750 12px/1.6 system-ui}
+.journey-card .adventure-goal strong::before{content:'◇';margin-right:7px;color:#8a794d}
+.journey-card .adventure-goal small{margin-top:5px;color:#6c796a;font:10px/1.6 system-ui}
+.journey-card .adventure-goal[aria-pressed=true] strong::before{content:'◆';color:#738347}
+.journey-hint{display:block;margin-top:5px;font:600 9px/1.5 system-ui;color:#788066}
+.rpg-arcade .scr-room .rpg-menu{top:76px;right:20px;border:1px solid #b7c5ad3d;border-radius:12px;background:#173033f5;box-shadow:0 12px 40px #061b2855;backdrop-filter:blur(14px)}
+.rpg-arcade .rpg-menu h2{font:700 23px Georgia,'Batang',serif;color:#eee5c6}
+.rpg-arcade .rpg-menu-actions .bk-btn,.rpg-arcade .rpg-menu [data-testid=sound-toggle],.rpg-arcade .rpg-menu [data-testid=controls-help]{border:1px solid #d0d5ba25!important;border-radius:6px!important;background:#d8e3c70a!important;box-shadow:none!important;color:#dddcc1!important}
+.rpg-arcade .rpg-menu [data-testid=sound-toggle]{width:100%;margin-top:8px;min-height:38px}
+.rpg-arcade .cooperative-roster>strong{color:#e9dfb7;font-size:11px}
+.rpg-arcade .skill-hotbar .skill-button{border-radius:50%;border:1px solid #b9c5b566;background:#173135e8;box-shadow:inset 0 0 0 4px #e1d7ad0c,0 3px 12px #08232933}
+.rpg-arcade .skill-button--ultimate{border-color:#d7bf7c99!important;background:#3a3e32e8!important}
+.rpg-arcade .skill-hotbar .skill-button.is-locked{opacity:.42}
+.rpg-arcade .skill-name{font-size:8px;color:#dbddc3}
+.rpg-arcade .scr-room .touch-float>[data-testid=attack]{border-radius:50%!important;border:1px solid #eed19e80!important;background:linear-gradient(135deg,#bd8b62,#8f694e)!important;box-shadow:inset 0 0 0 4px #fff0c110!important;color:#fff4d5!important}
+.rpg-arcade .scr-room .hunt-combo{border:0;border-left:2px solid #d4bd7c;background:#153133d9;color:#e8d5a3;border-radius:0 5px 5px 0;box-shadow:none;font-weight:600}
+.loot-feed{position:absolute;left:20px;bottom:82px;z-index:5;pointer-events:none;display:grid;gap:7px;max-width:260px}
+.loot-message{padding:9px 13px;border-left:2px solid var(--loot-color);border-radius:0 5px 5px 0;background:linear-gradient(90deg,#183236ed,#173033b3);color:#e5e5ca;animation:loot-reveal .22s ease-out}
+.loot-message small{display:block;font:750 7px system-ui;letter-spacing:1.8px;color:#a5bba9;margin-bottom:4px}
+.loot-message strong{font:650 12px system-ui;color:var(--loot-color)}
+.loot-message.is-rare{background:linear-gradient(90deg,#263846f0,#20343ad9);box-shadow:0 0 18px #c4d9e40a}
+@keyframes loot-reveal{from{opacity:0;transform:translateX(-8px)}to{opacity:1;transform:translateX(0)}}
+@media(max-width:700px){
+ .rpg-arcade .scr-room .hud{padding:12px}
+ .rpg-arcade .scr-room .rpg-player-status{top:12px;left:12px;width:202px;padding:9px;gap:8px;border-radius:10px}
+ .rpg-arcade .rpg-player-info>strong{font-size:12px;margin-bottom:5px}
+ .rpg-arcade .scr-room .bag-shortcut{top:94px!important;left:12px!important}
+ .rpg-arcade .scr-room .bag-shortcut .bk-btn{min-height:32px;padding:6px 13px!important;font-size:10px}
+ .rpg-arcade .scr-room .game-minimap{top:82px!important;right:12px!important;width:155px}
+ .journey-card{right:12px;width:155px;padding:12px 11px 10px;top:calc(var(--map-only-bottom,121px) + 9px)}
+ .journey-eyebrow{font-size:7px;letter-spacing:.7px}.journey-card h2{font-size:16px;line-height:1.45;margin:7px 0 10px}
+ .journey-line{display:none}.journey-card .adventure-goal strong{font-size:10px}.journey-card .adventure-goal small{font-size:9px}.journey-hint{font-size:8px}
+ .rpg-arcade .journey-card .adventure-goal{padding-top:9px!important}
+ .loot-feed{left:12px;bottom:190px;max-width:190px;gap:5px}.loot-message{padding:7px 10px}.loot-message strong{font-size:10px}
+ .rpg-arcade .scr-room .rpg-menu{right:12px;top:66px}
+}
+@media(orientation:landscape) and (max-height:600px){
+ .journey-card{width:170px;right:66px;padding:10px 12px}.journey-card h2{font-size:15px;margin:5px 0}.journey-line{display:none}.journey-eyebrow{font-size:7px}.journey-card .adventure-goal small{display:none}.journey-card .adventure-goal{min-height:36px!important;padding:7px 0!important}
+ .rpg-arcade .scr-room .game-minimap{right:66px!important;top:12px!important;width:170px}.rpg-arcade .scr-room .bag-shortcut{top:94px!important}.loot-feed{bottom:140px;max-width:180px}
+}
+@media(prefers-reduced-motion:reduce){.loot-message{animation:none}.rpg-player-status{backdrop-filter:none}}

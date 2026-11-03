@@ -107,3 +107,5 @@ body.portal-edition:not([data-screen=room]){--text:#30473d;--text-strong:#253f34
 .portal-edition .bk-modal .first-use-hint :is(strong,span){color:#4a623d!important}
 .portal-edition .bk-modal :is(.gp-tabs [aria-selected=true],.traits-tabs [aria-selected=true],.gp-filters [aria-pressed=true]){background:#405d3c!important;color:#fff1d1!important;border-color:#405d3c!important;box-shadow:none!important}
 .portal-edition .bk-modal .gp-tile-top{color:#617252!important}
+
+.portal-edition .bk-room{display:flex!important;align-items:center}.portal-edition .bk-room__main{flex:1;min-width:0}.portal-edition .portal-room-scene{flex-shrink:0}

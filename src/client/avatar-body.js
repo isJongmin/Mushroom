@@ -34,7 +34,7 @@ export const isDefaultBody=raw=>BODY_FIELDS.every(f=>raw[f.key]===100);
 const smooth=t=>t*t*(3-2*t);
 // Atlas-space coordinates normalized to the shipped 144 x 192 atlas.
 export function bodyWidth(body,y){
- const stops=[[104,'head'],[112,'shoulders'],[122,'chest'],[135,'waist'],[146,'hips'],[157,'thighs'],[169,'calves'],[180,'feet']];
+ const stops=[[98,'head'],[108,'shoulders'],[122,'chest'],[135,'waist'],[146,'hips'],[157,'thighs'],[169,'calves'],[180,'feet']];
  if(y<=stops[0][0])return body.head/100;
  for(let i=1;i<stops.length;i++){const [at,key]=stops[i], [prev,old]=stops[i-1];if(y<=at){const t=smooth((y-prev)/(at-prev));return (body[old]+(body[key]-body[old])*t)/100;}}
  return body.feet/100;

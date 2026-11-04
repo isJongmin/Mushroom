@@ -1,3 +1,5 @@
+import {avatarBody,avatarBodyKey,isDefaultBody,withBody,DEFAULT_BODY,bodyPoint,bodyY} from './avatar-body.js';
+import {deformBodySheet} from './avatar-body-raster.js';
 import {handAnchor} from './game/avatar-hand-anchors.js';
 // 아바타 렌더러 (ARCHITECTURE "복셀 아트 계약", 사이클 5).
 // 파이프라인:
@@ -168,7 +170,7 @@ export function createAvatarRenderer(assets, opts = {}) {
     return flipped;
   }
 
-  const keyOf = (avatar) => PART_KEYS.map((p) => avatar[p]).join('|');
+  const keyOf = (avatar) => PART_KEYS.map((p) => avatar[p]).join('|')+'#'+avatarBodyKey(avatar);
 
   /** 조합 시트 엔트리 (없으면 합성 시작) */
   function request(avatar) {
@@ -185,10 +187,16 @@ export function createAvatarRenderer(assets, opts = {}) {
     }
     const g = gen;
     const all = Array.from({ length: frameCount }, (_, i) => i);
-    e.promise = compose(layersOf(assets, avatar), all).then(({ cv, ms }) => {
+    const body=avatarBody(avatar);
+    const composition=isDefaultBody(body)?compose(layersOf(assets,avatar),all):request(withBody(avatar,DEFAULT_BODY)).promise.then(base=>{
+      if(g!==gen||!base.normal)return {cv:null,ms:0};
+      const t=performance.now(),cv=deformBodySheet(base.normal,body,{frameW:fw,frameH:fh,anchorX:ax,makeCanvas});
+      return {cv,ms:performance.now()-t};
+    });
+    e.promise = composition.then(({ cv, ms }) => {
       if (g !== gen) return e;
       e.normal = cv;
-      e.headTop = headTopOf(cv);
+      e.headTop = cv?headTopOf(cv):HEAD.fallback;
       e.state = 'ready';
       stats.composites++;
       stats.totalMs += ms;
@@ -258,10 +266,10 @@ export function createAvatarRenderer(assets, opts = {}) {
       if (v === undefined) { v = headTopOf(e.normal, f); e.tops.set(f, v); }
       return v;
     },
-    handFit(avatar,frame){const h=handAnchor(frame);return {near:{x:h.N[0],y:h.N[1]},far:{x:h.F[0],y:h.F[1]}};},
+    handFit(avatar,frame){const h=handAnchor(frame),body=avatarBody(avatar),opt={frameH:fh,anchorX:ax,anchorY:ay,density};return {near:bodyPoint(body,{x:h.N[0],y:h.N[1]},opt),far:bodyPoint(body,{x:h.F[0],y:h.F[1]},opt)};},
     drawGrip(ctx,avatar,x,y,k,frame,left=false){
       const e=sheetCache.get(keyOf(avatar));if(!e?.normal||e.state!=='ready')return;
-      const h=handAnchor(frame).N,r=3.5,px=ax+h[0]*density,py=ay+h[1]*density;
+      const pt=this.handFit(avatar,frame).near,h=[pt.x,pt.y],r=3.5,px=ax+h[0]*density,py=ay+h[1]*density;
       ctx.save();ctx.translate(x,y);if(left)ctx.scale(-1,1);
       ctx.beginPath();ctx.rect((h[0]-r)*k,(h[1]-r)*k,r*2*k,r*2*k);ctx.clip();
       smooth(ctx);ctx.drawImage(e.normal,(frame|0)*fw+px-r*density,py-r*density,r*2*density,r*2*density,(h[0]-r)*k,(h[1]-r)*k,r*2*k,r*2*k);ctx.restore();
@@ -281,8 +289,9 @@ export function createAvatarRenderer(assets, opts = {}) {
         for(let y=top;y<Math.min(top+14,fh);y++)for(let x=0;x<fw;x++)if(alpha(x,y)){lo=Math.min(lo,x);hi=Math.max(hi,x);}
         const bob=Math.max(-3,Math.min(3,(ay-bottom)/density));
         let bl=fw,br=0;
-        for(let y=110;y<=118&&y<fh;y++)for(let x=Math.max(0,ax-29);x<=Math.min(fw-1,ax+29);x++)if(alpha(x,y)){bl=Math.min(bl,x);br=Math.max(br,x);}
-        fit={headTop:(ay-top)/density,headX:hi>=lo?((lo+hi)/2-ax)/density:0,neck:(ay-111)/density+bob,shoulder:Math.max(11,Math.min(16,(br-bl)/density/2)),bodyX:br>=bl?((bl+br)/2-ax)/density:0,hem:18+bob};
+        const body=avatarBody(avatar),bodyRow=y=>Math.round(bodyY(body,y*192/fh)*fh/192);
+        for(let y=Math.max(0,bodyRow(110));y<=bodyRow(118)&&y<fh;y++)for(let x=Math.max(0,ax-29);x<=Math.min(fw-1,ax+29);x++)if(alpha(x,y)){bl=Math.min(bl,x);br=Math.max(br,x);}
+        fit={headTop:(ay-top)/density,headX:hi>=lo?((lo+hi)/2-ax)/density:0,neck:(ay-bodyRow(111))/density+bob,shoulder:Math.max(11,Math.min(16,(br-bl)/density/2)),bodyX:br>=bl?((bl+br)/2-ax)/density:0,hem:-bodyPoint(body,{x:0,y:-18},{frameH:fh,anchorX:ax,anchorY:ay,density}).y+bob};
       }catch{/* tainted/unavailable canvas uses compatible anatomical defaults */}
       e.costumeFits.set(f,fit);return fit;
     },
@@ -344,9 +353,10 @@ export function createAvatarRenderer(assets, opts = {}) {
       ctx.translate(x - ax * sc, y - ay * sc + bob);
       // 머리/몸통/하체는 원본 back 프레임. 옆에 내려온 팔만 제외한다.
       ctx.save(); ctx.beginPath();
-      ctx.rect(0, 0, fw * sc, 106 * sc);
-      ctx.rect(57 * sc, 106 * sc, 32 * sc, 43 * sc);
-      ctx.rect(0, 149 * sc, fw * sc, (fh - 149) * sc);
+      const b=avatarBody(avatar),row=y=>bodyY(b,y*192/fh)*fh/192;
+      ctx.rect(0, 0, fw * sc, row(106) * sc);
+      ctx.rect(57 * sc, row(106) * sc, 32 * sc, (row(149)-row(106)) * sc);
+      ctx.rect(0, row(149) * sc, fw * sc, (fh - row(149)) * sc);
       ctx.clip(); smooth(ctx);
       ctx.drawImage(e.normal, frame * fw, 0, fw, fh, 0, 0, fw * sc, fh * sc);
       ctx.restore();
@@ -367,7 +377,7 @@ export function createAvatarRenderer(assets, opts = {}) {
      */
     thumb(avatar, onlyParts, frame = assets.frameIndex.front) {
       const layers = layersOf(assets, avatar, onlyParts);
-      const key = `${frame}:${layers.map((l) => `${l.layer}/${l.id}`).join('|')}`;
+      const key = `${frame}:${layers.map((l) => `${l.layer}/${l.id}`).join('|')}#${avatarBodyKey(avatar)}`;
       let e = touch(thumbCache, key);
       if (!e) {
         e = { state: 'loading', canvas: null };
@@ -376,7 +386,7 @@ export function createAvatarRenderer(assets, opts = {}) {
         const g = gen;
         compose(layers, [frame]).then(({ cv }) => {
           if (g !== gen) return;
-          e.canvas = cv;
+          e.canvas = deformBodySheet(cv,avatarBody(avatar),{frameW:fw,frameH:fh,anchorX:ax,makeCanvas});
           e.state = 'ready';
           notify();
         }, () => { e.state = 'ready'; });

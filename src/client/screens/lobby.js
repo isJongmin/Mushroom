@@ -1,3 +1,4 @@
+import {withBody} from '../avatar-body.js';
 import { readRewards } from '../rewards.js';
 // 로비: 방 목록 + 방 만들기 + 입장 (docs/design/screens/lobby.md v4, style-guide 11장, ui-kit 14~23절)
 // - 방 목록: listRooms 5초 폴링(응답 후 setTimeout 사슬, 숨김 탭/입장·만들기 요청 중 정지) + 수동 새로고침
@@ -747,7 +748,7 @@ export function mount(root, app, opts = {}) {
   let renderer = null;
   app.assets.then((assets) => {
     if (!alive || !assets || assets.source !== 'manifest') return;
-    const av = assets.sanitizeAvatar(profile.avatar);
+    const av = withBody(assets.sanitizeAvatar(profile.avatar),profile.body);
     const paint = () => {
       if(renderer){const portrait=lobbyAvatar.getContext('2d');portrait.clearRect(0,0,240,300);renderer.draw(portrait,av,120,285,1.8,0,false);}
       const src = renderer && renderer.thumb(av, PART_KEYS); // 합성 중이면 null → onUpdate에서 다시

@@ -1,3 +1,4 @@
+import {withBody,avatarBody} from '../avatar-body.js';
 import {createSceneBudget,scenePolicy,sceneDpr} from '../game/scene-budget.js';
 import {readPanelCollapsed,writePanelCollapsed} from '../ui/panel-preference.js';
 import {journeySummary,journeyActionLabel,equipmentUpgrade} from '../game/journey-journal.js';
@@ -742,7 +743,7 @@ export function mount(root, app, opts = {}) {
           if (!s || typeof s.user_id !== 'string' || !s.user_id || s.user_id.length > 64 || s.user_id === me.user_id) continue;
           seen.add(s.user_id);
           const nickname = nickOf(s);
-          const avatar = assets.sanitizeAvatar(s.avatar); // 7개 키 정규화 (옛 5키/eyes/없는 id → 기본값)
+          const avatar = withBody(assets.sanitizeAvatar(s.avatar),s.body); // 7개 키 정규화 (옛 5키/eyes/없는 id → 기본값)
           const existing = players.get(s.user_id);
           if (existing) {
             existing.nickname = nickname;
@@ -812,7 +813,7 @@ export function mount(root, app, opts = {}) {
       join: () => app.backend.joinRoom({ roomId, password: null, nickname: myNick }),
       open: (sink, signal) => {
         const token = ++openSeq;
-        const self = { nickname: me.nickname, avatar: me.avatar, title: me.title,costume:me.costume, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
+        const self = { nickname: me.nickname, avatar: me.avatar, body:avatarBody(me.avatar), title: me.title,costume:me.costume, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
         return app.backend.connectRoom(roomId, { ...handlersFor(token), onDrop: sink.onDrop }, self, { signal });
       },
       heartbeat: async () => {
@@ -2331,7 +2332,7 @@ export function mount(root, app, opts = {}) {
     // Prioritize the player while map images are still loading. NPCs request
     // their outfits when drawn, so off-map characters never delay entry.
     avatarR = createAvatarRenderer(assets);
-    const playerAvatar = assets.sanitizeAvatar(profile.avatar);
+    const playerAvatar = withBody(assets.sanitizeAvatar(profile.avatar),profile.body);
     const playerReady = avatarR.ready(costumeAvatar(playerAvatar,equippedCostume(app.profileKey)));
     villageMap = await app.mapAssets.catch(() => null);
     for (const id of AREA_IDS) areaCatalog.set(id, areaMap(id, villageMap));

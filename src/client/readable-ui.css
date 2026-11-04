@@ -100,3 +100,10 @@ body.portal-edition .journey-card.is-minimized .adventure-goal{min-height:34px;p
 
 body.portal-edition .rpg-menu [data-testid=render-quality]{width:100%;min-height:40px;margin-top:8px}
 .render-diagnostics{font:12px/1.8 system-ui;margin-top:12px;color:#f5f4df}.render-diagnostics summary{cursor:pointer;padding:6px 0}.render-diagnostics p{margin:6px 0;color:#c5d8c7}
+
+/* A persistent small tab leaves the playfield clear without losing access. */
+body.portal-edition .journey-tuck{padding:6px;min-width:30px;font-size:18px}
+body.portal-edition .journey-card.is-tucked{width:auto;padding:0;border:0!important;background:transparent!important;box-shadow:none}
+.journey-card.is-tucked > :not(.journey-heading),.journey-card.is-tucked .journey-heading > :not(.journey-fold){display:none!important}
+body.portal-edition .journey-card.is-tucked .journey-heading{display:block;margin:0}
+body.portal-edition .journey-card.is-tucked .journey-fold{min-width:84px;min-height:44px;padding:8px 14px;border-radius:8px;box-shadow:0 2px 8px #102a2433;font-size:13px}

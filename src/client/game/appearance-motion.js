@@ -29,7 +29,7 @@ export function drawEquippedGear(c,job,l,x,y,k,now,{left=false,hidden=false,redu
  if(hidden||!l||!drawItem)return;
  const tier=l.tier||0,dir=left?-1:1,anchors=handAnchor(frame);
  const near=hand?.near||{x:anchors.N[0],y:anchors.N[1]},far=hand?.far||{x:anchors.F[0],y:anchors.F[1]};
- const kind=l.weapon||WEAPONS[job]||'sword',size=Math.max(.25,Math.min(1,bodyScale)),scale=(kind==='claw'?.52:.65)*size;
+ const kind=l.weapon||WEAPONS[job]||'sword',size=Math.max(.35,Math.min(1.25,bodyScale)),scale=(kind==='claw'?.66:.8)*size;
  // Hand-local grip coordinates match drawItem's unrotated, held geometry.
  const grip={sword:[0,15],bow:[4,-2],staff:[0,15],claw:[0,8]}[kind];
  // The weapon pivots at the palm, never at the centre of its inventory icon.

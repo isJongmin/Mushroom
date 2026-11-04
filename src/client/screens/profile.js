@@ -115,14 +115,14 @@ export function mount(root, app, opts = {}) {
     if(commit){clearTimeout(bodyPreviewTimer);bodyPreviewTimer=0;applyBodyPreview();}
     else if(!bodyPreviewTimer)bodyPreviewTimer=setTimeout(()=>{bodyPreviewTimer=0;if(alive)applyBodyPreview();},100);
   }});
-  function applyBodyPreview(){avatar=withBody(avatar,body);lastDrawn='';drawPreview();}
+  function applyBodyPreview(){renderer.cancelPendingBody(costumeAvatar(avatar,rewards.costume));renderer.cancelPendingBody(avatar);avatar=withBody(avatar,body);lastDrawn='';drawPreview();}
   const studioTabs=h('div',{class:'studio-tabs',role:'tablist','aria-label':'캐릭터 만들기 단계'});
   const bodyTab=h('button',{type:'button',class:'bk-btn',id:'studio-body-tab',role:'tab',testid:'studio-body-tab','aria-controls':'studio-body-panel','aria-selected':'true'},'01 체형');
   const wardrobeTab=h('button',{type:'button',class:'bk-btn',id:'studio-wardrobe-tab',role:'tab',testid:'studio-wardrobe-tab','aria-controls':'studio-wardrobe-panel','aria-selected':'false',tabindex:'-1'},'02 코디');
   const bodyPanel=h('div',{id:'studio-body-panel',role:'tabpanel','aria-labelledby':'studio-body-tab'},bodyEditor.el);
   const wardrobePanel=h('div',{id:'studio-wardrobe-panel',role:'tabpanel','aria-labelledby':'studio-wardrobe-tab',hidden:true},partsBody);
   const studioPanels=[[bodyTab,bodyPanel],[wardrobeTab,wardrobePanel]];
-  function setStudio(index,focus=false){for(let i=0;i<studioPanels.length;i++){const [tab,panel]=studioPanels[i];tab.setAttribute('aria-selected',String(i===index));tab.tabIndex=i===index?0:-1;panel.hidden=i!==index;}if(focus)studioPanels[index][0].focus();}
+  function setStudio(index,focus=false){for(let i=0;i<studioPanels.length;i++){const [tab,panel]=studioPanels[i];tab.setAttribute('aria-selected',String(i===index));tab.tabIndex=i===index?0:-1;panel.hidden=i!==index;}if(index===1&&ready){paintSlots();paintPresets();}if(focus)studioPanels[index][0].focus();}
   studioTabs.append(bodyTab,wardrobeTab);
   studioPanels.forEach(([tab],i)=>on(tab,'click',()=>setStudio(i)));
   on(studioTabs,'keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const i=studioPanels.findIndex(([tab])=>tab.getAttribute('aria-selected')==='true');setStudio(e.key==='Home'?0:e.key==='End'?1:1-i,true);});
@@ -318,12 +318,13 @@ export function mount(root, app, opts = {}) {
       const sel = avatar[part] === s.id;
       s.btn.setAttribute('aria-checked', String(sel));
       s.btn.tabIndex = sel ? 0 : -1;
-      if (s.canvas) paintThumb(s.canvas, renderer.thumb({ ...avatar, [part]: s.id }, spec.parts), spec.crop);
+      if (s.canvas&&!wardrobePanel.hidden) paintThumb(s.canvas, renderer.thumb({ ...avatar, [part]: s.id }, spec.parts), spec.crop);
     }
   }
 
   let presetCanvases = [];
   function paintPresets() {
+    if(wardrobePanel.hidden)return;
     presetCanvases.forEach((cv, i) => {
       if (i < 6 || presetMore.open) paintThumb(cv, renderer.thumb(assets.presets[i].avatar, PART_KEYS), PRESET_CROP);
     });

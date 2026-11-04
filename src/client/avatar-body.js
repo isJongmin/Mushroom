@@ -34,12 +34,12 @@ export const isDefaultBody=raw=>BODY_FIELDS.every(f=>raw[f.key]===100);
 const smooth=t=>t*t*(3-2*t);
 // Atlas-space coordinates normalized to the shipped 144 x 192 atlas.
 export function bodyWidth(body,y){
- const stops=[[90,'head'],[108,'shoulders'],[122,'chest'],[135,'waist'],[146,'hips'],[157,'thighs'],[169,'calves'],[180,'feet']];
+ const stops=[[104,'head'],[112,'shoulders'],[122,'chest'],[135,'waist'],[146,'hips'],[157,'thighs'],[169,'calves'],[180,'feet']];
  if(y<=stops[0][0])return body.head/100;
  for(let i=1;i<stops.length;i++){const [at,key]=stops[i], [prev,old]=stops[i-1];if(y<=at){const t=smooth((y-prev)/(at-prev));return (body[old]+(body[key]-body[old])*t)/100;}}
  return body.feet/100;
 }
-export function bodyY(body,y){
+function linearBodyY(body,y){
  const leg=body.legLength/100,head=body.head/100;
  if(y>=176)return y;
  if(y>=142)return 176+(y-176)*leg;
@@ -47,8 +47,17 @@ export function bodyY(body,y){
  if(y>=110)return hip+(y-142);
  return hip-32+(y-110)*head;
 }
+// Continuous first derivative at neck/hip; do not stretch the lower face into a taper.
+const transition=(start,span,t,a,b)=>start+span*(a*t+(b-a)*t*t/2);
+const untransition=(value,start,span,a,b)=>{const d=(value-start)/span;return 2*d/(a+Math.sqrt(Math.max(0,a*a+2*(b-a)*d)));};
+export function bodyY(body,y){
+ if(y>=104&&y<=116)return transition(linearBodyY(body,104),12,(y-104)/12,body.head/100,1);
+ if(y>=136&&y<=148)return transition(linearBodyY(body,136),12,(y-136)/12,1,body.legLength/100);
+ return linearBodyY(body,y);
+}
 export function sourceBodyY(body,y){
  const leg=body.legLength/100,head=body.head/100,hip=176-34*leg,neck=hip-32;
+ for(const [start,a,b]of [[104,head,1],[136,1,leg]]){const low=linearBodyY(body,start),high=linearBodyY(body,start+12);if(y>=low&&y<=high)return start+12*untransition(y,low,12,a,b);}
  if(y>=176)return y;
  if(y>=hip)return 176+(y-176)/leg;
  if(y>=neck)return 142+(y-hip);

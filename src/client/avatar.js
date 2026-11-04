@@ -1,5 +1,5 @@
 import {avatarBody,avatarBodyKey,isDefaultBody,withBody,DEFAULT_BODY,bodyPoint,bodyY,bodyWidth} from './avatar-body.js';
-import {deformBodySheet} from './avatar-body-raster.js';
+import {createBodyBaker} from './avatar-body-baker.js';
 import {handAnchor} from './game/avatar-hand-anchors.js';
 // 아바타 렌더러 (ARCHITECTURE "복셀 아트 계약", 사이클 5).
 // 파이프라인:
@@ -53,6 +53,7 @@ export function layersOf(assets, avatar, onlyParts) {
  * @param opts.onUpdate 합성이 끝날 때마다(여러 개는 한 번으로 묶어) 부른다. 화면이 다시 그리는 용도.
  */
 export function createAvatarRenderer(assets, opts = {}) {
+  const bodyBaker=createBodyBaker({makeCanvas});
   const fw = assets.frame.w;
   const fh = assets.frame.h;
   const ax = assets.anchor.x;
@@ -192,13 +193,13 @@ export function createAvatarRenderer(assets, opts = {}) {
     const g = gen;
     const all = Array.from({ length: frameCount }, (_, i) => i);
     const body=avatarBody(avatar);
-    const composition=isDefaultBody(body)?compose(layersOf(assets,avatar),all):request(withBody(avatar,DEFAULT_BODY)).promise.then(base=>{
-      if(g!==gen||!base.normal)return {cv:null,ms:0};
-      const t=performance.now(),cv=deformBodySheet(base.normal,body,{frameW:fw,frameH:fh,anchorX:ax,anchorY:ay,makeCanvas});
+    const composition=isDefaultBody(body)?compose(layersOf(assets,avatar),all):request(withBody(avatar,DEFAULT_BODY)).promise.then(async base=>{
+      if(g!==gen||e.cancelled||!base.normal)return {cv:null,ms:0};
+      const t=performance.now(),cv=await bodyBaker.bake(base.normal,body,{frameW:fw,frameH:fh,anchorX:ax,anchorY:ay},()=>g===gen&&!e.cancelled);
       return {cv,ms:performance.now()-t};
     });
     e.promise = composition.then(({ cv, ms }) => {
-      if (g !== gen) return e;
+      if (g !== gen||e.cancelled) return e;
       e.normal = cv;
       e.headTop = cv?headTopOf(cv):HEAD.fallback;
       e.state = 'ready';
@@ -250,6 +251,7 @@ export function createAvatarRenderer(assets, opts = {}) {
       return a.frames[i];
     },
     /** 합성을 미리 시작한다. 합성이 끝나면 resolve (실패해도 resolve). */
+    cancelPendingBody(avatar){const key=keyOf(avatar),e=sheetCache.get(key);if(e?.state==='loading'&&!isDefaultBody(avatarBody(avatar))){e.cancelled=true;sheetCache.delete(key);}},
     ready(avatar) {
       return request(avatar).promise;
     },
@@ -398,9 +400,10 @@ export function createAvatarRenderer(assets, opts = {}) {
         thumbCache.set(key, e);
         evict(thumbCache, THUMB_CACHE_MAX);
         const g = gen;
-        compose(layers, [frame]).then(({ cv }) => {
+        compose(layers, [frame]).then(async({ cv }) => {
           if (g !== gen) return;
-          e.canvas = deformBodySheet(cv,avatarBody(avatar),{frameW:fw,frameH:fh,anchorX:ax,anchorY:ay,makeCanvas});
+          e.canvas = isDefaultBody(avatarBody(avatar))?cv:await bodyBaker.bake(cv,avatarBody(avatar),{frameW:fw,frameH:fh,anchorX:ax,anchorY:ay},()=>g===gen);
+          if(g!==gen)return;
           e.preview=fittedThumb(e.canvas);
           e.state = 'ready';
           notify();
@@ -413,6 +416,7 @@ export function createAvatarRenderer(assets, opts = {}) {
     },
     clear() {
       gen++;
+      bodyBaker.dispose();
       onUpdate = null;
       sheetCache.clear();
       thumbCache.clear();

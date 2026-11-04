@@ -1776,7 +1776,7 @@ export function mount(root, app, opts = {}) {
     order.sort((a, b) => a.x - b.x);
     order.push(me); // 내 캐릭터는 마지막
     const visible = [];
-    const margin = avatarR.worldW;
+    const margin = avatarR.worldW*2;
     for (const p of order) {
       const sx = p.x - camX;
       if (sx < -margin || sx > viewW + margin) continue;
@@ -1844,7 +1844,7 @@ export function mount(root, app, opts = {}) {
       if(outfitReady)drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{...outfit,rear:p.anim==='climb'});
       if(outfitReady&&p.costume&&p.anim==='climb')avatarR.drawBackHair(ctx,dressed,Math.round(sx*k),pyD,k,frameOf(p,now));
       drawAdventureCharm(ctx,Math.round(sx*k),pyD,k,{fit:outfit.fit,left,hidden:p.anim==='climb'||p.anim==='prone'||!!p.costume,job:p.isSelf?job.id:p.attackJob,now,moving:p.anim==='walk',reduced:prefersReducedMotion()});
-      if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem,frame:frameOf(p,now),hand:avatarR.handFit?.(dressed,frameOf(p,now))});
+      if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem,frame:frameOf(p,now),bodyScale:Math.sqrt(avatarBody(dressed).shoulders/100),hand:avatarR.handFit?.(dressed,frameOf(p,now))});
       if((p.isSelf||p.attackJob)&&p.anim!=='climb'&&p.anim!=='prone')avatarR.drawGrip(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(p.isSelf&&!p.dead){if(equipPending&&!document.body.classList.contains('has-modal')){equipAt=now;equipPending=false;}if(!document.body.classList.contains('has-modal'))drawEquipBurst(ctx,Math.round(sx*k),pyD,k,Math.max(myLoadout()?.tier??0,myLoadout()?.shield??0),now-equipAt,{reduced:prefersReducedMotion()});}
       drawTraitAura(ctx,Math.round(sx*k),pyD,k,aura,now,{burstAge,reduced:prefersReducedMotion(),front:true});

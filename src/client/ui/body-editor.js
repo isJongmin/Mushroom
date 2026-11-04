@@ -23,7 +23,7 @@ export function createBodyEditor({on,initial,onChange}){
    on(slider,'input',()=>update({...value,[field.key]:Number(slider.value)},false));
    on(slider,'change',()=>{if(enabled)onChange({...value},{commit:true});});
    controls.set(field.key,{slider,output});
-   fieldset.append(h('div',{class:'body-slider'},h('div',{class:'body-slider-heading'},h('label',{for:id},field.label),output),slider,h('div',{class:'body-slider-scale',id:id+'-scale'},h('span',{},field.low),h('span',{},'기본 100%'),h('span',{},field.high))));
+   fieldset.append(h('div',{class:'body-slider'},h('div',{class:'body-slider-heading'},h('label',{for:id},field.label),output),slider,h('div',{class:'body-slider-scale',id:id+'-scale'},h('span',{},field.low+' 10%'),h('span',{},'기본 100%'),h('span',{},field.high+' 200%'))));
   }
   groups.append(fieldset);
  }
@@ -36,5 +36,5 @@ export function createBodyEditor({on,initial,onChange}){
  }
  function update(next,commit){if(!enabled)return;value=normalizeBody(next);paint();onChange({...value},{commit});}
  on(reset,'click',()=>update(DEFAULT_BODY,true));paint();
- return {el,getValue:()=>({...value}),setValue(next){value=normalizeBody(next);paint();},setEnabled(next){enabled=!!next;reset.disabled=!enabled;for(const {button}of presets)button.disabled=!enabled;for(const {slider}of controls.values())slider.disabled=!enabled;},paintCurrent(renderer,avatar,frame){const ctx=miniCanvas.getContext('2d');ctx.clearRect(0,0,112,136);renderer.draw(ctx,avatar,56,132,.95,frame,false);},paintPresets(renderer,avatar){for(const {preset,canvas}of presets){const av=withBody(avatar,preset.values),ctx=canvas.getContext('2d');ctx.clearRect(0,0,88,112);renderer.draw(ctx,av,44,108,.74,0,false);}}};
+ return {el,getValue:()=>({...value}),setValue(next){value=normalizeBody(next);paint();},setEnabled(next){enabled=!!next;reset.disabled=!enabled;for(const {button}of presets)button.disabled=!enabled;for(const {slider}of controls.values())slider.disabled=!enabled;},paintCurrent(renderer,avatar,frame){const ctx=miniCanvas.getContext('2d');ctx.clearRect(0,0,112,136);renderer.draw(ctx,avatar,56,132,.95*renderer.fitScale(avatar,106,132,frame),frame,false);},paintPresets(renderer,avatar){for(const {preset,canvas}of presets){const av=withBody(avatar,preset.values),ctx=canvas.getContext('2d');ctx.clearRect(0,0,88,112);renderer.draw(ctx,av,44,108,.74*renderer.fitScale(av,112,142,0),0,false);}}};
 }

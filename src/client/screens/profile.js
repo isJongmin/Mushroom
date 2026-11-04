@@ -240,8 +240,9 @@ export function mount(root, app, opts = {}) {
       if(!ok)renderer.ready(dressed);
       if(ok)lastReadyAvatar=dressed;
       const shown=ok?dressed:lastReadyAvatar||avatar,shownReady=renderer.isReady(shown);
+      const previewK=k*renderer.fitScale(shown,STAGE.w-10,STAGE.ay-6,fr);
       const outfit={fit:renderer.costumeFit(shown,fr),side:view==='side',rear:view==='back',time:now,moving:walking};
-      if(shownReady)drawCostume(c,rewards.costume,fx,fy,k,{...outfit,back:true});renderer.draw(c,shown,fx,fy,k,fr,false);if(shownReady)drawCostume(c,rewards.costume,fx,fy,k,outfit);if(shownReady&&view==='back'&&rewards.costume)renderer.drawBackHair(c,shown,fx,fy,k,fr);
+      if(shownReady)drawCostume(c,rewards.costume,fx,fy,previewK,{...outfit,back:true});renderer.draw(c,shown,fx,fy,previewK,fr,false);if(shownReady)drawCostume(c,rewards.costume,fx,fy,previewK,outfit);if(shownReady&&view==='back'&&rewards.costume)renderer.drawBackHair(c,shown,fx,fy,previewK,fr);
       bodyEditor.paintCurrent(renderer,shown,fr);
       drawAbilityEffect(c, selectedJob, 0, fx, fy, k, now-previewAttackAt);
     }

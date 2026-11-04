@@ -63,7 +63,7 @@ import { createJobProjectiles } from '../game/combat.js';
 import { h, setText, wait } from '../dom.js';
 import {
   WORLD, HEAD, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, MOBILE_MIN_CANVAS_H, DESKTOP_RESERVED_H, NICK_RE,
-  CHAT_MAX, CHAT_COOLDOWN_MS, MOVE_INTERVAL_MS, ROOM_CAPACITY, LEAVE_WAIT_MS, SYS_LEAVE_DELAY_MS, pixelScale,
+  CHAT_MAX, MOVE_INTERVAL_MS, ROOM_CAPACITY, LEAVE_WAIT_MS, SYS_LEAVE_DELAY_MS, pixelScale,
 } from '../constants.js';
 import { ROOM_MESSAGES as M, LOBBY_MESSAGES as LM, AppError, toAppError } from '../errors.js';
 import { createAvatarRenderer, smooth } from '../avatar.js';
@@ -83,6 +83,7 @@ import { createFx, prefersReducedMotion } from '../game/fx.js';
 import { openModal } from '../ui/modal.js';
 import { createRoomLink } from '../backend/room-link.js';
 import { createChatLog } from '../ui/chatlog.js';
+import { createChatOutbox } from '../game/chat-outbox.js';
 import { clearRoomSession } from '../store.js';
 import { cleanChatText } from '../backend/common.js';
 
@@ -180,7 +181,8 @@ export function mount(root, app, opts = {}) {
   let lastMoveSentAt = -Infinity;
   let sentKey = ''; // 마지막으로 보낸 'x|y|dir|s'
   let announce = false; // 다음 송신 기회에 바뀐 것이 없어도 현재 상태를 1회 보낸다 (새 멤버 입장, 재연결)
-  let lastChatAt = -Infinity;
+  let chatOutbox = null;
+  let composingChat = false, compositionEndedAt = -Infinity;
   const stats = { superJumps: 0, fxSent: 0 }; // (사이클 8) 계측
 
   // --- (사이클 9) 전투·몬스터·드롭 상태 ---------------------------------------
@@ -386,13 +388,14 @@ export function mount(root, app, opts = {}) {
 
   const chatInput = h('input', {
     type: 'text', class: 'bk-input bk-input--with-end', testid: 'chat-input', maxlength: String(CHAT_MAX), placeholder: '메시지를 입력하세요',
-    autocomplete: 'off', 'aria-label': '채팅 메시지', enterkeyhint: 'send',
+    autocomplete: 'off', 'aria-label': '채팅 메시지', enterkeyhint: 'send', autocapitalize:'off', spellcheck:'false',
   });
   const counter = h('span', { class: 'bk-counter', testid: 'chat-counter', hidden: true, 'aria-hidden': 'true' });
   const sendBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary chat-send', testid: 'chat-send', disabled: true }, '보내기');
   const chatHint = h('div', { class: 'bk-chip bk-chip--hint chat-float', testid: 'chat-hint', hidden: true }, M.COOLDOWN);
   const chatError = h('div', { class: 'bk-banner bk-banner--error chat-float', testid: 'chat-error', role: 'alert', hidden: true });
-  const chatRow = h('div', { class: 'chat-row' }, chatHint, chatError,
+  const chatQueueStatus=h('span',{class:'chat-queue-status',testid:'chat-queue-status',role:'status','aria-live':'polite',hidden:true});
+  const chatRow = h('div', { class: 'chat-row' }, chatHint, chatError,chatQueueStatus,
     h('div', { class: 'bk-input-wrap' }, chatInput, h('span', { class: 'bk-input-end' }, counter)),
     sendBtn);
 
@@ -402,9 +405,9 @@ export function mount(root, app, opts = {}) {
   const chatToggle=h('button',{type:'button',class:'bk-btn bk-btn--sm mobile-chat-toggle',testid:'mobile-chat-toggle','aria-expanded':'false'},'채팅');
   const col = h('main', { class: 'scr-game scr-room' }, stage,combatDock, touchRow, chatRow);
   const chatClose=h('button',{type:'button',class:'bk-btn rpg-chat-close',testid:'chat-close','aria-label':'채팅 닫기'},'닫기');chatRow.append(chatClose);
-  on(chatClose,'click',()=>{col.classList.remove('chat-open');chatToggle.setAttribute('aria-expanded','false');chatInput.blur();canvas.focus({preventScroll:true});computeLayout();});
-  hudL.append(chatToggle);
-  on(chatToggle,'click',()=>{const open=!col.classList.contains('chat-open');col.classList.toggle('chat-open',open);chatToggle.setAttribute('aria-expanded',String(open));if(open)chatInput.focus();else{chatInput.blur();canvas.focus({preventScroll:true});}computeLayout();});
+  on(chatClose,'click',()=>{chatLog.closeMobile();col.classList.remove('chat-open');chatToggle.setAttribute('aria-expanded','false');chatInput.blur();canvas.focus({preventScroll:true});computeLayout();});
+  growthHud.append(chatToggle);
+  on(chatToggle,'click',()=>{const open=!col.classList.contains('chat-open');col.classList.toggle('chat-open',open);chatToggle.setAttribute('aria-expanded',String(open));if(open){closeGameMenu();chatLog.open();chatInput.focus({preventScroll:true});}else{chatLog.closeMobile();chatInput.blur();canvas.focus({preventScroll:true});}computeLayout();});
   const portraitCanvas=h('canvas',{width:84,height:84,'aria-hidden':'true'});
   const hpFill=h('i'),hpValue=h('span',{class:'rpg-hp-value'}),hpTrack=h('div',{class:'rpg-hp-track',role:'progressbar','aria-label':'체력','aria-valuemin':'0'},hpFill);
   const playerName=h('strong',{},myNick),xpValue=h('small',{class:'rpg-xp-value',testid:'player-xp'}),xpFill=h('i');
@@ -412,7 +415,7 @@ export function mount(root, app, opts = {}) {
   const playerStatus=h('section',{class:'rpg-player-status',testid:'player-status','aria-label':'캐릭터 상태'},h('div',{class:'rpg-emblem','aria-hidden':'true'},portraitCanvas),h('div',{class:'rpg-player-info'},playerName,hpTrack,h('div',{class:'rpg-status-values'},hpValue,xpValue),xpTrack));
   const menuToggle=h('button',{type:'button',class:'rpg-menu-toggle',testid:'game-menu-toggle','aria-label':'게임 메뉴 열기','aria-expanded':'false','aria-controls':'room-game-menu'},h('span',{'aria-hidden':'true'},'☰'),h('small',{},'메뉴'));
   const menuHelp=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'controls-help'},'조작 안내');on(menuHelp,'click',()=>firstUse.request('controls',performance.now(),true));
-  const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},traitsBtn,chatToggle,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
+  const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},traitsBtn,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
   const soundButton=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'sound-toggle','aria-pressed':String(sound.enabled)},sound.enabled?'효과음 켜짐':'효과음 꺼짐');
   on(soundButton,'click',()=>{const enabled=sound.toggle();setText(soundButton,enabled?'효과음 켜짐':'효과음 꺼짐');soundButton.setAttribute('aria-pressed',String(enabled));if(enabled)sound.play('loot');});menu.append(soundButton);
   const coopTitle=h('strong'),coopList=h('ul'),coopHint=h('p');
@@ -491,8 +494,9 @@ export function mount(root, app, opts = {}) {
     stage.style.height = `${cssH}px`;
     canvas.style.width = `${cssW}px`;
     canvas.style.height = `${cssH}px`;
-    canvas.width = Math.round(cssW * dpr);
-    canvas.height = Math.round(cssH * dpr);
+    const backingW=Math.round(cssW*dpr),backingH=Math.round(cssH*dpr);
+    if(canvas.width!==backingW)canvas.width=backingW;
+    if(canvas.height!==backingH)canvas.height=backingH;
     hint.classList.toggle('narrow', cssW < 900); // 캔버스 가로 900px 미만이면 조작 힌트 숨김
     if (modeChanged) {
       chatLog.setMobile(mobile);
@@ -552,6 +556,8 @@ export function mount(root, app, opts = {}) {
     countDot.hidden = !(next === 'disconnected' || next === 'failed');
     const interactive = next === 'connected' || next === 'disconnected';
     chatInput.disabled = next !== 'connected';
+    chatToggle.disabled = !full;
+    chatOutbox?.setOnline(next === 'connected');
     for (const b of [leftBtn, rightBtn, crouchBtn, jumpBtn, attackBtn]) b.disabled = !interactive;
     touchFloat.classList.toggle('is-hidden', !full);
     if (!full) buffBar.hidden = true;
@@ -738,6 +744,7 @@ export function mount(root, app, opts = {}) {
       onChat(msg) {
         if (!live() || !msg) return;
         const self = msg.user_id === me.user_id;
+        if (self && chatOutbox?.accept(msg)) return;
         if (!chatLog.addChat(msg, self)) return; // 기록과 겹친 id
         const pl = players.get(msg.user_id);
         if (pl) setBubble(pl, msg.text);
@@ -1859,20 +1866,30 @@ export function mount(root, app, opts = {}) {
   // --- 채팅 (6장) -------------------------------------------------------------
   let hintTimer = 0;
   let errorTimer = 0;
-  let cooldownTimer = 0;
-  let sending = false;
-
+  chatOutbox = createChatOutbox({
+    send: text => app.backend.sendChat(roomId,text),
+    onPending(item){chatLog.setPending(item,myNick,{retry:id=>chatOutbox.retry(id),discard:id=>{chatLog.discardPending(id);chatOutbox.discard(id);}});},
+    onState(state){
+      chatQueueStatus.hidden=state.count===0;
+      setText(chatQueueStatus,state.paused?'전송을 확인해주세요 · 기록에서 재시도':state.count?`전송 대기 ${state.count}개`:'');
+      updateSendBtn();
+    },
+    onSent(item,msg){if(chatLog.confirmPending(item.id,msg)&&me)setBubble(me,msg.text);},
+    onFailed(item,err){
+      chatLog.setPending(item,myNick);chatLog.open();
+      const code=toAppError(err).code;
+      if(code==='NOT_MEMBER')rl?.notMember('send');
+      else showSendError(code==='TEXT_FORMAT'?M.TEXT_FORMAT:code==='RATE_LIMITED'?M.SEND_RATE_LIMITED:M.SEND_FAILED);
+    },
+  });
   function updateCounter() {
     const n = chatInput.value.length;
     counter.hidden = n === 0;
     setText(counter, `${n}/${CHAT_MAX}`);
     updateSendBtn();
   }
-  function inCooldown() {
-    return performance.now() - lastChatAt < CHAT_COOLDOWN_MS;
-  }
   function updateSendBtn() {
-    sendBtn.disabled = connection !== 'connected' || !chatInput.value.trim() || inCooldown();
+    sendBtn.disabled = connection !== 'connected' || !chatInput.value.trim() || !!chatOutbox?.snapshot().full || composingChat;
   }
   function showHint(text = M.COOLDOWN) {
     setText(chatHint, text);
@@ -1892,26 +1909,14 @@ export function mount(root, app, opts = {}) {
     const raw = chatInput.value;
     const text = cleanChatText(cleanInput(raw));
     if (!text) { if (raw.trim()) showSendError(M.TEXT_FORMAT); return; }
-    if (inCooldown() || sending) { showHint(); return; }
-    lastChatAt = performance.now();
-    sending = true;
+    if(composingChat)return;
+    const queued=chatOutbox.enqueue(text);
+    if(!queued){showHint('대기 메시지가 많아요. 전송 후 다시 보내주세요.');return;}
     chatInput.value = '';
+    chatError.hidden=true;
     updateCounter();
-    cancel(cooldownTimer);
-    cooldownTimer = later(updateSendBtn, CHAT_COOLDOWN_MS + 10);
-    // 서버 저장 성공 → 어댑터가 onChat으로 전달 (로그 + 말풍선). 실패하면 입력 복구 + 오류.
-    app.backend.sendChat(roomId, text).then(() => {
-      sending = false;
-    }, (err) => {
-      sending = false;
-      if (!alive) return;
-      if (!chatInput.value) { chatInput.value = raw; updateCounter(); }
-      const code = toAppError(err).code;
-      if (code === 'RATE_LIMITED') showHint(M.SEND_RATE_LIMITED);
-      else if (code === 'TEXT_FORMAT') showSendError(M.TEXT_FORMAT);
-      else if (code === 'NOT_MEMBER') rl?.notMember('send');
-      else showSendError(M.SEND_FAILED);
-    });
+    chatLog.open();
+
   }
 
   // --- 입력 이벤트 -----------------------------------------------------------
@@ -1926,13 +1931,15 @@ export function mount(root, app, opts = {}) {
     const typing = document.activeElement === chatInput;
     if (e.key === 'Enter') {
       if (typing) {
-        if (e.isComposing || e.keyCode === 229) return; // 한글 조합 중
+        if (e.isComposing || e.keyCode === 229 || composingChat || performance.now()-compositionEndedAt<80) return; // 한글 확정 Enter는 전송하지 않는다
+        if(e.repeat)return;
         e.preventDefault();
         trySend();
       } else if (isGameFocus() && connection === 'connected') {
         e.preventDefault();
         if(layout.mobile&&!col.classList.contains('chat-open')){col.classList.add('chat-open');chatToggle.setAttribute('aria-expanded','true');computeLayout();}
-        chatInput.focus();
+        chatLog.open();
+        chatInput.focus({preventScroll:true});
       }
       return;
     }
@@ -1940,7 +1947,7 @@ export function mount(root, app, opts = {}) {
       if (typing) {
         e.preventDefault();
         chatInput.blur();
-        if(layout.mobile){col.classList.remove('chat-open');chatToggle.setAttribute('aria-expanded','false');computeLayout();}
+        if(layout.mobile){chatLog.closeMobile();col.classList.remove('chat-open');chatToggle.setAttribute('aria-expanded','false');computeLayout();}
         canvas.focus({ preventScroll: true });
       }
       return;
@@ -1992,7 +1999,10 @@ export function mount(root, app, opts = {}) {
   });
   on(chatInput, 'focus', () => input.clear());
   on(chatInput, 'input', updateCounter);
-  on(sendBtn, 'click', () => { trySend(); });
+  on(chatInput,'compositionstart',()=>{composingChat=true;updateSendBtn();});
+  on(chatInput,'compositionend',()=>{composingChat=false;compositionEndedAt=performance.now();updateCounter();});
+  on(sendBtn,'pointerdown',e=>{if(e.pointerType==='mouse')e.preventDefault();});
+  on(sendBtn, 'click', () => { trySend();chatInput.focus({preventScroll:true}); });
   on(canvas, 'pointerdown', () => canvas.focus({ preventScroll: true }));
   // 포커스 테두리는 Tab 키로 캔버스에 들어왔을 때만 (자동/마우스 포커스는 표시 안 함)
   let tabNav = false;
@@ -2230,6 +2240,7 @@ export function mount(root, app, opts = {}) {
     if (delModal) { const m = delModal; delModal = null; m.close({ restoreFocus: false }); }
     remoteCompanions.clear();companion.reset();companionPoses=[];traitRetryAt.clear();mentorPanel?.destroy();traitsPanel?.destroy();progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
     gardenPanel.destroy(); garden.clear();
+    chatOutbox?.destroy();
     chatLog.destroy();
     link = null;
     // 채널 removeChannel까지 기다리되 화면 전환을 오래 막지 않는다. 그 뒤의 순서는 어댑터가 보장한다(chanIdle, leaveInFlight).

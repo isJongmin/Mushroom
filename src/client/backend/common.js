@@ -158,6 +158,11 @@ const MOB_S = new Set(['move', 'hit', 'die']);
 const numIn = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
 const COORD = 1e5;
 const MOBS_MAX = 80;
+const cleanImpact=p=>{
+  if(!p||typeof p.id!=='string'||!/^[a-zA-Z0-9:_-]{1,110}$/.test(p.id)||!numIn(p.x,-COORD,COORD)||!numIn(p.y,-COORD,COORD))return null;
+  if(p.skill!=null&&(!Number.isInteger(p.skill)||p.skill<0||p.skill>3))return null;
+  return {id:p.id,x:p.x,y:p.y,job:normalizeJob(p.job),skill:p.skill??0};
+};
 
 /** 보낸 쪽 표시를 붙인다 (어댑터 송신 직전) */
 export function stampGameEvent(event, payload, uid) {
@@ -189,9 +194,16 @@ function cleanGameEventPayload(event, p) {
       return {
         ...(p.loadout?{loadout:cleanLoadout(p.loadout)}:{}), job: normalizeJob(p.job), skill: p.skill == null ? 0 : Number.isInteger(p.skill) && p.skill >= 0 && p.skill <= 3 ? p.skill : -1, cooldown: numIn(p.cooldown, 0, 15) ? p.cooldown : null,
         user_id: p.user_id, x: p.x, y: p.y, dir: p.dir === 'left' ? 'left' : 'right', seq: Number.isInteger(p.seq) ? p.seq : 0,
+        ...(numIn(p.castAt,0,Number.MAX_SAFE_INTEGER)?{castAt:p.castAt}:{}),
+        ...(typeof p.castSession==='string'&&/^[a-zA-Z0-9_-]{1,64}$/.test(p.castSession)?{castSession:p.castSession}:{}),
         w: isNum(p.w) ? p.w : null, hits: isNum(p.hits) ? p.hits : null, dmin: isNum(p.dmin) ? p.dmin : null, dmax: isNum(p.dmax) ? p.dmax : null, el: isNum(p.el) ? p.el : null,
       };
     case 'impact':
+      if(p.impacts!=null){
+        if(!UID_OK(p.host)||!Array.isArray(p.impacts)||!p.impacts.length||p.impacts.length>24)return null;
+        const impacts=p.impacts.map(cleanImpact);if(impacts.some(i=>!i))return null;
+        return {host:p.host,impacts};
+      }
       if (!UID_OK(p.host) || typeof p.id !== 'string' || !/^[a-zA-Z0-9:_-]{1,110}$/.test(p.id)) return null;
       if (!numIn(p.x, -COORD, COORD) || !numIn(p.y, -COORD, COORD)) return null;
       if (p.skill != null && (!Number.isInteger(p.skill) || p.skill < 0 || p.skill > 3)) return null;
@@ -239,12 +251,28 @@ export function cleanGameEvent(event, p) {
  *   mobs: 최소 180ms 간격, 마지막 값만 보낸다(throttle).  그 밖: 이벤트마다 1초에 최대 12건, 넘으면 버린다(stats.evDropped).
  * send(event, payload) 를 그대로 부르거나 미룬다. cancel()로 대기 중인 송신을 버린다.
  */
-export function createEventGate(send, stats) {
+export function createEventGate(send, stats,{batchImpacts=false,schedule=setTimeout,cancel=clearTimeout}={}) {
   const mobs = createThrottle(180, (p) => send('mobs', p), { urgentMax: 0 });
   const recent = new Map(); // event -> [시각]
+  const pendingImpacts=new Map();let impactTimer=null;
+  const flushImpacts=()=>{
+    impactTimer=null;const now=performance.now(),r=recent.get('impact')||[];recent.set('impact',r);
+    while(r.length&&now-r[0]>=1000)r.shift();
+    while(pendingImpacts.size&&r.length<40){
+      const first=pendingImpacts.values().next().value,impacts=[];
+      for(const[key,p]of pendingImpacts){if(p.host!==first.host||p.mapId!==first.mapId)continue;pendingImpacts.delete(key);impacts.push({id:p.id,x:p.x,y:p.y,job:p.job,skill:p.skill});if(impacts.length===24)break;}
+      r.push(now);send('impact',{host:first.host,mapId:first.mapId,impacts});
+    }
+    if(pendingImpacts.size)impactTimer=schedule(flushImpacts,40);
+  };
   return {
     push(event, payload) {
       if (event === 'mobs') { mobs.push(payload); return true; }
+      if(event==='impact'&&batchImpacts){
+        const key=payload.mapId+':'+payload.host+':'+payload.id;
+        if(!pendingImpacts.has(key)&&pendingImpacts.size>=512){if(stats)stats.evDropped=(stats.evDropped||0)+1;return false;}
+        pendingImpacts.set(key,payload);if(impactTimer===null)impactTimer=schedule(flushImpacts,40);return true;
+      }
       const now = performance.now();
       let r = recent.get(event);
       if (!r) { r = []; recent.set(event, r); }
@@ -255,6 +283,6 @@ export function createEventGate(send, stats) {
       send(event, payload);
       return true;
     },
-    cancel() { mobs.cancel(); recent.clear(); },
+    cancel() { mobs.cancel(); recent.clear();pendingImpacts.clear();if(impactTimer!==null)cancel(impactTimer);impactTimer=null; },
   };
 }

@@ -88,4 +88,15 @@ body.portal-edition .portal-header-note{background:var(--read-night);color:var(-
 
 body.portal-edition .bk-modal button:disabled :is(strong,span,small){color:var(--read-muted)!important}
 body.portal-edition [data-layout=mobile] .bag-shortcut [data-testid=journal-open]{display:none}
+.journey-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
+.journey-heading>div{min-width:0}
+body.portal-edition .journey-fold{flex:none;min-height:36px;padding:6px 9px;background:var(--read-paper-raised);color:var(--read-ink);border:1px solid #91a483;border-radius:5px;font:650 11px system-ui;cursor:pointer}
+body.portal-edition .journey-card.is-minimized{width:220px;padding:11px 13px}
+body.portal-edition .journey-card.is-minimized h2{font-size:16px;margin:5px 0 3px;line-height:1.4}
+.journey-card.is-minimized :is(.journey-line,.journey-contract,.journey-hint,.journey-actions,.adventure-goal small){display:none!important}
+body.portal-edition .journey-card.is-minimized .adventure-goal{min-height:34px;padding:7px 0 0!important;margin-top:5px}
+@media(max-width:720px){body.portal-edition .journey-card.is-minimized{width:178px;padding:10px}body.portal-edition .journey-fold{min-height:44px;padding:6px}body.portal-edition .journey-card.is-minimized h2{font-size:14px}}
 @media(orientation:landscape) and (max-height:600px){body.portal-edition .journey-card h2{font-size:16px}body.portal-edition .journey-card .journey-hint{display:none}}
+
+body.portal-edition .rpg-menu [data-testid=render-quality]{width:100%;min-height:40px;margin-top:8px}
+.render-diagnostics{font:12px/1.8 system-ui;margin-top:12px;color:#f5f4df}.render-diagnostics summary{cursor:pointer;padding:6px 0}.render-diagnostics p{margin:6px 0;color:#c5d8c7}

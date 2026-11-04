@@ -23,6 +23,6 @@ for(const j of JOBS){
 console.log('PASS ultimate anticipation, decisive multi-hit finishers, damage totals, bounded camera impulse, reduced motion and teardown');
 const busy=createSkillAttacks();
 busy.add({...abilityStats('mage',3),user_id:'caster',seq:1,x:0,y:200,dir:'right'},0,false);
-for(let seq=2;seq<160;seq++)busy.add({...abilityStats('warrior',0),user_id:'other',seq,x:0,y:200,dir:'right'},1,false);
-assert.equal(busy.count,100);assert.ok(busy.snapshot().some(c=>c.id==='caster:1'));
+for(let seq=2;seq<1200;seq++)busy.add({...abilityStats('warrior',0),user_id:'other',seq,x:0,y:200,dir:'right'},1,false);
+assert.equal(busy.count,1024);assert.ok(busy.snapshot().some(c=>c.id==='caster:1'));
 console.log('PASS ordinary attack traffic cannot evict a playing ultimate; cast memory remains bounded');

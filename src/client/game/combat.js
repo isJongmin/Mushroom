@@ -1,5 +1,6 @@
 import { drawProjectileVisual, drawImpactVisual } from './skill-visuals.js';
 import { jobDefinition, abilityDefinition } from './jobs.js';
+import {drawCrowdProjectile} from './scene-budget.js';
 // (사이클 9) 전투: 판정 상자, 피해 숫자, 슬래시, HP 바, 유령, 비석. ARCHITECTURE "사이클 9 계약".
 // 좌표는 월드 단위. 그리기는 장치 px 컨텍스트(단위행렬)에 k = 장치 px / 월드로 하거나, HP 바·숫자처럼 CSS px 컨텍스트에 한다.
 // 판정 함수는 DOM이 없어도 동작한다(Node 단위 시험 가능). 그리기 함수는 canvas 컨텍스트만 받는다.
@@ -471,7 +472,7 @@ export function createJobProjectiles() {
           angle, radius: ability.pattern==='saw'?27:8, distance:0, at:now+delay, authoritative, dir,
           damage: { ...a, hits: Math.ceil(((ability.projectileHits ?? a.hits) - i) / count) } });
       }
-      if (list.length > 160) list.splice(0, list.length - 160);
+      if (list.length > 1024) list.splice(0, list.length - 1024);
     },
     update(dt, now, hit, visualHit) {
       for (let i = list.length - 1; i >= 0; i--) {
@@ -492,11 +493,17 @@ export function createJobProjectiles() {
       }
       for (let i = bursts.length - 1; i >= 0; i--) if (now - bursts[i].at > 600) bursts.splice(i, 1);
     },
-    draw(ctx, camX, camY, k, now) {
+    draw(ctx, camX, camY, k, now,{compact=false,localUserId=null}={}) {
       ctx.save(); ctx.setTransform(1, 0, 0, 1, 0, 0);
       const visible=(x,y,margin)=>!ctx.canvas||((x-camX)*k>=-margin&&(x-camX)*k<=ctx.canvas.width+margin&&(y-camY)*k>=-margin&&(y-camY)*k<=ctx.canvas.height+margin);
-      for (const p of list) if (now >= p.at && visible(p.x,p.y,160*k)) drawProjectileVisual(ctx,p,camX,camY,k,now);
-      for (const b of bursts) if(visible(b.x,b.y,220*k)) drawImpactVisual(ctx,b,camX,camY,k,now);
+      for (const p of list) if (now >= p.at && visible(p.x,p.y,160*k)) {
+        if(compact&&p.a.user_id!==localUserId)drawCrowdProjectile(ctx,p,camX,camY,k);
+        else drawProjectileVisual(ctx,p,camX,camY,k,now);
+      }
+      for (const b of bursts) if(visible(b.x,b.y,220*k)) {
+        if(compact&&!b.id.startsWith(localUserId+':')){ctx.strokeStyle='#e4f3cc';ctx.lineWidth=2*k;ctx.beginPath();ctx.arc((b.x-camX)*k,(b.y-camY)*k,Math.max(1,12*k),0,Math.PI*2);ctx.stroke();}
+        else drawImpactVisual(ctx,b,camX,camY,k,now);
+      }
       ctx.restore();
     },
     snapshot() { return { shots: list.map(p=>({id:p.id,x:p.x,y:p.y,angle:p.angle,at:p.at,pattern:abilityDefinition(p.a.job,p.a.skill??0).pattern,hits:p.damage.hits})), bursts:bursts.map(b=>({...b})) }; },

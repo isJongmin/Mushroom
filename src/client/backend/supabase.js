@@ -244,7 +244,7 @@ export function createSupabaseBackend(url, anonKey) {
       if (closed) return;
       stats.evSent++;
       ch.send({ type: 'broadcast', event, payload }).catch(() => {});
-    }, stats);
+    }, stats, {batchImpacts:true});
 
     // fx가 있는 move는 급송(간격 무시, 2초에 4회 상한)
     const mover = createThrottle(MOVE_INTERVAL_MS, (p) => {

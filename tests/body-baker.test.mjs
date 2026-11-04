@@ -1,0 +1,14 @@
+import assert from 'node:assert/strict';
+import {createCanvas} from '@napi-rs/canvas';
+import {createBodyBaker} from '../src/client/avatar-body-baker.js';
+import {deformBodySheet} from '../src/client/avatar-body-raster.js';
+import {normalizeBody} from '../src/client/avatar-body.js';
+const source=createCanvas(144,192);source.getContext('2d').fillRect(50,40,44,140);
+const body=normalizeBody({head:160}),options={frameW:144,frameH:192,anchorX:72};let fake;
+const baker=createBodyBaker({makeCanvas:createCanvas,workerFactory:()=>fake={jobs:[],terminated:false,postMessage(job){this.jobs.push(job);},terminate(){this.terminated=true;},complete(){const job=this.jobs.shift(),src=createCanvas(job.width,job.height),c=src.getContext('2d'),pixels=c.createImageData(job.width,job.height);pixels.data.set(new Uint8ClampedArray(job.buffer));c.putImageData(pixels,0,0);const cv=deformBodySheet(src,job.body,{...job.options,makeCanvas:createCanvas}),rgba=cv.getContext('2d').getImageData(0,0,cv.width,cv.height);this.onmessage({data:{id:job.id,width:cv.width,height:cv.height,geometry:cv.avatarGeometry,buffer:rgba.data.buffer}});}}});
+let valid=true;const first=baker.bake(source,body,options),obsolete=baker.bake(source,body,options,()=>valid),third=baker.bake(source,body,options);valid=false;
+assert.equal(fake.jobs.length,1,'one active source transfer');fake.complete();const result=await first;assert.equal(await obsolete,null);assert.equal(fake.jobs.length,1,'obsolete queued body skipped');fake.complete();assert(await third);
+const expected=deformBodySheet(source,body,{...options,makeCanvas:createCanvas});assert.deepEqual(result.avatarGeometry,expected.avatarGeometry);assert.deepEqual(result.getContext('2d').getImageData(0,0,result.width,result.height).data,expected.getContext('2d').getImageData(0,0,expected.width,expected.height).data);
+const abandoned=baker.bake(source,body,options),queued=baker.bake(source,body,options);baker.dispose();assert(fake.terminated);assert.equal(await abandoned,null);assert.equal(await queued,null);assert.equal(await baker.bake(source,body,options),null);
+const fallback=createBodyBaker({makeCanvas:createCanvas,workerFactory:()=>{throw Error('unsupported')}});assert(await fallback.bake(source,body,options));fallback.dispose();
+console.log('PASS worker queue pixel/geometry transfer, skipped obsolete jobs, bounded active transfer, termination, pending cancellation and unsupported-worker fallback');

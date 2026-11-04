@@ -7,10 +7,10 @@ export function drawItem(c,kind,x,y,k=1,color='#a7d2eb',tier=Math.max(0,GRADE_CO
  const r=(col,x,y,w,h)=>{c.fillStyle=col;c.fillRect(x,y,w,h);};
  if(held){
   // Compact held silhouettes; inventory/drop icons retain their richer outlines.
-  if(kind==='sword'){r('#486376',-2,-23,4,32);r('#edfaff',-1,-23,2,30);r(color,1,-21,1,28);r('#dcb56e',-5,7,10,3);r('#70543f',-1.5,11,3,9);}
-  if(kind==='bow'){r('#b18b5d',-5,-19,3,35);r('#d5ae79',-2,-14,3,25);r('#b18b5d',1,-8,3,14);r('#f3e4bc',-6,-19,1,35);r(color,3,-4,2,5);}
-  if(kind==='staff'){r('#8c6b85',-1.5,-16,3,39);r('#d8bb78',-3,-19,6,5);r(color,-4,-27,8,9);r('#effaff',-2,-25,2,4);}
-  if(kind==='claw'){r('#6d678a',-7,1,14,11);for(let n=0;n<3;n++){r(color,-6+n*5,-14,2,17);r('#eefaff',-6+n*5,-14,1,11);}r('#d8ac69',-7,9,14,2);}
+  if(kind==='sword'){r('#486376',-2,-42,4,51);r('#edfaff',-1,-41,2,48);r(color,1,-40,1,47);c.fillStyle='#edfaff';c.beginPath();c.moveTo(-2,-42);c.lineTo(0,-48);c.lineTo(2,-42);c.closePath();c.fill();r('#dcb56e',-5,7,10,3);r('#70543f',-1.5,11,3,9);}
+  if(kind==='bow'){r('#b18b5d',-5,-28,3,54);r('#d5ae79',-2,-21,3,40);r('#b18b5d',1,-13,3,26);r('#f3e4bc',-6,-28,1,54);r(color,3,-4,2,5);}
+  if(kind==='staff'){r('#8c6b85',-1.5,-34,3,57);r('#d8bb78',-3,-36,6,5);r(color,-4,-46,8,11);r('#effaff',-2,-44,2,6);}
+  if(kind==='claw'){r('#6d678a',-7,1,14,11);for(let n=0;n<3;n++){r(color,-6+n*5,-22,2,25);r('#eefaff',-6+n*5,-22,1,19);}r('#d8ac69',-7,9,14,2);}
   if(kind==='shield'){r('#48647e',-8,-16,16,22);r(color,-6,-14,12,18);r('#e2d5b4',-1,-13,2,19);r('#e2d5b4',-5,-5,10,2);}
   if(tier>=1){r('#e4c17b',-3,4,6,2);}
   if(tier>=2){r(color,-2,-7,4,4);}

@@ -1,4 +1,4 @@
-import {withBody,avatarBody} from '../avatar-body.js';
+import {withSkinColor,avatarSkinColor} from '../avatar-palette.js';
 import {createSceneBudget,scenePolicy,sceneDpr} from '../game/scene-budget.js';
 import {readPanelCollapsed,writePanelCollapsed} from '../ui/panel-preference.js';
 import {journeySummary,journeyActionLabel,equipmentUpgrade} from '../game/journey-journal.js';
@@ -743,7 +743,7 @@ export function mount(root, app, opts = {}) {
           if (!s || typeof s.user_id !== 'string' || !s.user_id || s.user_id.length > 64 || s.user_id === me.user_id) continue;
           seen.add(s.user_id);
           const nickname = nickOf(s);
-          const avatar = withBody(assets.sanitizeAvatar(s.avatar),s.body); // 7개 키 정규화 (옛 5키/eyes/없는 id → 기본값)
+          const avatar = withSkinColor(assets.sanitizeAvatar(s.avatar),s.skinColor); // 7개 키 정규화 (옛 5키/eyes/없는 id → 기본값)
           const existing = players.get(s.user_id);
           if (existing) {
             existing.nickname = nickname;
@@ -813,7 +813,7 @@ export function mount(root, app, opts = {}) {
       join: () => app.backend.joinRoom({ roomId, password: null, nickname: myNick }),
       open: (sink, signal) => {
         const token = ++openSeq;
-        const self = { nickname: me.nickname, avatar: me.avatar, body:avatarBody(me.avatar), title: me.title,costume:me.costume, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
+        const self = { nickname: me.nickname, avatar: me.avatar, skinColor:avatarSkinColor(me.avatar), title: me.title,costume:me.costume, mapId: currentArea, x: Math.round(me.x), y: Math.round(me.y) };
         return app.backend.connectRoom(roomId, { ...handlersFor(token), onDrop: sink.onDrop }, self, { signal });
       },
       heartbeat: async () => {
@@ -1776,7 +1776,7 @@ export function mount(root, app, opts = {}) {
     order.sort((a, b) => a.x - b.x);
     order.push(me); // 내 캐릭터는 마지막
     const visible = [];
-    const margin = avatarR.worldW*2;
+    const margin = avatarR.worldW;
     for (const p of order) {
       const sx = p.x - camX;
       if (sx < -margin || sx > viewW + margin) continue;
@@ -1844,7 +1844,7 @@ export function mount(root, app, opts = {}) {
       if(outfitReady)drawCostume(ctx,p.costume,Math.round(sx*k),pyD,k,{...outfit,rear:p.anim==='climb'});
       if(outfitReady&&p.costume&&p.anim==='climb')avatarR.drawBackHair(ctx,dressed,Math.round(sx*k),pyD,k,frameOf(p,now));
       drawAdventureCharm(ctx,Math.round(sx*k),pyD,k,{fit:outfit.fit,left,hidden:p.anim==='climb'||p.anim==='prone'||!!p.costume,job:p.isSelf?job.id:p.attackJob,now,moving:p.anim==='walk',reduced:prefersReducedMotion()});
-      if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem,frame:frameOf(p,now),bodyScale:Math.sqrt((avatarBody(dressed).shoulders+avatarBody(dressed).legLength)/200),hand:avatarR.handFit?.(dressed,frameOf(p,now))});
+      if(p.isSelf||p.attackJob)drawEquippedGear(ctx,p.isSelf?job.id:p.attackJob,p.loadout,Math.round(sx*k),pyD,k,now,{left,attacking:p.anim==='attack',hidden:p.anim==='climb'||p.anim==='prone',reduced:prefersReducedMotion(),drawItem,frame:frameOf(p,now),hand:avatarR.handFit?.(dressed,frameOf(p,now))});
       if((p.isSelf||p.attackJob)&&p.anim!=='climb'&&p.anim!=='prone')avatarR.drawGrip(ctx,shown,Math.round(sx*k),pyD,k,frameOf(p,now),left);
       if(p.isSelf&&!p.dead){if(equipPending&&!document.body.classList.contains('has-modal')){equipAt=now;equipPending=false;}if(!document.body.classList.contains('has-modal'))drawEquipBurst(ctx,Math.round(sx*k),pyD,k,Math.max(myLoadout()?.tier??0,myLoadout()?.shield??0),now-equipAt,{reduced:prefersReducedMotion()});}
       drawTraitAura(ctx,Math.round(sx*k),pyD,k,aura,now,{burstAge,reduced:prefersReducedMotion(),front:true});
@@ -2332,7 +2332,7 @@ export function mount(root, app, opts = {}) {
     // Prioritize the player while map images are still loading. NPCs request
     // their outfits when drawn, so off-map characters never delay entry.
     avatarR = createAvatarRenderer(assets);
-    const playerAvatar = withBody(assets.sanitizeAvatar(profile.avatar),profile.body);
+    const playerAvatar = withSkinColor(assets.sanitizeAvatar(profile.avatar),profile.skinColor);
     const playerReady = avatarR.ready(costumeAvatar(playerAvatar,equippedCostume(app.profileKey)));
     villageMap = await app.mapAssets.catch(() => null);
     for (const id of AREA_IDS) areaCatalog.set(id, areaMap(id, villageMap));

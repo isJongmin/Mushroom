@@ -14,6 +14,6 @@ for(const kind of ['sword','staff'])for(const left of [false,true]){
  assert(b.width>b.height,kind+' rests nearly horizontal instead of covering the face');
 }
 const big=measure(c=>drawEquippedGear(c,'warrior',{weapon:'sword',tier:0,shield:-1},90,130,1,0,{drawItem,bodyScale:1}));
-const small=measure(c=>drawEquippedGear(c,'warrior',{weapon:'sword',tier:0,shield:-1},90,130,1,0,{drawItem,bodyScale:.1}));assert(small.pixels<big.pixels*.3);
+const small=measure(c=>drawEquippedGear(c,'warrior',{weapon:'sword',tier:0,shield:-1},90,130,1,0,{drawItem,bodyScale:.1}));assert.deepEqual(small,big,'legacy body scale options no longer change equipped gear');
 for(const [kind,minLength]of [['sword',65],['staff',68],['bow',53],['claw',32]]){const b=measure(c=>drawItem(c,kind,90,90,1,GRADE_COLORS[0],0,{held:true}));assert(b.height>=minLength,kind+' has restored length without enlarging the grip');}
-console.log('PASS 25 slender held weapon/grade silhouettes, restored blade/shaft length, horizontal sword/staff rest and scaled small-body gear');
+console.log('PASS 25 slender held weapon/grade silhouettes, restored blade/shaft length, horizontal sword/staff rest and fixed-proportion gear');

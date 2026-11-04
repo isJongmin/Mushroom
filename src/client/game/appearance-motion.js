@@ -25,11 +25,11 @@ export function petPose(id,now,{moving=false,reaction=null,reduced=false}={}) {
  }
  return {x,y,angle,sx,sy,fly,seed};
 }
-export function drawEquippedGear(c,job,l,x,y,k,now,{left=false,hidden=false,reduced=false,drawItem,frame=2,hand=null,bodyScale=1}={}) {
+export function drawEquippedGear(c,job,l,x,y,k,now,{left=false,hidden=false,reduced=false,drawItem,frame=2,hand=null}={}) {
  if(hidden||!l||!drawItem)return;
  const tier=l.tier||0,dir=left?-1:1,anchors=handAnchor(frame);
  const near=hand?.near||{x:anchors.N[0],y:anchors.N[1]},far=hand?.far||{x:anchors.F[0],y:anchors.F[1]};
- const kind=l.weapon||WEAPONS[job]||'sword',size=Math.max(.35,Math.min(1.25,bodyScale)),scale=(kind==='claw'?.66:.8)*size;
+ const kind=l.weapon||WEAPONS[job]||'sword',scale=kind==='claw'?.66:.8;
  // Hand-local grip coordinates match drawItem's unrotated, held geometry.
  const grip={sword:[0,15],bow:[4,-2],staff:[0,15],claw:[0,8]}[kind];
  // The weapon pivots at the palm, never at the centre of its inventory icon.
@@ -38,7 +38,7 @@ export function drawEquippedGear(c,job,l,x,y,k,now,{left=false,hidden=false,redu
    :frame===12?{sword:1.25,bow:.12,staff:.65,claw:1.55}[kind]:rest;
  c.save();c.translate(x,y);c.scale(dir,1);
  if(tier>=2){c.globalAlpha=.12;c.fillStyle=GRADE_COLORS[tier];c.beginPath();c.ellipse(0,-3*k,(19+tier*2)*k,5*k,0,0,Math.PI*2);c.fill();c.globalAlpha=1;}
- if(l.shield>=0)drawItem(c,'shield',far.x*k,(far.y+3)*k,.42*size*k,GRADE_COLORS[l.shield],l.shield,{held:true});
+ if(l.shield>=0)drawItem(c,'shield',far.x*k,(far.y+3)*k,.42*k,GRADE_COLORS[l.shield],l.shield,{held:true});
  c.translate(near.x*k,near.y*k);c.rotate(angle);
  drawItem(c,kind,-grip[0]*scale*k,-grip[1]*scale*k,scale*k,GRADE_COLORS[tier],tier,{held:true});
  c.restore();

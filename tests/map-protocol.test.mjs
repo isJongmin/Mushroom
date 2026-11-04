@@ -1,4 +1,3 @@
-import {DEFAULT_BODY} from '../src/client/avatar-body.js';
 import assert from 'node:assert/strict';
 import { cleanPresenceState, cleanGameEvent, GAME_EVENTS, stampGameEvent } from '../src/client/backend/common.js';
 import { cleanMove } from '../src/client/game/physics.js';
@@ -24,7 +23,7 @@ for (const mapId of [undefined, 'village', 'forest', 'quarry', '__proto__', '../
   const p = cleanPresenceState({ ...presence, mapId });
   assert.equal(p.mapId, expected);
   assert.equal(p.avatar, avatar);
-  assert.deepEqual({ ...p, mapId: undefined }, { ...presence, body:DEFAULT_BODY, costume:null,title:null, mapId: undefined });
+  assert.deepEqual({ ...p, mapId: undefined }, { ...presence, skinColor:null, costume:null,title:null, mapId: undefined });
   assert.deepEqual(cleanMove({ ...move, mapId }), { ...move, mapId: expected });
   for (const event of GAME_EVENTS) {
     const legacy = cleanGameEvent(event, events[event]);

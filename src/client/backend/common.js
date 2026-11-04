@@ -1,4 +1,4 @@
-import {normalizeBody} from '../avatar-body.js';
+import {cleanSkinColor} from '../avatar-palette.js';
 import {cleanLoadout,itemOK,STAGES} from '../game/progression.js';
 import {cleanCostume} from '../game/reward-costumes.js';
 import { cleanGarden, GARDEN_TITLE,BOSS_TITLE } from '../game/garden.js';
@@ -79,7 +79,7 @@ export function cleanPresenceState(s) {
     costume: cleanCostume(s.costume),
     title: [GARDEN_TITLE,BOSS_TITLE].includes(s.title)?s.title:null,
     avatar: s.avatar && typeof s.avatar === 'object' ? s.avatar : null,
-    body: normalizeBody(s.body),
+    skinColor: cleanSkinColor(s.skinColor),
     x: isNum(s.x) ? s.x : null,
     y: isNum(s.y) ? s.y : null,
   };

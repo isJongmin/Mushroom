@@ -154,3 +154,5 @@ body.portal-edition .journey-card.is-tucked .journey-fold{min-width:84px;min-hei
  .portal-edition .body-mini-preview{display:flex;align-items:center;gap:12px;position:sticky;top:0;z-index:1;background:#f5f5e9;border:1px solid #b2c0a3;border-radius:10px;margin:0 0 12px;padding:4px 12px;box-shadow:0 3px 12px #203c2b14}
  .portal-edition .body-mini-preview canvas{width:80px;height:97px;flex:none}.portal-edition .body-mini-preview strong{display:block;color:#213b30!important;font-size:13px;margin-bottom:7px}.portal-edition .body-mini-preview span{display:block;color:#4b634e;font-size:11px;line-height:1.7}
 }
+/* Keep the selected studio step readable above inherited button colors. */
+body.portal-edition:not([data-screen=room]) .studio-tabs .bk-btn[aria-selected=true]{color:#fff7e0!important}

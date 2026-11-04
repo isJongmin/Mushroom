@@ -1,3 +1,5 @@
+import {expandWardrobe} from './wardrobe-catalog.js';
+import {recolorAvatarSheet} from './avatar-palette.js';
 // 아트 에셋 로더 (ARCHITECTURE "복셀 아트 계약", 사이클 5).
 // - assets/avatar/manifest.json: frame/anchor/density/frames/animations/layerOrder({layer,part,blend})/parts/presets.
 //   레이어 시트(1152x192, 8프레임)는 부팅 때 받지 않고, 실제로 그릴 조합의 레이어만 필요할 때 받는다(getLayer).
@@ -200,7 +202,8 @@ function fallbackManifest() {
  * 부팅 때는 manifest만 받는다. 레이어 PNG는 getLayer로 필요할 때(그릴 조합이 생겼을 때) 받는다.
  */
 export async function loadAvatarAssets() {
-  const rawManifest = await fetchJson(new URL('avatar/manifest.json', ASSET_ROOT));
+  const expanded=expandWardrobe(await fetchJson(new URL('avatar/manifest.json',ASSET_ROOT)));
+  const rawManifest=expanded.manifest;
   const revision = typeof rawManifest?.revision === 'string' ? rawManifest.revision.slice(0, 64) : '';
   const manifest = normalizeAvatarManifest(rawManifest);
   if (!manifest) warnOnce('avatar:manifest', 'assets/avatar/manifest.json이 없거나 계약 형식이 아닙니다 (단색 대체 아바타로 그립니다)');
@@ -225,8 +228,21 @@ export async function loadAvatarAssets() {
     if (!hasLayer(layer, id)) return Promise.resolve(null);
     const key = `${layer}/${id}`;
     let e = imgs.get(key);
+    if(e?.virtual){imgs.delete(key);imgs.set(key,e);}
     if (!e) {
-      e = { img: undefined, promise: null };
+      const variant=expanded.variants.get(layerPart.get(layer)+'/'+id);
+      e = { img: undefined, promise: null,virtual:!!variant };
+      imgs.set(key,e);
+      if(variant){
+        e.promise=getLayer(layer,variant.source).then(img=>{
+          e.img=img;
+          if(img&&!layer.startsWith('shade_'))try{e.img=recolorAvatarSheet(img,variant,(w,h)=>{if(typeof OffscreenCanvas!=='undefined')return new OffscreenCanvas(w,h);const c=document.createElement('canvas');c.width=w;c.height=h;return c;});}catch{warnOnce('palette:'+key,'색상 변환을 사용할 수 없어 원본을 표시합니다');}
+          if(e.img)loaded++;
+          const colored=[...imgs].filter(([,v])=>v.virtual&&v.img!==undefined);while(colored.length>24)imgs.delete(colored.shift()[0]);
+          return e.img;
+        });
+        return e.promise;
+      }
       const url = new URL(`avatar/${layer}/${id}.png`, ASSET_ROOT);
       if (revision) url.searchParams.set('v', revision);
       e.promise = loadImage(url).then((img) => {

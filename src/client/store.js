@@ -1,4 +1,4 @@
-import {normalizeBody} from './avatar-body.js';
+import {cleanSkinColor} from './avatar-palette.js';
 // 브라우저 저장소: 프로필(localStorage)과 방 재입장 정보(sessionStorage).
 // ARCHITECTURE 결정 3: `mushroom:profile` = { nickname, avatar(7키) } — 서버에 저장하지 않는다.
 // ARCHITECTURE 결정 6: sessionStorage `mushroom:room` = { roomId, nickname, owner(사이클 8) } — 새로고침 재입장용, 나가기·방 삭제에서 지운다.
@@ -20,7 +20,7 @@ export function readProfile(key) {
     if (!o || typeof o !== 'object' || typeof o.nickname !== 'string') return null;
     const nickname = o.nickname.trim();
     if (!NICK_RE.test(nickname)) return null;
-    return { nickname, avatar: normalizeAvatar(o.avatar), job: normalizeJob(o.job), body: normalizeBody(o.body) };
+    return { nickname, avatar: normalizeAvatar(o.avatar), job: normalizeJob(o.job), skinColor: cleanSkinColor(o.skinColor) };
   } catch {
     return null;
   }
@@ -29,7 +29,7 @@ export function readProfile(key) {
 /** @returns true면 저장 성공, false면 STORAGE 실패 (메모리로 진행) */
 export function writeProfile(key, profile) {
   try {
-    localStorage.setItem(key, JSON.stringify({ nickname: profile.nickname, avatar: pickAvatar(profile.avatar), job: normalizeJob(profile.job), body: normalizeBody(profile.body) }));
+    localStorage.setItem(key, JSON.stringify({ nickname: profile.nickname, avatar: pickAvatar(profile.avatar), job: normalizeJob(profile.job), skinColor: cleanSkinColor(profile.skinColor) }));
     return true;
   } catch {
     return false;

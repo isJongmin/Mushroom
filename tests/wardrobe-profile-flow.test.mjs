@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import {readFileSync} from 'node:fs';
+import {createCanvas,loadImage} from '@napi-rs/canvas';
+import {installDomFixture} from './helpers/dom-fixture.mjs';
+import {normalizeAvatar} from '../src/client/avatar-data.js';
+import {expandWardrobe} from '../src/client/wardrobe-catalog.js';
+import {recolorAvatarSheet} from '../src/client/avatar-palette.js';
+import {readProfile} from '../src/client/store.js';
+import {mount} from '../src/client/screens/profile.js';
+const dom=installDomFixture({createCanvas}),memory=new Map(),frames=new Map();let frameId=0;
+globalThis.window=new EventTarget();window.devicePixelRatio=1;globalThis.getComputedStyle=()=>({getPropertyValue:()=> '3'});
+globalThis.localStorage={getItem:k=>memory.get(k)??null,setItem:(k,v)=>memory.set(k,v)};
+globalThis.requestAnimationFrame=fn=>{frames.set(++frameId,fn);return frameId;};globalThis.cancelAnimationFrame=id=>frames.delete(id);
+globalThis.OffscreenCanvas=class{constructor(w,h){return createCanvas(w,h)}};
+const raw=JSON.parse(readFileSync(new URL('../assets/avatar/manifest.json',import.meta.url))),{manifest:m,variants}=expandWardrobe(raw),images=new Map(),ids=Object.fromEntries(Object.entries(m.parts).map(([p,items])=>[p,new Set(items.map(i=>i.id))]));
+const assets={...m,frameCount:m.frames.length,frameNames:m.frames,source:'manifest',frameIndex:Object.fromEntries(m.frames.map((n,i)=>[n,i])),defaultAvatar:normalizeAvatar(raw.presets[0].avatar),
+ sanitizeAvatar:a=>normalizeAvatar(a,{ids}),labelOf:(part,id)=>m.parts[part].find(p=>p.id===id)?.label||id,
+ hasLayer:(layer,id)=>m.files[layer]?.includes(id),getLayer(layer,id){const key=layer+'/'+id;if(!images.has(key)){const part=m.layerOrder.find(l=>l.layer===layer).part,v=variants.get(part+'/'+id);images.set(key,v?this.getLayer(layer,v.source).then(img=>layer.startsWith('shade_')?img:recolorAvatarSheet(img,v,createCanvas)):loadImage(new URL('../assets/avatar/'+key+'.png',import.meta.url).pathname));}return images.get(key);}};
+const tick=()=>new Promise(resolve=>setImmediate(resolve)),nav=[],root=document.createElement('div');
+const app={mode:'local',profileKey:'qa',profile:{nickname:'옛캐릭터',avatar:raw.presets[0].avatar,body:{head:200}},providers:{},assets:Promise.resolve(assets),go:(...args)=>nav.push(args),placeModeBadge(){}};
+const screen=mount(root,app,{mode:'edit'});await tick();assert(app.providers.profile().ready);
+assert.equal(dom.all(root).filter(n=>n.tagName==='INPUT'&&n.getAttribute('type')==='range').length,0,'body sliders are removed');assert(!dom.find(root,'body-editor'));
+dom.find(root,'tab-skin').dispatchEvent(new Event('click'));assert(!dom.find(root,'skin-color-controls').hidden);
+const hex=dom.find(root,'skin-color-hex');hex.value='#B47755';hex.dispatchEvent(new Event('input'));assert.equal(app.providers.profile().skinColor,'#b47755');assert.equal(app.providers.profile().avatar.skin,'light');
+hex.value='oops';hex.dispatchEvent(new Event('input'));assert.equal(hex.getAttribute('aria-invalid'),'true');dom.find(root,'create-submit').dispatchEvent(new Event('click'));assert.equal(nav.length,0,'invalid color must be corrected before save');
+hex.value='#B47755';hex.dispatchEvent(new Event('input'));
+dom.find(root,'tab-hair').dispatchEvent(new Event('click'));assert(dom.find(root,'skin-color-controls').hidden);const search=dom.find(root,'wardrobe-search');search.value='실버';search.dispatchEvent(new Event('input'));assert.match(dom.find(root,'wardrobe-count').textContent,/3 \/ 35/);
+const silver=dom.find(root,'slot-hair-silver-wolf'),event=new Event('click');Object.defineProperty(event,'target',{value:silver});dom.find(root,'slot-grid').dispatchEvent(event);assert.equal(app.providers.profile().avatar.hair,'silver-wolf');assert.equal(app.providers.profile().skinColor,'#b47755','hair changes preserve custom skin');
+search.value='없는 스타일';search.dispatchEvent(new Event('input'));assert(!dom.find(root,'wardrobe-empty').hidden);
+dom.find(root,'create-submit').dispatchEvent(new Event('click'));assert.equal(nav.at(-1)[0],'lobby');assert.equal(app.profile.skinColor,'#b47755');assert.equal(readProfile('qa').skinColor,'#b47755');assert(!('body'in app.profile));assert.equal(Object.keys(app.profile.avatar).length,7);
+screen.unmount();assert.equal(frames.size,0);
+const original=structuredClone(app.profile),editRoot=document.createElement('div'),edit=mount(editRoot,app,{mode:'edit'});await tick();assert.equal(dom.find(editRoot,'skin-color-hex').value,'#b47755');dom.find(editRoot,'tab-skin').dispatchEvent(new Event('click'));
+const base=dom.find(editRoot,'slot-skin-light'),click=new Event('click');Object.defineProperty(click,'target',{value:base});dom.find(editRoot,'slot-grid').dispatchEvent(click);assert.equal(app.providers.profile().skinColor,null,'the current light skin swatch clears custom color too');dom.find(editRoot,'profile-cancel').dispatchEvent(new Event('click'));assert.deepEqual(app.profile,original);edit.unmount();await tick();assert.equal(frames.size,0);
+console.log('PASS wardrobe-only profile: no proportions; custom skin validation/save/reentry/cancel; search/empty state; new hair selection retains tint; swatches clear tint; cleanup');

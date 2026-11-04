@@ -1,5 +1,4 @@
-import {avatarBody,avatarBodyKey,isDefaultBody,withBody,DEFAULT_BODY,bodyPoint,bodyY,bodyWidth} from './avatar-body.js';
-import {createBodyBaker} from './avatar-body-baker.js';
+import {avatarSkinColor,recolorAvatarSheet} from './avatar-palette.js';
 import {handAnchor} from './game/avatar-hand-anchors.js';
 // 아바타 렌더러 (ARCHITECTURE "복셀 아트 계약", 사이클 5).
 // 파이프라인:
@@ -53,19 +52,16 @@ export function layersOf(assets, avatar, onlyParts) {
  * @param opts.onUpdate 합성이 끝날 때마다(여러 개는 한 번으로 묶어) 부른다. 화면이 다시 그리는 용도.
  */
 export function createAvatarRenderer(assets, opts = {}) {
-  const bodyBaker=createBodyBaker({makeCanvas});
   const fw = assets.frame.w;
   const fh = assets.frame.h;
   const ax = assets.anchor.x;
   const ay = assets.anchor.y;
   const density = assets.density;
   const frameCount = assets.frameCount;
-  const geometry=cv=>cv?.avatarGeometry||{w:fw,h:fh,ax,ay,top:0,left:-ax};
-  const sheetBytes=e=>(e.normal?.width||0)*(e.normal?.height||0)*4+(e.flipped?.width||0)*(e.flipped?.height||0)*4;
-  function trimSheets(protectedEntry){let bytes=[...sheetCache.values()].reduce((n,e)=>n+sheetBytes(e),0);for(const [key,e]of sheetCache){if(bytes<=128*1024*1024)break;if(e===protectedEntry||e.state==='loading')continue;bytes-=sheetBytes(e);sheetCache.delete(key);}}
   const anims = assets.animations;
   const idleFrame = (anims.idle && anims.idle.frames[0]) || 0;
   const sheetCache = new Map(); // key -> entry { state: 'loading'|'ready', normal, flipped, headTop }
+  const skinCache=new Map();
   const thumbCache = new Map(); // key -> entry { state, canvas }
   let gen = 0; // clear() 이후 끝난 합성은 버린다
   let onUpdate = typeof opts.onUpdate === 'function' ? opts.onUpdate : null;
@@ -88,8 +84,11 @@ export function createAvatarRenderer(assets, opts = {}) {
   };
 
   /** 레이어를 frames 위치(프레임 번호 배열)에 합성. 레이어 받기가 끝나야 resolve. */
-  async function compose(layers, frames) {
-    const imgs = await Promise.all(layers.map((l) => assets.getLayer(l.layer, l.id)));
+  async function compose(layers, frames,skinColor=null) {
+    const imgs = await Promise.all(layers.map(async l=>{
+      const img=await assets.getLayer(l.layer,l.id);if(!img||!skinColor||l.part!=='skin')return img;
+      const key=l.id+skinColor;let tinted=touch(skinCache,key);if(!tinted){try{tinted=recolorAvatarSheet(img,{color:skinColor,mode:'skin'},makeCanvas);}catch{tinted=img;}skinCache.set(key,tinted);evict(skinCache,8);}return tinted;
+    }));
     // 모자 안쪽 머리카락은 챙 아래부터만 그린다. 리본은 머리를 덮지 않는다.
     // 합성에 실제 모자가 포함될 때만 적용하므로 헤어 선택 썸네일은 유지한다.
     const hatIndexes = layers.map((l, i) => l.part === 'hat' && !['ribbon-pink', 'warrior-circlet'].includes(l.id) ? i : -1).filter((i) => i >= 0 && imgs[i]);
@@ -151,18 +150,17 @@ export function createAvatarRenderer(assets, opts = {}) {
     return { cv, ms: performance.now() - t0 };
   }
 
-  function boundsOf(cv,frame=idleFrame){
-    const g=geometry(cv),data=cv.getContext('2d').getImageData(frame*g.w,0,g.w,g.h).data;
-    let x1=g.w,y1=g.h,x2=-1,y2=-1;
-    for(let y=0;y<g.h;y++)for(let x=0;x<g.w;x++)if(data[(y*g.w+x)*4+3]>ALPHA_TOP){x1=Math.min(x1,x);x2=Math.max(x2,x);y1=Math.min(y1,y);y2=Math.max(y2,y);}
-    return x2<0?{left:0,right:0,top:HEAD.fallback,bottom:0}:{left:(x1-g.ax)/density,right:(x2+1-g.ax)/density,top:(g.ay-y1)/density,bottom:(y2+1-g.ay)/density};
+  function headTopOf(cv, frame = idleFrame) {
+    try {
+      const c = cv.getContext('2d');
+      const data = c.getImageData(frame * fw, 0, fw, fh).data;
+      for (let y = 0; y < fh; y++) {
+        for (let x = 0; x < fw; x++) if (data[(y * fw + x) * 4 + 3] > ALPHA_TOP) return (ay - y) / density;
+      }
+    } catch { /* 읽기 실패: 기본값 */ }
+    return HEAD.fallback;
   }
-  function headTopOf(cv,frame=idleFrame){try{return boundsOf(cv,frame).top;}catch{return HEAD.fallback;}}
-  function fittedThumb(cv){
-    if(!cv?.avatarGeometry)return cv;
-    const g=geometry(cv),b=boundsOf(cv,0),scale=Math.min(1,(fw-8)/Math.max(1,(b.right-b.left)*density),(ay-8)/Math.max(1,b.top*density));
-    const out=makeCanvas(fw,fh),c=out.getContext('2d');smooth(c);c.drawImage(cv,0,0,g.w,g.h,ax-g.ax*scale,ay-g.ay*scale,g.w*scale,g.h*scale);return out;
-  }
+
   function flipSheet(normal) {
     const flipped = makeCanvas(normal.width, fh);
     const c = flipped.getContext('2d');
@@ -175,7 +173,7 @@ export function createAvatarRenderer(assets, opts = {}) {
     return flipped;
   }
 
-  const keyOf = (avatar) => PART_KEYS.map((p) => avatar[p]).join('|')+'#'+avatarBodyKey(avatar);
+  const keyOf = (avatar) => PART_KEYS.map((p) => avatar[p]).join('|')+'#'+(avatarSkinColor(avatar)||'');
 
   /** 조합 시트 엔트리 (없으면 합성 시작) */
   function request(avatar) {
@@ -192,18 +190,11 @@ export function createAvatarRenderer(assets, opts = {}) {
     }
     const g = gen;
     const all = Array.from({ length: frameCount }, (_, i) => i);
-    const body=avatarBody(avatar);
-    const composition=isDefaultBody(body)?compose(layersOf(assets,avatar),all):request(withBody(avatar,DEFAULT_BODY)).promise.then(async base=>{
-      if(g!==gen||e.cancelled||!base.normal)return {cv:null,ms:0};
-      const t=performance.now(),cv=await bodyBaker.bake(base.normal,body,{frameW:fw,frameH:fh,anchorX:ax,anchorY:ay},()=>g===gen&&!e.cancelled);
-      return {cv,ms:performance.now()-t};
-    });
-    e.promise = composition.then(({ cv, ms }) => {
-      if (g !== gen||e.cancelled) return e;
+    e.promise = compose(layersOf(assets, avatar), all,avatarSkinColor(avatar)).then(({ cv, ms }) => {
+      if (g !== gen) return e;
       e.normal = cv;
-      e.headTop = cv?headTopOf(cv):HEAD.fallback;
+      e.headTop = headTopOf(cv);
       e.state = 'ready';
-      trimSheets(e);
       stats.composites++;
       stats.totalMs += ms;
       stats.lastMs = ms;
@@ -231,11 +222,6 @@ export function createAvatarRenderer(assets, opts = {}) {
   }
 
   return {
-    fitScale(avatar,width,height,frame=idleFrame){
-      const e=sheetCache.get(keyOf(avatar));if(!e?.normal)return 1;
-      e.bounds ||= new Map();if(!e.bounds.has(frame))e.bounds.set(frame,boundsOf(e.normal,frame));const b=e.bounds.get(frame);
-      return Math.min(1,width/Math.max(1,2*Math.max(-b.left,b.right)),height/Math.max(1,b.top));
-    },
     frameW: fw,
     frameH: fh,
     density,
@@ -251,7 +237,6 @@ export function createAvatarRenderer(assets, opts = {}) {
       return a.frames[i];
     },
     /** 합성을 미리 시작한다. 합성이 끝나면 resolve (실패해도 resolve). */
-    cancelPendingBody(avatar){const key=keyOf(avatar),e=sheetCache.get(key);if(e?.state==='loading'&&!isDefaultBody(avatarBody(avatar))){e.cancelled=true;sheetCache.delete(key);}},
     ready(avatar) {
       return request(avatar).promise;
     },
@@ -278,13 +263,13 @@ export function createAvatarRenderer(assets, opts = {}) {
       if (v === undefined) { v = headTopOf(e.normal, f); e.tops.set(f, v); }
       return v;
     },
-    handFit(avatar,frame){const h=handAnchor(frame),body=avatarBody(avatar),opt={frameH:fh,anchorX:ax,anchorY:ay,density};return {near:bodyPoint(body,{x:h.N[0],y:h.N[1]},opt),far:bodyPoint(body,{x:h.F[0],y:h.F[1]},opt)};},
+    handFit(avatar,frame){const h=handAnchor(frame);return {near:{x:h.N[0],y:h.N[1]},far:{x:h.F[0],y:h.F[1]}};},
     drawGrip(ctx,avatar,x,y,k,frame,left=false){
       const e=sheetCache.get(keyOf(avatar));if(!e?.normal||e.state!=='ready')return;
-      const pt=this.handFit(avatar,frame).near,h=[pt.x,pt.y],r=3.5,g=geometry(e.normal),px=g.ax+h[0]*density,py=g.ay+h[1]*density;
+      const h=handAnchor(frame).N,r=3.5,px=ax+h[0]*density,py=ay+h[1]*density;
       ctx.save();ctx.translate(x,y);if(left)ctx.scale(-1,1);
       ctx.beginPath();ctx.rect((h[0]-r)*k,(h[1]-r)*k,r*2*k,r*2*k);ctx.clip();
-      smooth(ctx);ctx.drawImage(e.normal,(frame|0)*g.w+px-r*density,py-r*density,r*2*density,r*2*density,(h[0]-r)*k,(h[1]-r)*k,r*2*k,r*2*k);ctx.restore();
+      smooth(ctx);ctx.drawImage(e.normal,(frame|0)*fw+px-r*density,py-r*density,r*2*density,r*2*density,(h[0]-r)*k,(h[1]-r)*k,r*2*k,r*2*k);ctx.restore();
     },
     /** Attachment anchors measured once per composite frame, in world units. */
     costumeFit(avatar,frame){
@@ -294,16 +279,15 @@ export function createAvatarRenderer(assets, opts = {}) {
       e.costumeFits ||= new Map();if(e.costumeFits.has(f))return e.costumeFits.get(f);
       let fit=fallback;
       try{
-        const g=geometry(e.normal),W=g.w,H=g.h,data=e.normal.getContext('2d').getImageData(f*W,0,W,H).data;
-        const alpha=(x,y)=>data[(y*W+x)*4+3]>ALPHA_TOP;
-        let top=H,bottom=0,lo=W,hi=0;
-        for(let y=0;y<H;y++)for(let x=0;x<W;x++)if(alpha(x,y)){top=Math.min(top,y);bottom=Math.max(bottom,y);}
-        for(let y=top;y<Math.min(top+14,H);y++)for(let x=0;x<W;x++)if(alpha(x,y)){lo=Math.min(lo,x);hi=Math.max(hi,x);}
-        const bob=Math.max(-3,Math.min(3,(g.ay-bottom)/density));
-        let bl=W,br=0;
-        const body=avatarBody(avatar),bodyRow=y=>Math.round(bodyY(body,y*192/fh)*fh/192-g.top);
-        for(let y=Math.max(0,bodyRow(110));y<=bodyRow(118)&&y<H;y++)for(let x=Math.max(0,Math.floor(g.ax-58));x<=Math.min(W-1,Math.ceil(g.ax+58));x++)if(alpha(x,y)){bl=Math.min(bl,x);br=Math.max(br,x);}
-        fit={headTop:(g.ay-top)/density,headX:hi>=lo?((lo+hi)/2-g.ax)/density:0,neck:(g.ay-bodyRow(111))/density+bob,shoulder:Math.max(1,Math.min(32,(br-bl)/density/2)),bodyX:br>=bl?((bl+br)/2-g.ax)/density:0,hem:-bodyPoint(body,{x:0,y:-18},{frameH:fh,anchorX:ax,anchorY:ay,density}).y+bob};
+        const data=e.normal.getContext('2d').getImageData(f*fw,0,fw,fh).data;
+        const alpha=(x,y)=>data[(y*fw+x)*4+3]>ALPHA_TOP;
+        let top=fh,bottom=0,lo=fw,hi=0;
+        for(let y=0;y<fh;y++)for(let x=0;x<fw;x++)if(alpha(x,y)){top=Math.min(top,y);bottom=Math.max(bottom,y);}
+        for(let y=top;y<Math.min(top+14,fh);y++)for(let x=0;x<fw;x++)if(alpha(x,y)){lo=Math.min(lo,x);hi=Math.max(hi,x);}
+        const bob=Math.max(-3,Math.min(3,(ay-bottom)/density));
+        let bl=fw,br=0;
+        for(let y=110;y<=118&&y<fh;y++)for(let x=Math.max(0,ax-29);x<=Math.min(fw-1,ax+29);x++)if(alpha(x,y)){bl=Math.min(bl,x);br=Math.max(br,x);}
+        fit={headTop:(ay-top)/density,headX:hi>=lo?((lo+hi)/2-ax)/density:0,neck:(ay-111)/density+bob,shoulder:Math.max(11,Math.min(16,(br-bl)/density/2)),bodyX:br>=bl?((bl+br)/2-ax)/density:0,hem:18+bob};
       }catch{/* tainted/unavailable canvas uses compatible anatomical defaults */}
       e.costumeFits.set(f,fit);return fit;
     },
@@ -317,10 +301,9 @@ export function createAvatarRenderer(assets, opts = {}) {
       if (e.tint !== undefined) return e.tint;
       e.tint = null;
       try {
-        const geom=geometry(e.normal);
-        const y0 = Math.max(0, Math.round(geom.ay - 60 * density));
-        const y1 = Math.min(geom.h, Math.round(geom.ay - 25 * density));
-        const data = e.normal.getContext('2d').getImageData(idleFrame * geom.w, y0, geom.w, Math.max(1,y1 - y0)).data;
+        const y0 = Math.max(0, Math.round(ay - 60 * density));
+        const y1 = Math.min(fh, Math.round(ay - 25 * density));
+        const data = e.normal.getContext('2d').getImageData(idleFrame * fw, y0, fw, y1 - y0).data;
         let r = 0; let g = 0; let b = 0; let n = 0;
         for (let i = 0; i < data.length; i += 4) {
           if (data[i + 3] < 200) continue;
@@ -348,17 +331,11 @@ export function createAvatarRenderer(assets, opts = {}) {
         return true;
       }
       if (!e.normal) return false;
-      const g=geometry(e.normal),s=k/density;
+      if (facingLeft && !e.flipped) e.flipped = flipSheet(e.normal);
+      const s = k / density; // ctx 단위 / 시트 px
+      const ox = facingLeft ? fw - ax : ax; // 반전 시트에서 기준점 x
       smooth(ctx);
-      if(e.normal.avatarGeometry){
-        // Reflect at draw time: expanded variants never allocate a second large atlas.
-        ctx.save();ctx.translate(x,y);if(facingLeft)ctx.scale(-1,1);
-        ctx.drawImage(e.normal,f*g.w,0,g.w,g.h,-g.ax*s,-g.ay*s,g.w*s,g.h*s);ctx.restore();
-      }else{
-        if(facingLeft&&!e.flipped){e.flipped=flipSheet(e.normal);trimSheets(e);}
-        const ox=facingLeft?fw-ax:ax;
-        ctx.drawImage(facingLeft?e.flipped:e.normal,f*fw,0,fw,fh,x-ox*s,y-ay*s,fw*s,fh*s);
-      }
+      ctx.drawImage(facingLeft ? e.flipped : e.normal, f * fw, 0, fw, fh, x - ox * s, y - ay * s, fw * s, fh * s);
       return true;
     },
     /** 뒷모습 로프 자세. 손은 머리 뒤로 숨기고 몸통/다리와 작은 등반 흔들림만 유지한다. */
@@ -369,59 +346,58 @@ export function createAvatarRenderer(assets, opts = {}) {
       const sc = k / density;
       const bob = moving ? Math.sin(now / 110) * .8 * k : 0;
       ctx.save();
-      ctx.translate(x,y+bob);
-      const g=geometry(e.normal),body=avatarBody(avatar),row=n=>(bodyY(body,n*192/fh)*fh/192-ay)*sc;
-      ctx.save();ctx.beginPath();
-      ctx.rect(-g.ax*sc,-g.ay*sc,g.w*sc,row(106)+g.ay*sc);
-      const half=(32/2)*bodyWidth(body,130)*sc;
-      ctx.rect(-half,row(106),half*2,row(149)-row(106));
-      ctx.rect(-g.ax*sc,row(149),g.w*sc,(g.h-g.ay)*sc-row(149));
-      ctx.clip();smooth(ctx);ctx.drawImage(e.normal,frame*g.w,0,g.w,g.h,-g.ax*sc,-g.ay*sc,g.w*sc,g.h*sc);ctx.restore();
+      ctx.translate(x - ax * sc, y - ay * sc + bob);
+      // 머리/몸통/하체는 원본 back 프레임. 옆에 내려온 팔만 제외한다.
+      ctx.save(); ctx.beginPath();
+      ctx.rect(0, 0, fw * sc, 106 * sc);
+      ctx.rect(57 * sc, 106 * sc, 32 * sc, 43 * sc);
+      ctx.rect(0, 149 * sc, fw * sc, (fh - 149) * sc);
+      ctx.clip(); smooth(ctx);
+      ctx.drawImage(e.normal, frame * fw, 0, fw, fh, 0, 0, fw * sc, fh * sc);
+      ctx.restore();
+      // Raised hands are behind the head/rope: never paint synthetic skin over the neck.
       ctx.restore(); return true;
     },
     /** Restore hair/hat over a back-worn cape, leaving the crown's top band visible. */
     drawBackHair(ctx,avatar,x,y,k,frame,facingLeft=false){
-      const src=this.thumb(avatar,['hair','hat'],frame,true);if(!src)return false;
-      const fit=this.costumeFit(avatar,frame),sc=k/density,g=geometry(src);
+      const src=this.thumb(avatar,['hair','hat'],frame);if(!src)return false;
+      const fit=this.costumeFit(avatar,frame),sc=k/density;
       ctx.save();ctx.translate(x,y);if(facingLeft)ctx.scale(-1,1);
       ctx.beginPath();ctx.rect(-fw*sc,(-fit.headTop+15)*k,fw*sc*2,(fit.headTop+30)*k);ctx.clip();smooth(ctx);
-      ctx.drawImage(src,0,0,g.w,g.h,-g.ax*sc,-g.ay*sc,g.w*sc,g.h*sc);ctx.restore();return true;
+      ctx.drawImage(src,0,0,fw,fh,-ax*sc,-ay*sc,fw*sc,fh*sc);ctx.restore();return true;
     },
     /**
      * 썸네일용: front 프레임에 지정 파츠 레이어만 합성한 fw x fh 캔버스 (캐시). 아직이면 합성을 시작하고 null.
      * @param onlyParts 합성할 파츠 목록
      */
-    thumb(avatar, onlyParts, frame = assets.frameIndex.front, raw=false) {
+    thumb(avatar, onlyParts, frame = assets.frameIndex.front) {
       const layers = layersOf(assets, avatar, onlyParts);
-      const key = `${frame}:${layers.map((l) => `${l.layer}/${l.id}`).join('|')}#${avatarBodyKey(avatar)}`;
+      const key = `${frame}:${layers.map((l) => `${l.layer}/${l.id}`).join('|')}#${avatarSkinColor(avatar)||''}`;
       let e = touch(thumbCache, key);
       if (!e) {
         e = { state: 'loading', canvas: null };
         thumbCache.set(key, e);
         evict(thumbCache, THUMB_CACHE_MAX);
         const g = gen;
-        compose(layers, [frame]).then(async({ cv }) => {
+        compose(layers, [frame],avatarSkinColor(avatar)).then(({ cv }) => {
           if (g !== gen) return;
-          e.canvas = isDefaultBody(avatarBody(avatar))?cv:await bodyBaker.bake(cv,avatarBody(avatar),{frameW:fw,frameH:fh,anchorX:ax,anchorY:ay},()=>g===gen);
-          if(g!==gen)return;
-          e.preview=fittedThumb(e.canvas);
+          e.canvas = cv;
           e.state = 'ready';
           notify();
         }, () => { e.state = 'ready'; });
       }
-      return raw?e.canvas:e.preview;
+      return e.canvas;
     },
     setOnUpdate(fn) {
       onUpdate = typeof fn === 'function' ? fn : null;
     },
     clear() {
       gen++;
-      bodyBaker.dispose();
       onUpdate = null;
       sheetCache.clear();
+      skinCache.clear();
       thumbCache.clear();
     },
-    get cacheBytes(){return [...sheetCache.values()].reduce((n,e)=>n+sheetBytes(e),0);},
     get cacheSize() {
       return sheetCache.size;
     },

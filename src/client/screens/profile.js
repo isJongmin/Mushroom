@@ -1,11 +1,10 @@
-import {normalizeBody,withBody,avatarBodyKey} from '../avatar-body.js';
-import {createBodyEditor} from '../ui/body-editor.js';
+import {cleanSkinColor,withSkinColor,avatarSkinColor,SKIN_SWATCHES} from '../avatar-palette.js';
 import {COSTUMES,drawCostume,costumeAvatar} from '../game/reward-costumes.js';
 import { readRewards, saveRewards } from '../rewards.js';
 import { GARDEN_LABEL,BOSS_LABEL } from '../game/garden.js';
 import { drawAbilityEffect } from '../game/skill-visuals.js';
 // 프로필 화면: 닉네임 + 캐릭터 꾸미기 (docs/design/screens/profile.md v4, character-create.md v3 3·5장, style-guide 5.12~5.14)
-// - 서버와 통신하지 않는다. 저장 = localStorage `mushroom:profile` = { nickname, avatar(7키), body, job } (ARCHITECTURE 결정 3).
+// - 서버와 통신하지 않는다. 저장 = localStorage `mushroom:profile` = { nickname, avatar(7키), skinColor, job } (ARCHITECTURE 결정 3).
 // - 모드: first(최초, "입장하기") / edit(로비 "꾸미기"에서, "취소" + "저장").
 // - 카테고리 탭 7개 + 아이템 슬롯 그리드(썸네일) + 프리셋 + 회전 미리보기(앞/옆/뒤 + 걷기)는 v3 그대로.
 // - 탭/슬롯/프리셋은 assets/avatar/manifest.json 의 parts/presets 로만 만든다(하드코딩 없음).
@@ -49,8 +48,9 @@ export function mount(root, app, opts = {}) {
   let assets = null;
   let renderer = null;
   let avatar = null;
-  let body=normalizeBody(editMode?app.profile.body:null);
-  let bodyPreviewTimer=0;
+  let skinColor=cleanSkinColor(editMode?app.profile.skinColor:null);
+  let paletteTimer=0;
+  let query='';
   let ready = false;
   const creating = false; // 처리 중 상태 없음 (동기 저장, profile.md 6장)
   let composing = false;
@@ -100,7 +100,7 @@ export function mount(root, app, opts = {}) {
     tabBtns[part] = h('button', {
       type: 'button', class: 'bk-btn', role: 'tab', id: `tab-${part}`, testid: `tab-${part}`,
       'aria-selected': String(part === activeTab), 'aria-controls': 'slot-grid', tabindex: part === activeTab ? '0' : '-1', disabled: true,
-    }, PART_LABELS[part]);
+    }, part==='face'?'눈·표정':PART_LABELS[part]);
   }
   const tabList = h('div', { class: 'bk-tabs bk-tabs--cat', role: 'tablist', 'aria-label': '꾸미기 항목' }, CATEGORY_ORDER.map((p) => tabBtns[p]));
   const slotGrid = h('div', { class: 'bk-slots', role: 'radiogroup', id: 'slot-grid', testid: 'slot-grid', 'aria-labelledby': `tab-${activeTab}` });
@@ -109,24 +109,23 @@ export function mount(root, app, opts = {}) {
   const partsBody = h('div', {},
     h('h2', { class: 'section-title' }, '추천 조합'), presetGrid, presetMore,
     h('h2', { class: 'section-title' }, '꾸미기'), tabList, slotGrid, currentLine);
-  const bodyEditor=createBodyEditor({on,initial:body,onChange(next,{commit}){
-    body=next;
-    if(!ready)return;
-    if(commit){clearTimeout(bodyPreviewTimer);bodyPreviewTimer=0;applyBodyPreview();}
-    else if(!bodyPreviewTimer)bodyPreviewTimer=setTimeout(()=>{bodyPreviewTimer=0;if(alive)applyBodyPreview();},100);
-  }});
-  function applyBodyPreview(){renderer.cancelPendingBody(costumeAvatar(avatar,rewards.costume));renderer.cancelPendingBody(avatar);avatar=withBody(avatar,body);lastDrawn='';drawPreview();}
-  const studioTabs=h('div',{class:'studio-tabs',role:'tablist','aria-label':'캐릭터 만들기 단계'});
-  const bodyTab=h('button',{type:'button',class:'bk-btn',id:'studio-body-tab',role:'tab',testid:'studio-body-tab','aria-controls':'studio-body-panel','aria-selected':'true'},'01 체형');
-  const wardrobeTab=h('button',{type:'button',class:'bk-btn',id:'studio-wardrobe-tab',role:'tab',testid:'studio-wardrobe-tab','aria-controls':'studio-wardrobe-panel','aria-selected':'false',tabindex:'-1'},'02 코디');
-  const bodyPanel=h('div',{id:'studio-body-panel',role:'tabpanel','aria-labelledby':'studio-body-tab'},bodyEditor.el);
-  const wardrobePanel=h('div',{id:'studio-wardrobe-panel',role:'tabpanel','aria-labelledby':'studio-wardrobe-tab',hidden:true},partsBody);
-  const studioPanels=[[bodyTab,bodyPanel],[wardrobeTab,wardrobePanel]];
-  function setStudio(index,focus=false){for(let i=0;i<studioPanels.length;i++){const [tab,panel]=studioPanels[i];tab.setAttribute('aria-selected',String(i===index));tab.tabIndex=i===index?0:-1;panel.hidden=i!==index;}if(index===1&&ready){paintSlots();paintPresets();}if(focus)studioPanels[index][0].focus();}
-  studioTabs.append(bodyTab,wardrobeTab);
-  studioPanels.forEach(([tab],i)=>on(tab,'click',()=>setStudio(i)));
-  on(studioTabs,'keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const i=studioPanels.findIndex(([tab])=>tab.getAttribute('aria-selected')==='true');setStudio(e.key==='Home'?0:e.key==='End'?1:1-i,true);});
-  const partsArea = h('div', { class: 'create-parts' }, partsBanner,studioTabs,bodyPanel,wardrobePanel);
+  const skinPicker=h('input',{type:'color',value:skinColor||'#fad6c0',testid:'skin-color-picker','aria-label':'피부색 직접 고르기',disabled:true});
+  const skinHex=h('input',{type:'text',value:skinColor||'#fad6c0',testid:'skin-color-hex','aria-label':'피부색 HEX',maxlength:7,spellcheck:'false',disabled:true});
+  const skinHelp=h('span',{class:'wardrobe-color-help',testid:'skin-color-status'},'#RRGGBB 형식으로 입력할 수 있어요.');
+  const skinReset=h('button',{type:'button',class:'bk-btn',testid:'skin-color-reset',disabled:true},'기본 피부색');
+  const skinControls=h('section',{class:'wardrobe-skin',testid:'skin-color-controls',hidden:true,'aria-label':'피부색 직접 지정'},h('div',{},h('strong',{},'나만의 피부색'),h('p',{},'색을 직접 고르거나, 아래 기본 톤에서 선택하세요.')),h('div',{class:'wardrobe-color-row'},skinPicker,skinHex,skinReset),skinHelp);
+  function syncSkinInputs(){const color=skinColor||SKIN_SWATCHES.find(s=>s.id===avatar?.skin)?.color||'#fad6c0';skinPicker.value=skinHex.value=color;skinHex.removeAttribute('aria-invalid');}
+  function applySkin(color,commit=false){if(!ready)return;skinColor=color;avatar=withSkinColor({...avatar,skin:'light'},skinColor);skinPicker.value=color;skinHex.value=color;skinHex.removeAttribute('aria-invalid');setText(skinHelp,'선택한 색을 미리보기에 반영했어요.');clearTimeout(paletteTimer);if(commit){paletteTimer=0;drawPreview();paintSlots();}else paletteTimer=setTimeout(()=>{paletteTimer=0;if(alive){drawPreview();paintSlots();}},100);}
+  on(skinPicker,'input',()=>applySkin(skinPicker.value));on(skinPicker,'change',()=>applySkin(skinPicker.value,true));
+  on(skinHex,'input',()=>{const color=cleanSkinColor(skinHex.value);if(color)applySkin(color);else{skinHex.setAttribute('aria-invalid','true');setText(skinHelp,'# 뒤에 6자리 색상 코드를 입력하세요.');}});
+  on(skinReset,'click',()=>{if(!ready)return;skinColor=null;avatar=withSkinColor({...avatar,skin:'light'},null);skinPicker.value=skinHex.value='#fad6c0';skinHex.removeAttribute('aria-invalid');drawPreview();paintSlots();});
+  const search=h('input',{type:'search',class:'bk-input wardrobe-search',testid:'wardrobe-search','aria-label':'코디 이름 검색',placeholder:'색상이나 스타일 이름으로 찾아보세요',disabled:true});
+  on(search,'input',()=>{query=search.value.trim().toLowerCase();if(ready)buildSlots();});
+  const wardrobeCount=h('span',{class:'wardrobe-count',testid:'wardrobe-count','aria-live':'polite'});
+  const wardrobeEmpty=h('p',{class:'bk-help',testid:'wardrobe-empty',hidden:true},'검색 결과가 없어요. 다른 색상이나 이름으로 찾아보세요.');
+  partsBody.insertBefore(h('div',{class:'wardrobe-toolbar'},search,wardrobeCount),slotGrid);
+  partsBody.insertBefore(skinControls,slotGrid);partsBody.append(wardrobeEmpty);
+  const partsArea = h('div', { class: 'create-parts' }, partsBanner,partsBody);
 
   // 닉네임 (5장)
   const nickInput = h('input', {
@@ -146,7 +145,7 @@ export function mount(root, app, opts = {}) {
   const randomStyle=h('button',{type:'button',class:'bk-btn',testid:'atelier-random'},'랜덤 코디');
   const resetStyle=h('button',{type:'button',class:'bk-btn',testid:'atelier-reset'},'처음 모습');
   on(randomStyle,'click',()=>{if(ready&&assets.presets.length)applyPreset(Math.floor(Math.random()*assets.presets.length));});
-  on(resetStyle,'click',()=>{if(!ready)return;clearTimeout(bodyPreviewTimer);bodyPreviewTimer=0;body=normalizeBody(editMode?app.profile.body:null);bodyEditor.setValue(body);avatar=withBody(editMode?assets.sanitizeAvatar(app.profile.avatar):assets.defaultAvatar,body);paintSlots();drawPreview();announcePart(activeTab);});
+  on(resetStyle,'click',()=>{if(!ready)return;clearTimeout(paletteTimer);skinColor=cleanSkinColor(editMode?app.profile.skinColor:null);avatar=withSkinColor(editMode?assets.sanitizeAvatar(app.profile.avatar):assets.defaultAvatar,skinColor);syncSkinInputs();paintSlots();drawPreview();announcePart(activeTab);});
   partsBody.prepend(h('div',{class:'atelier-tools'},h('span',{},'작은 변화로, 나다운 모습'),h('div',{},randomStyle,resetStyle)));
   const weaponHint=h('p',{class:'create-job bk-help',testid:'weapon-hint'},'직업은 착용한 무기로 결정돼요. 가방에서 무기를 바꾸면 공격과 스킬도 바뀝니다.');
 
@@ -226,7 +225,7 @@ export function mount(root, app, opts = {}) {
     const fr = renderer && avatar ? previewFrame(now) : -1;
     const dressed=avatar?costumeAvatar(avatar,rewards.costume):avatar;
     const ok = !!(renderer && avatar && renderer.isReady(dressed));
-    const key = `${ok ? PART_KEYS.map((p) => avatar[p]).join('|') : '-'}#${avatar?avatarBodyKey(avatar):''}#${fr}#${now - previewAttackAt < 650 ? Math.floor(now / 16) : selectedJob}`;
+    const key = `${ok ? PART_KEYS.map((p) => avatar[p]).join('|') : '-'}#${avatarSkinColor(avatar)||''}#${fr}#${now - previewAttackAt < 650 ? Math.floor(now / 16) : selectedJob}`;
     if (!force && key === lastDrawn) return;
     lastDrawn = key;
     const c = stageCanvas.getContext('2d');
@@ -240,10 +239,9 @@ export function mount(root, app, opts = {}) {
       if(!ok)renderer.ready(dressed);
       if(ok)lastReadyAvatar=dressed;
       const shown=ok?dressed:lastReadyAvatar||avatar,shownReady=renderer.isReady(shown);
-      const previewK=k*renderer.fitScale(shown,STAGE.w-10,STAGE.ay-6,fr);
+      const previewK=k;
       const outfit={fit:renderer.costumeFit(shown,fr),side:view==='side',rear:view==='back',time:now,moving:walking};
       if(shownReady)drawCostume(c,rewards.costume,fx,fy,previewK,{...outfit,back:true});renderer.draw(c,shown,fx,fy,previewK,fr,false);if(shownReady)drawCostume(c,rewards.costume,fx,fy,previewK,outfit);if(shownReady&&view==='back'&&rewards.costume)renderer.drawBackHair(c,shown,fx,fy,previewK,fr);
-      bodyEditor.paintCurrent(renderer,shown,fr);
       drawAbilityEffect(c, selectedJob, 0, fx, fy, k, now-previewAttackAt);
     }
     if (ok && !shownOnce) { shownOnce = true; stageDots.hidden = true; }
@@ -298,13 +296,16 @@ export function mount(root, app, opts = {}) {
   function buildSlots() {
     const part = activeTab;
     slotGrid.setAttribute('aria-labelledby', `tab-${part}`);
-    slots = assets.parts[part].map((item) => {
+    skinControls.hidden=part!=='skin';
+    const items=assets.parts[part].filter(item=>!query||item.label.toLowerCase().includes(query));
+    setText(wardrobeCount,`${items.length} / ${assets.parts[part].length}개`);wardrobeEmpty.hidden=items.length>0;
+    slots = items.map((item) => {
       const isNone = part === 'hat' && item.id === HAT_NONE;
       const canvas = isNone ? null : thumbCanvas(THUMB_SIZE * 2);
       const btn = h('button', {
         type: 'button', class: 'bk-slot', role: 'radio', 'aria-checked': 'false', 'aria-label': item.label,
         testid: `slot-${part}-${item.id}`, 'data-id': item.id, tabindex: '-1', disabled: creating,
-      }, isNone ? h('span', { class: 'bk-slot__none', 'aria-hidden': 'true' }) : canvas);
+      }, isNone ? h('span', { class: 'bk-slot__none', 'aria-hidden': 'true' }) : canvas,h('span',{class:'wardrobe-slot-label'},item.label));
       return { id: item.id, btn, canvas };
     });
     slotGrid.replaceChildren(...slots.map((s) => s.btn));
@@ -314,17 +315,17 @@ export function mount(root, app, opts = {}) {
   function paintSlots() {
     const part = activeTab;
     const spec = THUMB[part];
-    for (const s of slots) {
-      const sel = avatar[part] === s.id;
+    const focusIndex=Math.max(0,slots.findIndex(s=>avatar[part]===s.id&&!(part==='skin'&&skinColor)));
+    for (const [i,s] of slots.entries()) {
+      const sel = avatar[part] === s.id&&!(part==='skin'&&skinColor);
       s.btn.setAttribute('aria-checked', String(sel));
-      s.btn.tabIndex = sel ? 0 : -1;
-      if (s.canvas&&!wardrobePanel.hidden) paintThumb(s.canvas, renderer.thumb({ ...avatar, [part]: s.id }, spec.parts), spec.crop);
+      s.btn.tabIndex = i===focusIndex ? 0 : -1;
+      if (s.canvas) paintThumb(s.canvas, renderer.thumb({ ...avatar, [part]: s.id }, spec.parts), spec.crop);
     }
   }
 
   let presetCanvases = [];
   function paintPresets() {
-    if(wardrobePanel.hidden)return;
     presetCanvases.forEach((cv, i) => {
       if (i < 6 || presetMore.open) paintThumb(cv, renderer.thumb(assets.presets[i].avatar, PART_KEYS), PRESET_CROP);
     });
@@ -350,8 +351,9 @@ export function mount(root, app, opts = {}) {
   function announcePart(part) { announce(`${PART_LABELS[part]}: ${assets.labelOf(part, avatar[part])}`); }
 
   function selectPart(part, id) {
-    if (creating || !ready || avatar[part] === id) return;
-    avatar = { ...avatar, [part]: id };
+    if (creating || !ready || (avatar[part] === id&&!(part==='skin'&&skinColor))) return;
+    if(part==='skin'){skinColor=null;skinPicker.value=skinHex.value=SKIN_SWATCHES.find(s=>s.id===id)?.color||'#fad6c0';skinHex.removeAttribute('aria-invalid');}
+    avatar = withSkinColor({ ...avatar, [part]: id },skinColor);
     paintSlots();
     drawPreview();
     announcePart(part);
@@ -361,7 +363,7 @@ export function mount(root, app, opts = {}) {
     if (creating || !ready) return;
     const p = assets.presets[i];
     if (!p) return;
-    avatar = withBody(assets.sanitizeAvatar(p.avatar),body); // manifest에 없는 id는 기본값
+    skinColor=null;avatar = withSkinColor(assets.sanitizeAvatar(p.avatar),null);syncSkinInputs(); // manifest에 없는 id는 기본값
     paintSlots();
     drawPreview();
     announce(`추천 조합 적용: ${p.label}`);
@@ -369,7 +371,7 @@ export function mount(root, app, opts = {}) {
 
   function setTab(part, focus) {
     if (!ready || part === activeTab) { if (focus) tabBtns[part].focus(); return; }
-    activeTab = part;
+    activeTab = part;query='';search.value='';
     for (const p of CATEGORY_ORDER) {
       tabBtns[p].setAttribute('aria-selected', String(p === part));
       tabBtns[p].tabIndex = p === part ? 0 : -1;
@@ -449,8 +451,9 @@ export function mount(root, app, opts = {}) {
       if (nick.status === 'format') nickInput.focus();
       return;
     }
+    if(skinHex.getAttribute('aria-invalid')==='true'){setTab('skin',false);skinHex.focus();return;}
     done = true;
-    const profile = { nickname: nick.value, avatar: pickAvatar(avatar), job: selectedJob, body:normalizeBody(body) };
+    const profile = { nickname: nick.value, avatar: pickAvatar(avatar), job: selectedJob, skinColor:cleanSkinColor(skinColor) };
     app.profile = profile;
     const latestRewards=readRewards(app.profileKey);
     latestRewards.equipped=latestRewards.unlocked && rewards.equipped;
@@ -573,7 +576,7 @@ export function mount(root, app, opts = {}) {
     avatar: avatar ? pickAvatar(avatar) : null,
     nickname: nickInput.value,
     job: selectedJob,
-    body:normalizeBody(body),
+    skinColor:cleanSkinColor(skinColor),
     nicknameStatus: nick.status,
     tab: activeTab,
     view,
@@ -605,16 +608,15 @@ export function mount(root, app, opts = {}) {
           drawPreview();
           paintSlots();
           paintPresets();
-          bodyEditor.paintPresets(renderer,avatar);
         });
       },
     });
     cancelRepaint = () => { if (repaintRaf) cancelAnimationFrame(repaintRaf); repaintRaf = 0; };
     // 최초: manifest 각 파츠 첫 항목 / 수정: 저장 값 (manifest에 없는 id는 기본값, 저장하면 그 값으로 고쳐 저장)
-    avatar = withBody(editMode?a.sanitizeAvatar(app.profile.avatar):a.defaultAvatar,body);
+    avatar = withSkinColor(editMode?a.sanitizeAvatar(app.profile.avatar):a.defaultAvatar,skinColor);
     ready = true;
-    bodyEditor.setEnabled(true);
-    bodyEditor.paintPresets(renderer,avatar);
+    syncSkinInputs();
+    skinPicker.disabled=skinHex.disabled=skinReset.disabled=search.disabled=false;
     for (const p of CATEGORY_ORDER) tabBtns[p].disabled = false;
     buildPresets();
     buildSlots();
@@ -634,7 +636,7 @@ export function mount(root, app, opts = {}) {
     unmount() {
       alive = false;
       clearTimeout(resizeTimer);
-      clearTimeout(bodyPreviewTimer);
+      clearTimeout(paletteTimer);
       stopLoop();
       cancelRepaint();
       ac.abort();

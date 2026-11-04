@@ -1,3 +1,4 @@
+import {withBody,avatarBody,BODY_PRESETS} from '../src/client/avatar-body.js';
 import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import vm from 'node:vm';
@@ -11,10 +12,10 @@ const tick=()=>new Promise(r=>setImmediate(r));
 function fixture(){
  const map=deferred(),player=deferred(),requests=[],calls=[];
  const assets={sanitizeAvatar:a=>a};
- const c=vm.createContext({adventureProgress,presentedLevel:1,alive:true,assets:null,avatarR:null,villageMap:null,map:null,
+ const c=vm.createContext({withBody,adventureProgress,presentedLevel:1,alive:true,assets:null,avatarR:null,villageMap:null,map:null,
   platforms:[],ropes:[],world:null,camRef:0,me:null,raf:null,taxiAvatar:null,
   app:{assets:Promise.resolve(assets),mapAssets:map.promise,profileKey:'qa',userId:'qa'},
-  profile:{avatar:{id:'player'}},roomId:'room',myNick:'Qa',NICK_RE:/^Qa$/,
+  profile:{avatar:{id:'player'},body:BODY_PRESETS[3].values},roomId:'room',myNick:'Qa',NICK_RE:/^Qa$/,
   createAvatarRenderer:()=>({ready:a=>{requests.push(a);return a.id==='player'?player.promise:new Promise(()=>{});}}),
   costumeAvatar:(a,costume)=>({...a,costume}),equippedCostume:()=> 'earned-costume',
   AREA_IDS:['village','quarry','forest','frost'],currentArea:'village',areaCatalog:new Map(),
@@ -32,6 +33,7 @@ function fixture(){
 const f=fixture(),run=vm.runInContext(bootstrap,f.c);
 await tick();
 assert.equal(f.requests.length,1,'player download begins before the map finishes');
+assert.deepEqual(avatarBody(f.requests[0]),BODY_PRESETS[3].values,'selected proportions are preloaded before entering');
 assert.equal(f.requests[0].costume,'earned-costume','equipped costume is preloaded too');
 assert.deepEqual(f.calls,[]);
 f.map.resolve({});await tick();

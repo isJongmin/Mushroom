@@ -1,9 +1,11 @@
+import {normalizeBody,withBody,avatarBodyKey} from '../avatar-body.js';
+import {createBodyEditor} from '../ui/body-editor.js';
 import {COSTUMES,drawCostume,costumeAvatar} from '../game/reward-costumes.js';
 import { readRewards, saveRewards } from '../rewards.js';
 import { GARDEN_LABEL,BOSS_LABEL } from '../game/garden.js';
 import { drawAbilityEffect } from '../game/skill-visuals.js';
 // 프로필 화면: 닉네임 + 캐릭터 꾸미기 (docs/design/screens/profile.md v4, character-create.md v3 3·5장, style-guide 5.12~5.14)
-// - 서버와 통신하지 않는다. 저장 = localStorage `mushroom:profile` = { nickname, avatar(7키) } (ARCHITECTURE 결정 3).
+// - 서버와 통신하지 않는다. 저장 = localStorage `mushroom:profile` = { nickname, avatar(7키), body, job } (ARCHITECTURE 결정 3).
 // - 모드: first(최초, "입장하기") / edit(로비 "꾸미기"에서, "취소" + "저장").
 // - 카테고리 탭 7개 + 아이템 슬롯 그리드(썸네일) + 프리셋 + 회전 미리보기(앞/옆/뒤 + 걷기)는 v3 그대로.
 // - 탭/슬롯/프리셋은 assets/avatar/manifest.json 의 parts/presets 로만 만든다(하드코딩 없음).
@@ -47,6 +49,8 @@ export function mount(root, app, opts = {}) {
   let assets = null;
   let renderer = null;
   let avatar = null;
+  let body=normalizeBody(editMode?app.profile.body:null);
+  let bodyPreviewTimer=0;
   let ready = false;
   const creating = false; // 처리 중 상태 없음 (동기 저장, profile.md 6장)
   let composing = false;
@@ -105,7 +109,24 @@ export function mount(root, app, opts = {}) {
   const partsBody = h('div', {},
     h('h2', { class: 'section-title' }, '추천 조합'), presetGrid, presetMore,
     h('h2', { class: 'section-title' }, '꾸미기'), tabList, slotGrid, currentLine);
-  const partsArea = h('div', { class: 'create-parts' }, partsBanner, partsBody);
+  const bodyEditor=createBodyEditor({on,initial:body,onChange(next,{commit}){
+    body=next;
+    if(!ready)return;
+    if(commit){clearTimeout(bodyPreviewTimer);bodyPreviewTimer=0;applyBodyPreview();}
+    else if(!bodyPreviewTimer)bodyPreviewTimer=setTimeout(()=>{bodyPreviewTimer=0;if(alive)applyBodyPreview();},100);
+  }});
+  function applyBodyPreview(){avatar=withBody(avatar,body);lastDrawn='';drawPreview();}
+  const studioTabs=h('div',{class:'studio-tabs',role:'tablist','aria-label':'캐릭터 만들기 단계'});
+  const bodyTab=h('button',{type:'button',class:'bk-btn',id:'studio-body-tab',role:'tab',testid:'studio-body-tab','aria-controls':'studio-body-panel','aria-selected':'true'},'01 체형');
+  const wardrobeTab=h('button',{type:'button',class:'bk-btn',id:'studio-wardrobe-tab',role:'tab',testid:'studio-wardrobe-tab','aria-controls':'studio-wardrobe-panel','aria-selected':'false',tabindex:'-1'},'02 코디');
+  const bodyPanel=h('div',{id:'studio-body-panel',role:'tabpanel','aria-labelledby':'studio-body-tab'},bodyEditor.el);
+  const wardrobePanel=h('div',{id:'studio-wardrobe-panel',role:'tabpanel','aria-labelledby':'studio-wardrobe-tab',hidden:true},partsBody);
+  const studioPanels=[[bodyTab,bodyPanel],[wardrobeTab,wardrobePanel]];
+  function setStudio(index,focus=false){for(let i=0;i<studioPanels.length;i++){const [tab,panel]=studioPanels[i];tab.setAttribute('aria-selected',String(i===index));tab.tabIndex=i===index?0:-1;panel.hidden=i!==index;}if(focus)studioPanels[index][0].focus();}
+  studioTabs.append(bodyTab,wardrobeTab);
+  studioPanels.forEach(([tab],i)=>on(tab,'click',()=>setStudio(i)));
+  on(studioTabs,'keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const i=studioPanels.findIndex(([tab])=>tab.getAttribute('aria-selected')==='true');setStudio(e.key==='Home'?0:e.key==='End'?1:1-i,true);});
+  const partsArea = h('div', { class: 'create-parts' }, partsBanner,studioTabs,bodyPanel,wardrobePanel);
 
   // 닉네임 (5장)
   const nickInput = h('input', {
@@ -125,8 +146,8 @@ export function mount(root, app, opts = {}) {
   const randomStyle=h('button',{type:'button',class:'bk-btn',testid:'atelier-random'},'랜덤 코디');
   const resetStyle=h('button',{type:'button',class:'bk-btn',testid:'atelier-reset'},'처음 모습');
   on(randomStyle,'click',()=>{if(ready&&assets.presets.length)applyPreset(Math.floor(Math.random()*assets.presets.length));});
-  on(resetStyle,'click',()=>{if(!ready)return;avatar=editMode?assets.sanitizeAvatar(app.profile.avatar):{...assets.defaultAvatar};paintSlots();drawPreview();announcePart(activeTab);});
-  partsArea.prepend(h('div',{class:'atelier-tools'},h('span',{},'작은 변화로, 나다운 모습'),h('div',{},randomStyle,resetStyle)));
+  on(resetStyle,'click',()=>{if(!ready)return;clearTimeout(bodyPreviewTimer);bodyPreviewTimer=0;body=normalizeBody(editMode?app.profile.body:null);bodyEditor.setValue(body);avatar=withBody(editMode?assets.sanitizeAvatar(app.profile.avatar):assets.defaultAvatar,body);paintSlots();drawPreview();announcePart(activeTab);});
+  partsBody.prepend(h('div',{class:'atelier-tools'},h('span',{},'작은 변화로, 나다운 모습'),h('div',{},randomStyle,resetStyle)));
   const weaponHint=h('p',{class:'create-job bk-help',testid:'weapon-hint'},'직업은 착용한 무기로 결정돼요. 가방에서 무기를 바꾸면 공격과 스킬도 바뀝니다.');
 
   // 버튼 (6장): 비활성은 aria-disabled (눌렀을 때 형식 오류를 보여 주기 위해 클릭은 받는다)
@@ -173,6 +194,7 @@ export function mount(root, app, opts = {}) {
   let k = 2;
   let lastDrawn = ''; // 마지막으로 그린 (조합, 프레임) — 같은 그림이면 다시 그리지 않는다
   let shownOnce = false;
+  let lastReadyAvatar=null;
 
   function sizeStage() {
     const v = parseInt(getComputedStyle(previewEl).getPropertyValue('--pv'), 10);
@@ -204,7 +226,7 @@ export function mount(root, app, opts = {}) {
     const fr = renderer && avatar ? previewFrame(now) : -1;
     const dressed=avatar?costumeAvatar(avatar,rewards.costume):avatar;
     const ok = !!(renderer && avatar && renderer.isReady(dressed));
-    const key = `${ok ? PART_KEYS.map((p) => avatar[p]).join('|') : '-'}#${fr}#${now - previewAttackAt < 650 ? Math.floor(now / 16) : selectedJob}`;
+    const key = `${ok ? PART_KEYS.map((p) => avatar[p]).join('|') : '-'}#${avatar?avatarBodyKey(avatar):''}#${fr}#${now - previewAttackAt < 650 ? Math.floor(now / 16) : selectedJob}`;
     if (!force && key === lastDrawn) return;
     lastDrawn = key;
     const c = stageCanvas.getContext('2d');
@@ -216,8 +238,11 @@ export function mount(root, app, opts = {}) {
       const fy = STAGE.ay * k;
       if (ok) drawFootShadow(c, fx, fy, k);
       if(!ok)renderer.ready(dressed);
-      const outfit={fit:renderer.costumeFit(dressed,fr),side:view==='side',rear:view==='back',time:now,moving:walking};
-      if(ok)drawCostume(c,rewards.costume,fx,fy,k,{...outfit,back:true});renderer.draw(c,ok?dressed:avatar,fx,fy,k,fr,false);if(ok)drawCostume(c,rewards.costume,fx,fy,k,outfit);if(ok&&view==='back'&&rewards.costume)renderer.drawBackHair(c,dressed,fx,fy,k,fr);
+      if(ok)lastReadyAvatar=dressed;
+      const shown=ok?dressed:lastReadyAvatar||avatar,shownReady=renderer.isReady(shown);
+      const outfit={fit:renderer.costumeFit(shown,fr),side:view==='side',rear:view==='back',time:now,moving:walking};
+      if(shownReady)drawCostume(c,rewards.costume,fx,fy,k,{...outfit,back:true});renderer.draw(c,shown,fx,fy,k,fr,false);if(shownReady)drawCostume(c,rewards.costume,fx,fy,k,outfit);if(shownReady&&view==='back'&&rewards.costume)renderer.drawBackHair(c,shown,fx,fy,k,fr);
+      bodyEditor.paintCurrent(renderer,shown,fr);
       drawAbilityEffect(c, selectedJob, 0, fx, fy, k, now-previewAttackAt);
     }
     if (ok && !shownOnce) { shownOnce = true; stageDots.hidden = true; }
@@ -334,7 +359,7 @@ export function mount(root, app, opts = {}) {
     if (creating || !ready) return;
     const p = assets.presets[i];
     if (!p) return;
-    avatar = assets.sanitizeAvatar(p.avatar); // manifest에 없는 id는 기본값
+    avatar = withBody(assets.sanitizeAvatar(p.avatar),body); // manifest에 없는 id는 기본값
     paintSlots();
     drawPreview();
     announce(`추천 조합 적용: ${p.label}`);
@@ -423,7 +448,7 @@ export function mount(root, app, opts = {}) {
       return;
     }
     done = true;
-    const profile = { nickname: nick.value, avatar: pickAvatar(avatar), job: selectedJob };
+    const profile = { nickname: nick.value, avatar: pickAvatar(avatar), job: selectedJob, body:normalizeBody(body) };
     app.profile = profile;
     const latestRewards=readRewards(app.profileKey);
     latestRewards.equipped=latestRewards.unlocked && rewards.equipped;
@@ -546,6 +571,7 @@ export function mount(root, app, opts = {}) {
     avatar: avatar ? pickAvatar(avatar) : null,
     nickname: nickInput.value,
     job: selectedJob,
+    body:normalizeBody(body),
     nicknameStatus: nick.status,
     tab: activeTab,
     view,
@@ -577,13 +603,16 @@ export function mount(root, app, opts = {}) {
           drawPreview();
           paintSlots();
           paintPresets();
+          bodyEditor.paintPresets(renderer,avatar);
         });
       },
     });
     cancelRepaint = () => { if (repaintRaf) cancelAnimationFrame(repaintRaf); repaintRaf = 0; };
     // 최초: manifest 각 파츠 첫 항목 / 수정: 저장 값 (manifest에 없는 id는 기본값, 저장하면 그 값으로 고쳐 저장)
-    avatar = editMode ? a.sanitizeAvatar(app.profile.avatar) : { ...a.defaultAvatar };
+    avatar = withBody(editMode?a.sanitizeAvatar(app.profile.avatar):a.defaultAvatar,body);
     ready = true;
+    bodyEditor.setEnabled(true);
+    bodyEditor.paintPresets(renderer,avatar);
     for (const p of CATEGORY_ORDER) tabBtns[p].disabled = false;
     buildPresets();
     buildSlots();
@@ -603,6 +632,7 @@ export function mount(root, app, opts = {}) {
     unmount() {
       alive = false;
       clearTimeout(resizeTimer);
+      clearTimeout(bodyPreviewTimer);
       stopLoop();
       cancelRepaint();
       ac.abort();

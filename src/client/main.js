@@ -204,7 +204,7 @@ function getState() {
     mode: app.mode,
     userId: app.userId,
     as: app.as,
-    profile: app.profile ? { nickname: app.profile.nickname, avatar: { ...app.profile.avatar } } : null,
+    profile: app.profile ? { nickname: app.profile.nickname, avatar: { ...app.profile.avatar }, body: { ...app.profile.body } } : null,
     // 프로필 화면(꾸미기) 상태: 현재 고른 아바타 7키, 미리보기, 닉네임 상태
     create: p,
     // 로비

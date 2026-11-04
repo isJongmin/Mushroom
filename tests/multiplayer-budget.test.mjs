@@ -1,13 +1,24 @@
 import assert from 'node:assert/strict';
 import {createCanvas} from '@napi-rs/canvas';
 import {createJobProjectiles} from '../src/client/game/combat.js';
-import {createSkillAttacks} from '../src/client/game/attack-patterns.js';
+import {createSkillAttacks,buildStrikePlan} from '../src/client/game/attack-patterns.js';
+import {createMobView} from '../src/client/game/mobs.js';
 import {abilityStats,acceptJobAttack} from '../src/client/game/jobs.js';
 import {cleanGameEvent,createEventGate} from '../src/client/backend/common.js';
 import {scenePolicy,sceneDpr,createSceneBudget} from '../src/client/game/scene-budget.js';
 import {readPanelCollapsed,writePanelCollapsed} from '../src/client/ui/panel-preference.js';
 
 const attack=(job,slot,id='player',seq=1)=>({...abilityStats(job,slot),user_id:id,seq,x:200,y:500,dir:'right'});
+// Non-host mobView.list is a Map iterator, not an Array. This used to throw before visuals/cooldown.
+{
+ const mobs=[{id:'target',x:270,y:500,hp:100,s:'move'}],map=new Map(mobs.map(m=>[m.id,m]));
+ const view=createMobView({kinds:new Map(),onDamage(){},onDie(){}});
+ for(const job of ['warrior','archer','mage','thief'])for(let slot=0;slot<4;slot++){
+   const a=attack(job,slot);assert.deepEqual(buildStrikePlan(a,map.values()),buildStrikePlan(a,mobs));
+   const effects=createSkillAttacks();assert.doesNotThrow(()=>effects.add(a,0,false,view.list));
+   assert.equal(effects.count,1);
+ }
+}
 // Twenty legitimate thief ultimates launch 180 shots. The former 160 cap silently deleted 20.
 const shots=createJobProjectiles();for(let n=0;n<20;n++)shots.add(attack('thief',3,'p'+n),0,true);
 assert.equal(shots.count,180);assert.equal(shots.snapshot().shots.filter(s=>s.id.startsWith('p0:')).length,9);

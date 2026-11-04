@@ -342,10 +342,24 @@ export function mount(root, app, opts = {}) {
   let panelStorage;try{panelStorage=window.localStorage;}catch{}
   const panelKey=app.profileKey+':journey-collapsed';
   let journeyCollapsed=readPanelCollapsed(panelStorage,panelKey,true);
-  const journeyFold=h('button',{type:'button',class:'journey-fold',testid:'journey-fold','aria-expanded':String(!journeyCollapsed),'aria-label':journeyCollapsed?'여정 펼치기':'여정 최소화'},journeyCollapsed?'펼치기':'접기');
-  const journeyCard=h('aside',{class:'journey-card',testid:'journey-card',hidden:true,'aria-label':'현재 여정'},h('div',{class:'journey-heading'},h('div',{},chapterLabel,chapterTitle),journeyFold),chapterLine,goalButton,contractPanel,journeyHint,h('div',{class:'journey-actions'},goalCTA,journalCTA));
-  journeyCard.classList.toggle('is-minimized',journeyCollapsed);
-  on(journeyFold,'click',()=>{journeyCollapsed=!journeyCollapsed;writePanelCollapsed(panelStorage,panelKey,journeyCollapsed);journeyCard.classList.toggle('is-minimized',journeyCollapsed);setText(journeyFold,journeyCollapsed?'펼치기':'접기');journeyFold.setAttribute('aria-expanded',String(!journeyCollapsed));journeyFold.setAttribute('aria-label',journeyCollapsed?'여정 펼치기':'여정 최소화');positionCombo();});
+  const tuckedKey=panelKey+':tucked';
+  let journeyTucked=readPanelCollapsed(panelStorage,tuckedKey,false);
+  if(journeyTucked)journeyCollapsed=true;
+  const journeyFold=h('button',{type:'button',class:'journey-fold',testid:'journey-fold'});
+  const journeyTuck=h('button',{type:'button',class:'journey-fold journey-tuck',testid:'journey-tuck','aria-label':'여정을 작은 탭으로 접기',title:'작은 탭으로 접기'},'−');
+  const journeyCard=h('aside',{class:'journey-card',testid:'journey-card',hidden:true,'aria-label':'현재 여정'},h('div',{class:'journey-heading'},h('div',{},chapterLabel,chapterTitle),journeyFold,journeyTuck),chapterLine,goalButton,contractPanel,journeyHint,h('div',{class:'journey-actions'},goalCTA,journalCTA));
+  function paintJourneyFold(){
+    journeyCard.classList.toggle('is-minimized',journeyCollapsed);
+    journeyCard.classList.toggle('is-tucked',journeyTucked);
+    journeyTuck.hidden=!journeyCollapsed||journeyTucked;
+    setText(journeyFold,journeyTucked?'여정 +':journeyCollapsed?'펼치기':'접기');
+    journeyFold.setAttribute('aria-expanded',String(!journeyCollapsed));
+    journeyFold.setAttribute('aria-label',journeyTucked?'여정 요약 열기':journeyCollapsed?'여정 펼치기':'여정 최소화');
+  }
+  function saveJourneyFold(){writePanelCollapsed(panelStorage,panelKey,journeyCollapsed);writePanelCollapsed(panelStorage,tuckedKey,journeyTucked);paintJourneyFold();positionCombo();}
+  paintJourneyFold();
+  on(journeyFold,'click',()=>{if(journeyTucked)journeyTucked=false;else journeyCollapsed=!journeyCollapsed;saveJourneyFold();});
+  on(journeyTuck,'click',()=>{journeyTucked=true;journeyCollapsed=true;saveJourneyFold();});
   function followJourney(toggle=false){const goal=journeyObjective(progress?.state,currentArea);if(!goal)return;input.clear();
     if(goal.action==='bag'){progressPanel?.open('bag');return;}
     if(goal.action==='traits'){openTraits();return;}

@@ -2001,7 +2001,7 @@ export function mount(root, app, opts = {}) {
   on(chatInput, 'input', updateCounter);
   on(chatInput,'compositionstart',()=>{composingChat=true;updateSendBtn();});
   on(chatInput,'compositionend',()=>{composingChat=false;compositionEndedAt=performance.now();updateCounter();});
-  on(sendBtn,'pointerdown',e=>{if(e.pointerType==='mouse')e.preventDefault();});
+  on(sendBtn,'pointerdown',e=>e.preventDefault()); // 터치도 입력창 blur/키보드 재열림 방지
   on(sendBtn, 'click', () => { trySend();chatInput.focus({preventScroll:true}); });
   on(canvas, 'pointerdown', () => canvas.focus({ preventScroll: true }));
   // 포커스 테두리는 Tab 키로 캔버스에 들어왔을 때만 (자동/마우스 포커스는 표시 안 함)

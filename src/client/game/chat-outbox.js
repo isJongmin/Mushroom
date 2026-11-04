@@ -10,7 +10,7 @@ export function createChatOutbox({send, gapMs=1050, max=8, onPending=()=>{}, onS
     if(delay){timer=schedule(()=>{timer=null;arm();},delay);return;}
     current=queue.shift();const item=current;
     item.status='sending';onPending(item);changed();
-    Promise.resolve().then(()=>send(item.text)).then(msg=>{
+    Promise.resolve().then(()=>{if(!closed)return send(item.text);}).then(msg=>{
       if(closed)return;
       if(!item.ack){item.ack=msg;onSent(item,msg);}
       finish(item);

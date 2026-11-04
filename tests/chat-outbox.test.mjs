@@ -1,5 +1,7 @@
 import assert from 'node:assert/strict';
 import {createChatOutbox} from '../src/client/game/chat-outbox.js';
+import {readFileSync} from 'node:fs';
+import vm from 'node:vm';
 
 const flush=async()=>{for(let i=0;i<8;i++)await Promise.resolve();};
 function harness(options={}){
@@ -52,4 +54,19 @@ function harness(options={}){
  for(let i=0;i<3;i++){h.requests[i].reject({code:'RATE_LIMITED'});await flush();await h.advance(1050);}
  assert.equal(h.requests.length,3);assert.equal(h.failed.length,1);assert.equal(h.out.snapshot().paused,true);h.out.destroy();
 }
-console.log('PASS chat FIFO, slow sends, pacing, realtime confirmation, bounded retry, failure preservation, reconnect and cleanup');
+// Exercise the actual room key handler: IME confirmation and held Enter cannot send partial/duplicate text.
+{
+ const source=readFileSync(new URL('../src/client/screens/room.js',import.meta.url),'utf8');
+ const start=source.indexOf('  const isTypingTarget ='),end=source.indexOf("  on(window, 'keyup'",start);
+ const handlers=[];let sends=0,prevented=0;
+ const input={tagName:'INPUT'},context=vm.createContext({window:{},document:{activeElement:input},chatInput:input,
+  alive:true,composingChat:false,compositionEndedAt:-Infinity,performance:{now:()=>1000},
+  on:(_el,_event,fn)=>handlers.push(fn),trySend:()=>sends++});
+ vm.runInContext(source.slice(start,end),context);
+ const enter=extra=>handlers[0]({key:'Enter',preventDefault:()=>prevented++,...extra});
+ enter({isComposing:true});enter({keyCode:229});enter({repeat:true});
+ context.composingChat=true;enter({});context.composingChat=false;
+ context.compositionEndedAt=950;enter({});assert.equal(sends,0);
+ context.compositionEndedAt=900;enter({});enter({});assert.equal(sends,2);assert.equal(prevented,2);
+}
+console.log('PASS chat FIFO, slow sends, pacing, realtime confirmation, bounded retry, failure preservation, reconnect, cleanup and IME/Enter handling');

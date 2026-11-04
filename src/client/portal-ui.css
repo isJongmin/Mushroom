@@ -113,6 +113,8 @@ body.portal-edition:not([data-screen=room]){--text:#30473d;--text-strong:#253f34
 /* Continuous chat: direct access, stable composer, explicit delivery state. */
 .portal-edition .bag-shortcut{display:flex;gap:6px;align-items:center}
 .portal-edition .bag-shortcut .mobile-chat-toggle{display:inline-flex!important;align-items:center;justify-content:center;min-width:54px}
+.portal-edition .scr-room .room-log{top:164px!important}
+.portal-edition .scr-room .bk-msg{font-size:13px;line-height:1.65}
 .portal-edition .scr-room .chat-send{display:block;min-height:44px;width:64px;font:600 12px system-ui}
 .portal-edition .chat-row .bk-input-wrap{min-width:0}
 .portal-edition .chat-row input{font-size:16px!important;min-height:44px}

@@ -1,0 +1,82 @@
+/* The final text layer: opaque surfaces, measured contrast, no faded disabled labels. */
+body.portal-edition{
+ --read-paper:#f7f4e8;--read-paper-raised:#e8eddf;--read-ink:#20382e;--read-muted:#4d604c;
+ --read-night:#153235;--read-light:#f5f4df;--read-night-muted:#c5d8c7;
+ --read-primary:#34543c;--read-gold:#f4d18d;--read-danger:#8b352b;
+}
+body.portal-edition:not([data-screen=room]){--text:var(--read-ink);--text-strong:var(--read-ink);--text-muted:var(--read-muted)}
+body.portal-edition:not([data-screen=room]) :is(.bk-help,.bk-me__label,.bk-room__meta,.bk-room__name,.bk-label-text,.bk-empty__title,.bk-count,.bk-me__nick,.lobby-no-matches){color:var(--read-ink)!important}
+body.portal-edition :is(.portal-header-note,.portal-cover-description,.portal-invitation,.portal-cover-caption small,.portal-welcome small,.portal-lobby-copy>p:not(.portal-kicker)){color:var(--read-light)!important}
+body.portal-edition :is(.portal-promises span,.portal-region small,.portal-region p,.portal-section-heading>p,.portal-footer>p,.portal-footer>span,.portal-page-heading>p,.portal-page-heading>span,.atelier-tools>span,.atelier-preview-caption small,.atelier-preview-name,.ui-eyebrow,.ui-step,.create-job,.atelier-archive>summary,.card-foot,.portal-lobby-notes p,.portal-lobby-notes .portal-kicker,.adventurer-passport small,.adventurer-passport>span,.adventurer-passport dt,.adventurer-passport dd,.portal-lobby-notes .lobby-garden p,.portal-lobby-notes .lobby-garden strong,.ui-footer){color:var(--read-muted)!important}
+body.portal-edition:not([data-screen=room]) :is(.bk-btn,.bk-tabs--cat .bk-btn){color:var(--read-ink)!important}
+body.portal-edition:not([data-screen=room]) :is(.bk-btn--primary,.bk-preview__ctrl .bk-btn[aria-checked=true]){color:var(--read-light)!important;background:var(--read-primary)!important}
+body.portal-edition .lobby-garden__record{background:var(--read-paper-raised)!important;color:var(--read-ink)!important;border:1px solid #9da98f!important;padding:6px 9px;border-radius:6px}
+body.portal-edition .portal-promises strong{color:var(--read-primary)}
+body.portal-edition .portal-region>span{color:#586c50}
+body.portal-edition :is(button:disabled,.gp-tile.is-protected){opacity:1!important;filter:none!important;cursor:not-allowed!important}
+body.portal-edition:not([data-screen=room]) button:disabled,
+body.portal-edition .bk-modal :is(button:disabled,.gp-tile.is-protected){color:var(--read-muted)!important;background:#dce2d4!important;border-color:#aebaa4!important}
+body.portal-edition .bk-input::placeholder{color:#586b5d!important;opacity:1}
+/* Light windows: every description, item grade and lock message uses dark ink. */
+body.portal-edition .bk-modal{background:var(--read-paper)!important;color:var(--read-ink)!important;text-shadow:none!important}
+body.portal-edition .bk-modal :is(h2,h3,h4,strong,b,label){color:var(--read-ink)!important;text-shadow:none!important}
+body.portal-edition .bk-modal :is(p,small,summary,.bk-help,.gp-muted,.gp-empty,.gp-wallet,.gp-stats,.gp-level-summary,.gp-tile-top,.gp-tile small,.gp-detail p,.gp-pity strong,.gp-pool small,.gp-results small,.gp-reveal-progress,.gp-reveal-announcement,.mentor-speech p,.mentor-heading small,.mentor-choice span,.mentor-objective>div,.mentor-targets,.mentor-note,.traits-counts,.traits-help,.traits-lock,.trait-row-heading small,.trait-value,.trait-stepper small,.traits-extra,.traits-once,.trait-goal-count,.trait-goal details,.trait-goal-badge,.traits-journey-count,.traits-mentor-link small,.taxi-greeting p,.playful-note){color:var(--read-muted)!important}
+body.portal-edition .bk-modal :is(.gp-button,.bk-btn,.garden-cta){color:var(--read-ink)!important;background:var(--read-paper-raised)!important;border-color:#a2b394!important;min-height:42px;text-shadow:none!important}
+body.portal-edition .bk-modal :is(.gp-primary,.bk-btn--primary,.mentor-actions .gp-button:last-child,.traits-footer-buttons [data-testid=traits-apply],.gp-tabs [aria-selected=true],.traits-tabs [aria-selected=true],.gp-filters [aria-pressed=true]){color:var(--read-light)!important;background:var(--read-primary)!important}
+body.portal-edition .bk-modal :is(.gp-primary,.bk-btn--primary) :is(strong,span,small){color:var(--read-light)!important}
+body.portal-edition .bk-modal :is(.trait-row,.trait-goal,.traits-mentor-link,.mentor-reward,.gp-pity,.gp-results article,.gp-pool>div,.gp-reveal-stage,.gp-reveal-card,.taxi-stop,.playful-reply){background:var(--read-paper-raised)!important;color:var(--read-ink)!important;border-color:#afbea0!important}
+body.portal-edition .bk-modal .gp-grade{background:#f7f4e8!important;color:var(--read-ink)!important;filter:none!important;padding:3px 5px;border-radius:4px}
+body.portal-edition .bk-modal .gp-equipped{background:var(--read-primary)!important;color:var(--read-light)!important}
+body.portal-edition .bk-modal :is(.gp-danger,.is-error,.bk-banner--error){background:#f8e7df!important;color:var(--read-danger)!important;border-color:#bf8170!important}
+body.portal-edition .bk-modal :is(input,select){background:#fffdf4!important;color:var(--read-ink)!important}
+/* World overlays: opaque dark backplates remain legible over every biome. */
+body.portal-edition .scr-room :is(.room-log,.bk-log__head,.rpg-menu,.rpg-room-info .bk-chip,.hunt-combo,.loot-message,.game-minimap,.chat-queue-status,.chat-row .bk-input,.first-use-hint){background:var(--read-night)!important;color:var(--read-light)!important;border-color:#76917a!important;text-shadow:none!important}
+body.portal-edition .scr-room :is(.bk-log__title,.bk-msg,.bk-msg__time,.bk-msg--sys,.rpg-menu h2,.rpg-menu-help,.cooperative-roster p,.cooperative-roster li,.minimap-head,.minimap-legend,.chat-delivery,.rpg-hp-value,.rpg-xp-value,.loot-message small){color:var(--read-night-muted)!important}
+body.portal-edition .scr-room :is(.bk-msg__nick,.bk-msg--self .bk-msg__nick,.loot-message strong,.rpg-player-info>strong){color:var(--read-light)!important}
+body.portal-edition .scr-room .chat-row .bk-input::placeholder{color:var(--read-night-muted)!important}
+body.portal-edition .scr-room .rpg-menu :is(.bk-btn,.gp-button){background:#24453d!important;color:var(--read-light)!important}
+body.portal-edition .scr-room .skill-hotbar .skill-button{opacity:1!important;background:var(--read-night)!important}
+body.portal-edition .scr-room .skill-hotbar .skill-button.is-locked{opacity:1!important;filter:none!important;background:#30433b!important;border-style:dashed!important;border-color:#9ba994!important}
+body.portal-edition .scr-room :is(.skill-name,.skill-timer,.skill-key){color:var(--read-light)!important}
+body.portal-edition .scr-room .skill-button.is-locked .skill-timer{background:#30433b!important;color:var(--read-light)!important}
+body.portal-edition .scr-room :is(.first-use-hint strong,.first-use-hint span,.garden-panel p,.garden-result p){color:var(--read-light)!important}
+body.portal-edition .scr-room .chat-send{background:var(--read-primary)!important;color:var(--read-light)!important}
+body.portal-edition .scr-room .chat-send:disabled{background:#30433b!important;color:#c5d8c7!important}
+body.portal-edition .journey-card{background:var(--read-paper)!important;color:var(--read-ink)!important;width:260px;padding:16px;border-color:#a9b99a!important}
+body.portal-edition .journey-card :is(h2,strong){color:var(--read-ink)!important}
+body.portal-edition .journey-card :is(.journey-eyebrow,.journey-line,.journey-hint,.adventure-goal small){color:var(--read-muted)!important}
+body.portal-edition .journey-card h2{font-size:22px}
+body.portal-edition .journey-line{font-size:12px;line-height:1.7;margin-bottom:10px}
+body.portal-edition .journey-hint{font-size:11px;line-height:1.6}
+.journey-contract{margin:10px 0;padding:12px 0 0;border-top:1px solid #c3cdb7}
+.journey-contract-heading{display:flex;justify-content:space-between;gap:8px;font:700 12px/1.6 system-ui;color:var(--read-ink)}
+.journey-contract progress,.journal-current progress{display:block;width:100%;height:7px;accent-color:#34543c;margin:8px 0}
+.journey-contract p{font:12px/1.65 system-ui;color:var(--read-ink);margin:7px 0 0}
+.journey-contract small{display:block;font:11px/1.6 system-ui;color:var(--read-muted);margin-top:6px}
+body.portal-edition .journey-actions{display:flex;gap:7px;margin-top:12px}
+body.portal-edition .journey-actions button{flex:1;min-height:42px;padding:8px 6px;border:1px solid #9eb18e;border-radius:6px;background:var(--read-primary);color:var(--read-light);font:650 12px system-ui;cursor:pointer}
+body.portal-edition .journey-actions .journey-secondary{flex:0 0 52px;background:var(--read-paper-raised);color:var(--read-ink)}
+.journey-upgrade{position:absolute;z-index:6;left:20px;bottom:92px;width:270px;padding:14px 16px;border:1px solid #b6c79b;border-radius:9px;background:#153235;color:#f5f4df;box-shadow:0 7px 24px #102b3330}
+.journey-upgrade[hidden]{display:none}.journey-upgrade strong{display:block;font:700 14px/1.5 system-ui}.journey-upgrade p{font:12px/1.6 system-ui;color:#c5d8c7;margin:6px 0 10px}.journey-upgrade button{min-height:40px;border:1px solid #a6b99a;border-radius:6px;background:#f4d18d;color:#20382e;padding:7px 12px;cursor:pointer;font:650 12px system-ui}
+.journey-upgrade .upgrade-dismiss{margin-left:7px;background:transparent;color:#f5f4df}
+.journal-modal{width:min(850px,calc(100vw - 24px))!important;max-width:850px!important;max-height:calc(100dvh - 24px);padding:26px!important;overflow:auto}
+.journal-heading{display:flex;align-items:center;justify-content:space-between;gap:14px}.journal-heading h2{font:600 28px Georgia,'Batang',serif;margin:8px 0}.journal-heading small{font:700 9px system-ui;letter-spacing:2px}.journal-intro{font:13px/1.8 system-ui;margin:0 0 20px}
+.journal-current{border:1px solid #adbc9e;border-radius:9px;background:#e8eddf;padding:20px}.journal-current h3{margin:8px 0;font-size:21px}.journal-current p{font:13px/1.7 system-ui}.journal-current>strong{display:block;font:700 13px/1.7 system-ui}.journal-current>.gp-button{margin-top:6px}
+.journal-chapters{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:18px}.journal-chapter{padding:19px;border:1px solid #b8c4aa;border-radius:9px;background:#eeeede}.journal-chapter.is-unlocked{background:#fbfaf0;border-top:3px solid #506d43}.journal-chapter-top{display:flex;align-items:center;justify-content:space-between}.journal-chapter-top>span{font:28px Georgia,serif;color:#34543c}.journal-chapter-top small{font:650 11px system-ui}.journal-chapter h3{font:600 21px Georgia,'Batang',serif;margin:12px 0 8px}.journal-chapter>p{font:12px/1.7 system-ui;min-height:40px}.journal-record{display:flex;justify-content:space-between;font:650 12px system-ui;border-block:1px solid #c9d1be;padding:10px 0;margin-top:12px}.journal-quests{list-style:none;display:grid;gap:10px;padding:0;margin:14px 0 0}.journal-quests li{display:flex;align-items:start;justify-content:space-between;gap:10px;font:12px/1.7 system-ui}.journal-quests strong{flex:none;font-size:11px}.journal-save-note{font:12px/1.8 system-ui;margin:18px 0 0}.journal-lock{margin-bottom:0;min-height:0!important}
+@media(max-width:720px){
+ body.portal-edition .journey-card{width:178px;padding:12px;right:10px}
+ body.portal-edition .journey-card h2{font-size:17px}
+ body.portal-edition .journey-card .adventure-goal strong{font-size:12px}
+ body.portal-edition .journey-card .adventure-goal small{font-size:11px}
+ body.portal-edition .journey-hint{font-size:11px}
+ .journey-contract{padding-top:8px;margin:7px 0}.journey-contract p{font-size:11px}.journey-contract small{display:none}
+ body.portal-edition .journey-actions button{font-size:11px;min-height:44px}
+ body.portal-edition .bag-shortcut .bk-btn{min-height:44px!important}
+ .journey-upgrade{left:12px;bottom:180px;width:215px;padding:12px}
+ .journal-modal{padding:18px!important}.journal-heading h2{font-size:24px}.journal-chapters{grid-template-columns:1fr}.journal-current{padding:16px}
+}
+@media(orientation:landscape) and (max-height:600px){body.portal-edition .journey-card{width:190px;padding:10px}.journey-contract{display:none}body.portal-edition .journey-actions{margin-top:6px}.journey-upgrade{bottom:135px}}
+@media(prefers-reduced-motion:reduce){.journal-chapter,.journey-upgrade{animation:none!important;transition:none!important}}
+
+body.portal-edition .game-stage:has(.journey-upgrade:not([hidden])) .loot-feed{bottom:245px}
+@media(max-width:720px){body.portal-edition .game-stage:has(.journey-upgrade:not([hidden])) .loot-feed{bottom:340px}}

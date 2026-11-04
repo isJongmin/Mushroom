@@ -85,3 +85,7 @@ body.portal-edition .game-stage:has(.journey-upgrade:not([hidden])) .loot-feed{b
 @media(max-width:720px){body.portal-edition .game-stage:has(.journey-upgrade:not([hidden])) .loot-feed{bottom:340px}}
 
 body.portal-edition .portal-header-note{background:var(--read-night);color:var(--read-light)!important;padding:8px 12px;border:1px solid #76917a;border-radius:5px;font-size:11px;line-height:1.6}
+
+body.portal-edition .bk-modal button:disabled :is(strong,span,small){color:var(--read-muted)!important}
+body.portal-edition [data-layout=mobile] .bag-shortcut [data-testid=journal-open]{display:none}
+@media(orientation:landscape) and (max-height:600px){body.portal-edition .journey-card h2{font-size:16px}body.portal-edition .journey-card .journey-hint{display:none}}

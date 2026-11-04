@@ -83,3 +83,5 @@ body.portal-edition .journey-actions .journey-secondary{flex:0 0 52px;background
 
 body.portal-edition .game-stage:has(.journey-upgrade:not([hidden])) .loot-feed{bottom:245px}
 @media(max-width:720px){body.portal-edition .game-stage:has(.journey-upgrade:not([hidden])) .loot-feed{bottom:340px}}
+
+body.portal-edition .portal-header-note{background:var(--read-night);color:var(--read-light)!important;padding:8px 12px;border:1px solid #76917a;border-radius:5px;font-size:11px;line-height:1.6}

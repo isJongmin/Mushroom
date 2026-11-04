@@ -54,6 +54,9 @@ function harness(options={}){
  for(let i=0;i<3;i++){h.requests[i].reject({code:'RATE_LIMITED'});await flush();await h.advance(1050);}
  assert.equal(h.requests.length,3);assert.equal(h.failed.length,1);assert.equal(h.out.snapshot().paused,true);h.out.destroy();
 }
+{
+ const h=harness();h.out.setOnline(true);h.out.enqueue('퇴장 직전');h.out.destroy();await flush();assert.equal(h.requests.length,0);
+}
 // Exercise the actual room key handler: IME confirmation and held Enter cannot send partial/duplicate text.
 {
  const source=readFileSync(new URL('../src/client/screens/room.js',import.meta.url),'utf8');
@@ -68,5 +71,9 @@ function harness(options={}){
  context.composingChat=true;enter({});context.composingChat=false;
  context.compositionEndedAt=950;enter({});assert.equal(sends,0);
  context.compositionEndedAt=900;enter({});enter({});assert.equal(sends,2);assert.equal(prevented,2);
+ const pointer=source.slice(source.indexOf("  on(sendBtn,'pointerdown'"),source.indexOf("  on(sendBtn, 'click'"));
+ handlers.length=0;vm.runInContext(pointer,Object.assign(context,{sendBtn:{}}));
+ for(const pointerType of ['mouse','touch','pen'])handlers[0]({pointerType,preventDefault:()=>prevented++});
+ assert.equal(prevented,5,'all pointer types keep the composer focused before click');
 }
 console.log('PASS chat FIFO, slow sends, pacing, realtime confirmation, bounded retry, failure preservation, reconnect, cleanup and IME/Enter handling');

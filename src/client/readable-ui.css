@@ -13,6 +13,9 @@ body.portal-edition:not([data-screen=room]) :is(.bk-btn--primary,.bk-preview__ct
 body.portal-edition .lobby-garden__record{background:var(--read-paper-raised)!important;color:var(--read-ink)!important;border:1px solid #9da98f!important;padding:6px 9px;border-radius:6px}
 body.portal-edition .portal-promises strong{color:var(--read-primary)}
 body.portal-edition .portal-region>span{color:#586c50}
+body.portal-edition .adventurer-passport{background:var(--read-paper-raised)!important}
+body.portal-edition :is(.reward-studio p,.ui-footer span){color:var(--read-muted)!important}
+body.portal-edition:not([data-screen=room]) button:disabled :is(span,small,strong){color:var(--read-muted)!important}
 body.portal-edition :is(button:disabled,.gp-tile.is-protected){opacity:1!important;filter:none!important;cursor:not-allowed!important}
 body.portal-edition:not([data-screen=room]) button:disabled,
 body.portal-edition .bk-modal :is(button:disabled,.gp-tile.is-protected){color:var(--read-muted)!important;background:#dce2d4!important;border-color:#aebaa4!important}

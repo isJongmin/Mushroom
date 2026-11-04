@@ -750,7 +750,7 @@ export function mount(root, app, opts = {}) {
     if (!alive || !assets || assets.source !== 'manifest') return;
     const av = withBody(assets.sanitizeAvatar(profile.avatar),profile.body);
     const paint = () => {
-      if(renderer){const portrait=lobbyAvatar.getContext('2d');portrait.clearRect(0,0,240,300);renderer.draw(portrait,av,120,285,1.8,0,false);}
+      if(renderer){const portrait=lobbyAvatar.getContext('2d');portrait.clearRect(0,0,240,300);renderer.draw(portrait,av,120,285,1.8*renderer.fitScale(av,126,152,0),0,false);}
       const src = renderer && renderer.thumb(av, PART_KEYS); // 합성 중이면 null → onUpdate에서 다시
       if (!src) return;
       const c = thumb.getContext('2d');

@@ -1,15 +1,15 @@
 // Version 1 appearance-only proportions. Physics never reads these values.
 // The existing atlas has merged limbs: horizontal bands also affect sleeves/hands.
 export const BODY_FIELDS=Object.freeze([
- {key:'head',label:'머리 크기',min:90,max:110,low:'작게',high:'크게',group:'전체 비율'},
- {key:'legLength',label:'다리 길이',min:92,max:108,low:'짧게',high:'길게',group:'전체 비율'},
- {key:'shoulders',label:'어깨·팔 너비',min:90,max:112,low:'좁게',high:'넓게',group:'상체'},
- {key:'chest',label:'가슴 너비',min:90,max:112,low:'가늘게',high:'두껍게',group:'상체'},
- {key:'waist',label:'허리 너비',min:88,max:112,low:'가늘게',high:'두껍게',group:'상체'},
- {key:'hips',label:'골반 너비',min:90,max:112,low:'좁게',high:'넓게',group:'하체'},
- {key:'thighs',label:'허벅지 너비',min:90,max:112,low:'가늘게',high:'두껍게',group:'하체'},
- {key:'calves',label:'종아리 너비',min:90,max:112,low:'가늘게',high:'두껍게',group:'하체'},
- {key:'feet',label:'발 너비',min:90,max:110,low:'작게',high:'크게',group:'하체'},
+ {key:'head',label:'머리 크기',min:10,max:200,low:'작게',high:'크게',group:'전체 비율'},
+ {key:'legLength',label:'다리 길이',min:10,max:200,low:'짧게',high:'길게',group:'전체 비율'},
+ {key:'shoulders',label:'어깨·팔 너비',min:10,max:200,low:'좁게',high:'넓게',group:'상체'},
+ {key:'chest',label:'가슴 너비',min:10,max:200,low:'가늘게',high:'두껍게',group:'상체'},
+ {key:'waist',label:'허리 너비',min:10,max:200,low:'가늘게',high:'두껍게',group:'상체'},
+ {key:'hips',label:'골반 너비',min:10,max:200,low:'좁게',high:'넓게',group:'하체'},
+ {key:'thighs',label:'허벅지 너비',min:10,max:200,low:'가늘게',high:'두껍게',group:'하체'},
+ {key:'calves',label:'종아리 너비',min:10,max:200,low:'가늘게',high:'두껍게',group:'하체'},
+ {key:'feet',label:'발 너비',min:10,max:200,low:'작게',high:'크게',group:'하체'},
 ].map(Object.freeze));
 export const DEFAULT_BODY=Object.freeze(Object.fromEntries(BODY_FIELDS.map(f=>[f.key,100])));
 export function normalizeBody(raw){
@@ -19,9 +19,9 @@ export function normalizeBody(raw){
 export const bodyKey=raw=>{const body=normalizeBody(raw);return BODY_FIELDS.map(f=>body[f.key]).join('.');};
 export const BODY_PRESETS=Object.freeze([
  {id:'balanced',name:'균형',caption:'익숙하고 편안한 비율',values:{}},
- {id:'storybook',name:'동화',caption:'큰 머리와 짧은 다리',values:{head:110,legLength:92,shoulders:94,chest:96,feet:106}},
- {id:'ranger',name:'날렵',caption:'긴 다리와 가벼운 실루엣',values:{head:94,legLength:108,shoulders:94,chest:92,waist:88,hips:94,thighs:94,calves:90,feet:94}},
- {id:'guardian',name:'든든',caption:'넓은 상체와 단단한 하체',values:{head:96,shoulders:112,chest:112,waist:106,hips:108,thighs:112,calves:108,feet:110}},
+ {id:'storybook',name:'동화',caption:'큰 머리와 짧은 다리',values:{head:150,legLength:65,shoulders:80,chest:85,feet:125}},
+ {id:'ranger',name:'날렵',caption:'긴 다리와 가벼운 실루엣',values:{head:80,legLength:155,shoulders:75,chest:75,waist:65,hips:80,thighs:70,calves:65,feet:90}},
+ {id:'guardian',name:'든든',caption:'넓은 상체와 단단한 하체',values:{head:90,shoulders:155,chest:165,waist:115,hips:125,thighs:145,calves:130,feet:120}},
 ].map(p=>Object.freeze({...p,values:Object.freeze(normalizeBody(p.values))})));
 // Symbol metadata survives costume spreads but stays out of the 7-part JSON contract.
 const BODY=Symbol('avatar-body');

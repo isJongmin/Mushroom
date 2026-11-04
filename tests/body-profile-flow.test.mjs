@@ -29,12 +29,12 @@ const nick=dom.find(root,'nickname-input');nick.value='새모험가';nick.dispat
 dom.find(root,'studio-wardrobe-tab').dispatchEvent(new Event('click'));assert.equal(dom.find(root,'studio-wardrobe-tab').getAttribute('aria-selected'),'true');
 dom.find(root,'preset-1').dispatchEvent(new Event('click'));assert.equal(app.providers.profile().body.waist,95,'wardrobe presets preserve proportions');
 dom.find(root,'create-submit').dispatchEvent(new Event('click'));
-assert.equal(nav.at(-1)[0],'lobby');assert.equal(app.profile.body.waist,95);assert.equal(app.profile.body.legLength,108);assert.deepEqual(readProfile('qa').body,app.profile.body);assert.equal(Object.keys(app.profile.avatar).length,7);
+assert.equal(nav.at(-1)[0],'lobby');assert.equal(app.profile.body.waist,95);assert.equal(app.profile.body.legLength,155);assert.deepEqual(readProfile('qa').body,app.profile.body);assert.equal(Object.keys(app.profile.avatar).length,7);
 screen.unmount();assert.equal(frames.size,0);
 // Reopen, adjust, cancel: no saved data changes, and cleanup cancels pending repaint.
 const original=structuredClone(app.profile),editRoot=document.createElement('div'),edit=mount(editRoot,app,{mode:'edit'});await tick();
 assert.equal(dom.find(editRoot,'body-waist').value,'95');
-dom.find(editRoot,'body-preset-guardian').dispatchEvent(new Event('click'));assert.equal(app.providers.profile().body.shoulders,112);
+dom.find(editRoot,'body-preset-guardian').dispatchEvent(new Event('click'));assert.equal(app.providers.profile().body.shoulders,155);
 dom.find(editRoot,'profile-cancel').dispatchEvent(new Event('click'));assert.deepEqual(app.profile,original);assert.deepEqual(readProfile('qa').body,original.body);
 edit.unmount();assert.equal(frames.size,0);
 // Reopen + reset: body-only reset must not alter selected clothing.

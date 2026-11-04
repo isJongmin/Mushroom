@@ -36,13 +36,13 @@ for(const preset of BODY_PRESETS){
  const peer=cleanPresenceState({user_id:'peer',nickname:'친구',avatar,body:JSON.parse(JSON.stringify(preset.values))});assert.deepEqual(peer.body,preset.values);
 }
 memory.set('legacy',JSON.stringify({nickname:'옛모험가',avatar}));assert.deepEqual(readProfile('legacy').body,DEFAULT_BODY);
-assert.equal(cleanPresenceState({user_id:'peer',body:{head:1e9}}).body.head,110);
+assert.equal(cleanPresenceState({user_id:'peer',body:{head:1e9}}).body.head,200);
 // Native raster: identity is exact; distant frames never bleed into one another.
 const synthetic=createCanvas(288,192),sc=synthetic.getContext('2d');sc.fillStyle='red';sc.fillRect(0,0,144,192);sc.fillStyle='blue';sc.fillRect(144,0,144,192);
 assert.equal(deformBodySheet(synthetic,DEFAULT_BODY,{frameW:144,frameH:192,anchorX:72,makeCanvas:createCanvas}),synthetic);
 const warped=deformBodySheet(synthetic,BODY_PRESETS[3].values,{frameW:144,frameH:192,anchorX:72,makeCanvas:createCanvas});
-const wd=warped.getContext('2d').getImageData(0,0,288,192).data;
-for(let y=0;y<192;y++)for(let x=0;x<288;x++){const i=(y*288+x)*4;if(wd[i+3])assert.equal(wd[i+(x<144?2:0)],0);}
+const wd=warped.getContext('2d').getImageData(0,0,warped.width,warped.height).data;
+for(let y=0;y<warped.height;y++)for(let x=0;x<warped.width;x++){const i=(y*warped.width+x)*4;if(wd[i+3])assert.equal(wd[i+(x<warped.avatarGeometry.w?2:0)],0);}
 const renderer=createAvatarRenderer(assets),frames=[];
 for(const preset of BODY_PRESETS){
  const av=withBody(avatar,preset.values);await renderer.ready(av);
@@ -57,6 +57,19 @@ for(const preset of BODY_PRESETS){
  assert(renderer.headTop(av)>0);renderer.drawClimb(ctx,av,72,180,1.5,100,true);
 }
 assert.notDeepEqual(frames[0],frames[1]);assert.notDeepEqual(frames[0],frames[2]);assert.notDeepEqual(frames[2],frames[3]);
+// Full source extent survives 10% and 200%; padding is transparent at every edge.
+for(const percent of [10,200]){
+ const body=normalizeBody(Object.fromEntries(BODY_FIELDS.map(f=>[f.key,percent])));
+ const extreme=deformBodySheet(synthetic,body,{frameW:144,frameH:192,anchorX:72,makeCanvas:createCanvas}),g=extreme.avatarGeometry;
+ const pixels=extreme.getContext('2d').getImageData(0,0,extreme.width,extreme.height).data;
+ for(let f=0;f<2;f++){
+  for(let y=0;y<g.h;y++)for(const x of [0,g.w-1])assert.equal(pixels[(y*extreme.width+f*g.w+x)*4+3],0,'padded horizontal edge');
+  for(let x=0;x<g.w;x++)for(const y of [0,g.h-1])assert.equal(pixels[(y*extreme.width+f*g.w+x)*4+3],0,'padded vertical edge');
+ }
+ const av=withBody(avatar,body);await renderer.ready(av);const before=renderer.cacheBytes;
+ const cv=createCanvas(500,500);assert(renderer.draw(cv.getContext('2d'),av,250,420,1.5,2,true));assert.equal(renderer.cacheBytes,before,'expanded atlas reflection does not duplicate memory');
+ assert(renderer.headTop(av)>0);if(percent===200){assert(renderer.headTop(av)>renderer.headTop(withBody(avatar,DEFAULT_BODY))*1.5);assert(renderer.fitScale(av,100,120)<1);}
+}
 const canvas=createCanvas(1440,192),context=canvas.getContext('2d');let calls=0;
 const proxy=new Proxy(context,{get(target,key){const v=Reflect.get(target,key,target);return typeof v==='function'?((...args)=>{if(key==='drawImage')calls++;return v.apply(target,args);}):v;},set(target,key,val){target[key]=val;return true;}});
 const prepared=renderer.stats.composites;
@@ -67,11 +80,11 @@ const dom=installDomFixture({createCanvas}),ac=new AbortController(),changes=[];
 const editor=createBodyEditor({on:(el,type,fn)=>el.addEventListener(type,fn,{signal:ac.signal}),initial:DEFAULT_BODY,onChange:(value,options)=>changes.push({value,options})});
 assert(dom.find(editor.el,'body-head').disabled);editor.setEnabled(true);
 dom.find(editor.el,'body-preset-guardian').dispatchEvent(new Event('click'));
-assert.equal(editor.getValue().shoulders,112);assert.equal(dom.find(editor.el,'body-preset-guardian').getAttribute('aria-pressed'),'true');
+assert.equal(editor.getValue().shoulders,155);assert.equal(dom.find(editor.el,'body-preset-guardian').getAttribute('aria-pressed'),'true');
 const slider=dom.find(editor.el,'body-waist');slider.value='91';slider.dispatchEvent(new Event('input'));assert.equal(editor.getValue().waist,91);assert.equal(dom.find(editor.el,'body-waist-value').textContent,'91%');assert.equal(dom.find(editor.el,'body-selection').textContent,'직접 조정');assert.equal(changes.at(-1).options.commit,false);
 slider.dispatchEvent(new Event('change'));assert.equal(changes.at(-1).options.commit,true);
 dom.find(editor.el,'body-reset').dispatchEvent(new Event('click'));assert.deepEqual(editor.getValue(),DEFAULT_BODY);
-editor.setValue(BODY_PRESETS[1].values);assert.equal(dom.find(editor.el,'body-head').value,'110');
+editor.setValue(BODY_PRESETS[1].values);assert.equal(dom.find(editor.el,'body-head').value,'150');
 editor.setEnabled(false);assert(dom.find(editor.el,'body-head').disabled);
 const before=changes.length;ac.abort();slider.dispatchEvent(new Event('input'));assert.equal(changes.length,before);
 assert.equal(dom.all(editor.el).filter(n=>n.tagName==='INPUT').length,9);

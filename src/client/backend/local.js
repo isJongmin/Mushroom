@@ -284,7 +284,7 @@ function createConnection(roomId, uid, handlers, self, backend, onClose) {
   document.addEventListener('visibilitychange', onVisible);
 
   const mover = createThrottle(MOVE_INTERVAL_MS, (p) => { stats.moveSent++; post({ type: 'move', payload: p }); });
-  const gate = createEventGate((event, payload) => { stats.evSent++; post({ type: 'ev', event, payload, from: uid }); }, stats);
+  const gate = createEventGate((event, payload) => { stats.evSent++; post({ type: 'ev', event, payload, from: uid }); }, stats, {batchImpacts:true});
   const track = (type) => backend.trackLimiter.run(() => {
     if (closed) return 'closed';
     stats.track++;

@@ -1,3 +1,5 @@
+import {createSceneBudget,scenePolicy,sceneDpr} from '../game/scene-budget.js';
+import {readPanelCollapsed,writePanelCollapsed} from '../ui/panel-preference.js';
 import {journeySummary,journeyActionLabel,equipmentUpgrade} from '../game/journey-journal.js';
 import {createJourneyJournal} from '../ui/journey-journal.js';
 import {chapterOf,journeyObjective,journeyTarget,journeyDirection,drawJourneyBeacon} from '../game/journey.js';
@@ -165,6 +167,8 @@ export function mount(root, app, opts = {}) {
   let connection = 'joining'; // joining | connected | disconnected | lost | fatal  ('failed'는 사이클 6부터 쓰지 않음)
   let raf = 0;
   let lastFrame = 0;
+  const sceneBudget=createSceneBudget();let renderPolicy=scenePolicy(1),lastRenderCost=0,forceCompact=false;
+  const castSession=globalThis.crypto?.randomUUID?.()||`cast-${Date.now()}`;
   const input = createMoveInput();
   const timers = new Set();
   const later = (fn, ms) => { const t = setTimeout(() => { timers.delete(t); fn(); }, ms); timers.add(t); return t; };
@@ -261,8 +265,9 @@ export function mount(root, app, opts = {}) {
   function expireGroundDrops(now){if(!progress||expireBusy||now-expireProbeAt<1000)return;expireProbeAt=now;if(progress.state.pending.every(d=>groundDropAlive(d,Date.now())))return;expireBusy=true;progress.run({type:'expire-drops'}).then(()=>{if(!alive)return;const ids=new Set(progress.state.pending.map(d=>d.id));for(const id of dropBorn.keys())if(!ids.has(id))dropBorn.delete(id);syncProgress();}).catch(()=>{}).finally(()=>{expireBusy=false;});}
   try {progress=createProgressionStore(app.profileKey,{job:job.id,guardCommand:c=>{if(c.type==='traits-allocate'){const reason=traitEditLock();if(reason)throw new Error(reason);}if(c.type==='trait-quest-accept'||c.type==='trait-quest-claim'){const reason=mentorAccessReason();if(reason)throw new Error(reason);if(c.key.split(':')[0]!==currentArea)throw new Error('해당 지역의 수련 스승을 찾아가세요.');}}});}catch(e){progressError=e.message;}
   if(progress)job=jobDefinition(activeJob(progress.state));
-  const myLoadout=()=>progress?loadout(progress.state,job.id):null;
-  const myStats=()=>combatStats(myLoadout());
+  let cachedLoadoutState,cachedLoadoutJob,cachedLoadout,cachedStatsInput,cachedStats;
+  const myLoadout=()=>{const state=progress?.state;if(state!==cachedLoadoutState||job.id!==cachedLoadoutJob){cachedLoadoutState=state;cachedLoadoutJob=job.id;cachedLoadout=state?loadout(state,job.id):null;}return cachedLoadout;};
+  const myStats=()=>{const l=myLoadout();if(!cachedStats||l!==cachedStatsInput){cachedStatsInput=l;cachedStats=combatStats(l);}return cachedStats;};
   function traitEditLock(){const p=mentorPoint(world);return traitEditReason({connected:connection==='connected',alive:!!me&&!me.dead,near:!!me&&Math.abs(me.x-p.x)<=230&&Math.abs(me.y-p.y)<=100,now:performance.now(),lastAttack:me?.lastAtkAt??-Infinity,lastHit:petHurtAt});}
   function mentorAccessReason(){const p=mentorPoint(world);return connection!=='connected'?'연결을 기다려주세요.':!me||me.dead?'살아 있는 상태에서 대화할 수 있어요.':Math.abs(me.x-p.x)>220||Math.abs(me.y-p.y)>100?'수련 스승 가까이로 이동해주세요.':'';}
   function openMentor(){const reason=mentorAccessReason();if(reason){chatLog.addSystem(reason);return;}input.clear();mentorPanel?.open();}
@@ -334,7 +339,13 @@ export function mount(root, app, opts = {}) {
   const journalCTA=h('button',{type:'button',class:'journey-secondary',testid:'journey-journal-open'},'수첩');
   on(goalCTA,'click',()=>followJourney());on(journalCTA,'click',()=>{input.clear();journal.open();});
   const chapterLabel=h('small',{class:'journey-eyebrow'}),chapterTitle=h('h2'),chapterLine=h('p',{class:'journey-line'}),journeyHint=h('span',{class:'journey-hint'});
-  const journeyCard=h('aside',{class:'journey-card',testid:'journey-card',hidden:true,'aria-label':'현재 여정'},chapterLabel,chapterTitle,chapterLine,goalButton,contractPanel,journeyHint,h('div',{class:'journey-actions'},goalCTA,journalCTA));
+  let panelStorage;try{panelStorage=window.localStorage;}catch{}
+  const panelKey=app.profileKey+':journey-collapsed';
+  let journeyCollapsed=readPanelCollapsed(panelStorage,panelKey,true);
+  const journeyFold=h('button',{type:'button',class:'journey-fold',testid:'journey-fold','aria-expanded':String(!journeyCollapsed),'aria-label':journeyCollapsed?'여정 펼치기':'여정 최소화'},journeyCollapsed?'펼치기':'접기');
+  const journeyCard=h('aside',{class:'journey-card',testid:'journey-card',hidden:true,'aria-label':'현재 여정'},h('div',{class:'journey-heading'},h('div',{},chapterLabel,chapterTitle),journeyFold),chapterLine,goalButton,contractPanel,journeyHint,h('div',{class:'journey-actions'},goalCTA,journalCTA));
+  journeyCard.classList.toggle('is-minimized',journeyCollapsed);
+  on(journeyFold,'click',()=>{journeyCollapsed=!journeyCollapsed;writePanelCollapsed(panelStorage,panelKey,journeyCollapsed);journeyCard.classList.toggle('is-minimized',journeyCollapsed);setText(journeyFold,journeyCollapsed?'펼치기':'접기');journeyFold.setAttribute('aria-expanded',String(!journeyCollapsed));journeyFold.setAttribute('aria-label',journeyCollapsed?'여정 펼치기':'여정 최소화');positionCombo();});
   function followJourney(toggle=false){const goal=journeyObjective(progress?.state,currentArea);if(!goal)return;input.clear();
     if(goal.action==='bag'){progressPanel?.open('bag');return;}
     if(goal.action==='traits'){openTraits();return;}
@@ -431,6 +442,10 @@ export function mount(root, app, opts = {}) {
   const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},traitsBtn,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
   const soundButton=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'sound-toggle','aria-pressed':String(sound.enabled)},sound.enabled?'효과음 켜짐':'효과음 꺼짐');
   on(soundButton,'click',()=>{const enabled=sound.toggle();setText(soundButton,enabled?'효과음 켜짐':'효과음 꺼짐');soundButton.setAttribute('aria-pressed',String(enabled));if(enabled)sound.play('loot');});menu.append(soundButton);
+  const qualityButton=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'render-quality','aria-pressed':'false'},'타인 이펙트 · 자동');
+  on(qualityButton,'click',()=>{forceCompact=!forceCompact;setText(qualityButton,forceCompact?'타인 이펙트 · 간소화':'타인 이펙트 · 자동');qualityButton.setAttribute('aria-pressed',String(forceCompact));});
+  const renderStatus=h('p',{testid:'render-status'});
+  menu.append(qualityButton,h('details',{class:'render-diagnostics'},h('summary',{},'화면 성능 정보'),renderStatus));
   const coopTitle=h('strong'),coopList=h('ul'),coopHint=h('p');
   const coopPanel=h('section',{class:'cooperative-roster',testid:'cooperative-roster','aria-label':'같은 지역 동료'},coopTitle,coopList,coopHint);menu.append(coopPanel);
   function closeGameMenu(focus=false){menu.hidden=true;menuToggle.setAttribute('aria-expanded','false');menuToggle.setAttribute('aria-label','게임 메뉴 열기');if(focus)menuToggle.focus();}
@@ -472,6 +487,7 @@ export function mount(root, app, opts = {}) {
     const target=journeyPinned?journeyTarget(journeyObjective(s,currentArea),map,world,s,me):null;setText(journeyHint,journeyPinned?journeyDirection(target,me):'눌러서 길잡이 표시');
     syncLootFeedback(now);
     if(menu.hidden||!me)return;
+    const performanceText=`${renderPolicy.crowded?'타인 연출 간소화':'기본 연출'} · 프레임 간격 약 ${Math.round(sceneBudget.averageMs)}ms · 투사체 ${projectiles.count} · 시전 ${skillAttacks.count}`;if(renderStatus.textContent!==performanceText)setText(renderStatus,performanceText);
     const roster=cooperativeRoster(players.values(),me),signature=JSON.stringify(roster.map(p=>[p.id,p.name,p.hp,p.max,p.dead]));
     if(signature===coopPaintKey)return;coopPaintKey=signature;setText(coopTitle,`같은 지역 동료 · ${roster.length}명`);coopList.replaceChildren();
     for(const p of roster)coopList.append(h('li',{},h('span',{},p.name),h('small',{},p.dead?'부활 대기':`${Math.ceil(p.hp)} / ${p.max} HP`),h('progress',{max:p.max,value:p.dead?0:p.hp,'aria-label':p.name+' 체력'})));
@@ -507,7 +523,7 @@ export function mount(root, app, opts = {}) {
     if (viewH < WORLD.minViewH) { viewH = WORLD.minViewH; cssH = (viewH * P) / 2; }
     if(mobile)viewH=Math.max(180,viewH-combatReserve(vw,vh,col.classList.contains('chat-open')));
     const viewW = (cssW * 2) / P;
-    const dpr = Math.min(3, window.devicePixelRatio || 1);
+    const dpr = sceneDpr(cssW,cssH,window.devicePixelRatio||1,renderPolicy);
     const k = (P / 2) * dpr;
     const modeChanged = layout.mobile !== mobile || !root.dataset.layout;
     layout = { mobile, cssW, cssH, viewW, viewH, P, dpr, k };
@@ -942,7 +958,7 @@ export function mount(root, app, opts = {}) {
     ensureSprites();
     const x = Math.round(me.x);
     const y = Math.round(me.y);
-    const a = { user_id: me.user_id, x, y, dir, seq: ++atkSeq, skill: slot, job: atk.job, loadout:myLoadout(), cooldown: atk.cooldown, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
+    const a = { user_id: me.user_id, x, y, dir, seq: ++atkSeq, castAt:now, castSession, skill: slot, job: atk.job, loadout:myLoadout(), cooldown: atk.cooldown, w: atk.w, hits: atk.hits, dmin: atk.dmin, dmax: atk.dmax, el: atk.el };
     if (debug) atkBoxes.push({ box: attackBox(x, y, dir, a.w), at: now });
     if (send('atk', a)) cstats.atkSent++;
     playAttack(a, now);
@@ -967,11 +983,13 @@ export function mount(root, app, opts = {}) {
     for (const s of skillButtons) {
       const left = Math.max(0, skillReadyAt[s.slot] - now);
       const locked=!skillUnlocked(myLoadout(),s.slot),cooldown=abilityStats(job.id,s.slot,myLoadout()).cooldown;
+      const disabled=locked||document.body.classList.contains('has-modal')||left>0||!me||me.dead||!!me?.body?.rope||connection!=='connected';
+      const uiKey=[job.id,locked,disabled,Math.ceil(left/100),cooldown].join(':');if(s.uiKey===uiKey)continue;s.uiKey=uiKey;
       s.btn.title=`${s.ability.name} · ${s.ability.description} · ${cooldown}초 · ${SKILL_LABELS[s.slot]}키`;
       s.btn.classList.toggle('is-locked',locked);
       s.btn.setAttribute('aria-label',locked?`${s.ability.name}, ${GRADES[s.slot-1]} 이상 주무기 획득 시 해금`:`${s.ability.name}, 재사용 ${cooldown}초`);
       s.btn.classList.toggle('is-cooling', left > 0);
-      s.btn.disabled = locked || document.body.classList.contains('has-modal') || left > 0 || !me || me.dead || !!me?.body?.rope || connection !== 'connected';
+      s.btn.disabled = disabled;
       setText(s.timer, locked ? '잠김' : left > 0 ? (left / 1000).toFixed(1) : '');
       s.btn.style.setProperty('--cooldown', `${Math.min(100,left / (cooldown * 1000) * 100)}%`);
     }
@@ -1332,9 +1350,11 @@ export function mount(root, app, opts = {}) {
         break;
       }
       case 'impact':
-        if(me&&p.id.startsWith(me.user_id+':'))combatFeel.confirm(now,p.skill===3);
-        if (p.id.includes(':strike')) skillAttacks.impact(p.id, p.x, p.y, now);
-        else projectiles.impact(p.id, p.x, p.y, now, p.job, p.skill);
+        for(const impact of p.impacts||[p]){
+          if(me&&impact.id.startsWith(me.user_id+':'))combatFeel.confirm(now,impact.skill===3);
+          if(impact.id.includes(':strike'))skillAttacks.impact(impact.id,impact.x,impact.y,now);
+          else projectiles.impact(impact.id,impact.x,impact.y,now,impact.job,impact.skill);
+        }
         break;
       case 'hp': {
         cstats.hpRecv++;
@@ -1702,7 +1722,7 @@ export function mount(root, app, opts = {}) {
     else drawBiomeMap(ctx, map, camX, cy, k, canvas.width, canvas.height);
     if(layout.mobile){const edge=Math.round((world.bottomY-cy)*k);if(edge>3&&edge<canvas.height)ctx.drawImage(canvas,0,edge-3,canvas.width,2,0,edge-1,canvas.width,canvas.height-edge+1);}
     drawVillageOutskirts(ctx,map,camX,cy,k,canvas.width,canvas.height);drawRegionLandmarks(ctx,map,camX,cy,k);
-    drawAdventureScenery(ctx,map,camX,cy,k,now,{reduced:prefersReducedMotion()});
+    drawAdventureScenery(ctx,map,camX,cy,k,now,{reduced:renderPolicy.crowded||prefersReducedMotion()});
     skillAttacks.drawBackdrop(ctx,canvas.width,canvas.height,now,me.user_id,prefersReducedMotion(),dpr);
     drawBossEntrance(ctx,bossEntrance.active,bossPoint(world),camX,cy,k,Date.now(),prefersReducedMotion());
     drawPortals(ctx, map, camX, cy, k, now);
@@ -1789,7 +1809,7 @@ export function mount(root, app, opts = {}) {
     const remoteVisible=new Set();
     for(const [p]of visible)if(!p.isSelf){
       remoteVisible.add(p.user_id);let group=remoteCompanions.get(p.user_id);if(!group){group=createCompanionGroup();remoteCompanions.set(p.user_id,group);}
-      const pets=cleanLoadout(p.loadout).companions;
+      const pets=cleanLoadout(p.loadout).companions.slice(0,renderPolicy.remotePets);
       for(const pose of group.sample({ids:p.dead?[]:pets.map(p=>p.id),mapId:currentArea,x:p.x,y:p.y,dir:p.dir,moving:!!p.moving,now,minX:world.minX,maxX:world.maxX}))actors.push({id:'pet-'+p.user_id+'-'+pose.id,kind:'pet',y:groundAt(pose.x,pose.y),draw:()=>drawPet(ctx,pose.id,(pose.x-camX)*k,(pose.y-cy)*k,k*.8,now,pets.find(p=>p.id===pose.id)?.level||0,{moving:p.moving,left:p.dir<0,reduced:prefersReducedMotion(),reaction:now-p.effectAt<450?'attack':null})});
     }
     for(const uid of remoteCompanions.keys())if(!remoteVisible.has(uid))remoteCompanions.delete(uid);
@@ -1819,8 +1839,8 @@ export function mount(root, app, opts = {}) {
     combatFeel.draw(ctx,camX,cy,k,now,prefersReducedMotion());
     for(const [kind,reaction]of playfulReactions){if(now>=reaction.until)playfulReactions.delete(kind);else drawPlayfulReaction(ctx,map,kind,camX,cy,k,now,reaction,prefersReducedMotion());}
     slashes.draw(ctx, camX, cy, k, now);
-    projectiles.draw(ctx, camX, cy, k, now);
-    skillAttacks.draw(ctx, camX, cy, k, now);
+    projectiles.draw(ctx,camX,cy,k,now,{compact:renderPolicy.crowded,localUserId:me.user_id});
+    skillAttacks.draw(ctx,camX,cy,k,now,{compact:renderPolicy.crowded,localUserId:me.user_id});
     fx.drawFront(ctx, camX, cy, k);
     if (debug) drawDebug(ctx, visible, mobsVis, camX, cy, k, now);
 
@@ -1879,6 +1899,10 @@ export function mount(root, app, opts = {}) {
   }
 
   function frame(now) {
+    const started=performance.now(),previousPolicy=renderPolicy;
+    const automatic=sceneBudget.sample(lastFrame?Math.max(lastRenderCost,now-lastFrame):16,[...players.values()].filter(p=>sameArea(p,me)).length,now);
+    renderPolicy=forceCompact?scenePolicy(8):automatic;
+    if(previousPolicy.maxPixels!==renderPolicy.maxPixels)onResize();
     if(!areaEntry.hidden&&now>=entryUntil)areaEntry.hidden=true;
     raf = requestAnimationFrame(frame);
     const dt = Math.min(Math.max((now - (lastFrame || now)) / 1000, 0), WORLD.maxDt);
@@ -1886,7 +1910,7 @@ export function mount(root, app, opts = {}) {
     update(dt, now);
     paintBossArrival();
     firstUse.update(now,connection!=='connected');
-    render(now);
+    render(now);lastRenderCost=performance.now()-started;
   }
 
   // --- 채팅 (6장) -------------------------------------------------------------
@@ -2213,6 +2237,7 @@ export function mount(root, app, opts = {}) {
     garden: garden.snapshot(),
     assets: assets ? {
       source: assets.source, images: assets.imageCount, imageTotal: assets.imageTotal, background: !!(map && map.layerCount),
+      quality:{...renderPolicy,averageFrameMs:Math.round(sceneBudget.averageMs*10)/10,backingPixels:canvas.width*canvas.height},
       mapLayers: map ? map.layerCount : 0, sheets: avatarR ? avatarR.cacheSize : 0,
       composite: avatarR ? { count: avatarR.stats.composites, avgMs: avatarR.stats.composites ? Math.round((avatarR.stats.totalMs / avatarR.stats.composites) * 10) / 10 : 0, maxMs: Math.round(avatarR.stats.maxMs * 10) / 10 } : null,
       layout: { P: layout.P, cssW: layout.cssW, cssH: layout.cssH, viewW: layout.viewW, viewH: layout.viewH, k: layout.k },

@@ -67,11 +67,19 @@ export function acceptJobAttack(player, attack, now) {
   const times = player.acceptedSkills || {};
   const interval=slot?cooldown*1000:BASIC_INTERVAL_MS;
   const readyAt=player.acceptedSkillReadyAt?.[slot]??((times[slot]??-Infinity)+interval);
-  if (now < readyAt-15) return false;
+  const session=attack.castSession||'legacy';
+  const sameSession=player.acceptedCastSession===session;
+  const previousCast=sameSession?player.acceptedCastTimes?.[slot]:undefined;
+  const timed=Number.isFinite(attack.castAt)&&attack.castAt>=0;
+  // Sender time is relative only; receipt-time pacing still bounds total accepted damage.
+  if(timed&&Number.isFinite(previousCast)&&attack.castAt<previousCast+interval-1)return false;
+  const jitter=timed&&Number.isFinite(previousCast)?Math.min(250,interval*.4):15;
+  if (now < readyAt-jitter) return false;
   player.acceptedAttackSeq = attack.seq;
   player.acceptedAttackAt = now;
   player.acceptedSkills = { ...times, [slot]: now };
   // A new allocation does not shorten a cooldown that has already started.
-  player.acceptedSkillReadyAt = {...player.acceptedSkillReadyAt,[slot]:now+interval};
+  player.acceptedSkillReadyAt = {...player.acceptedSkillReadyAt,[slot]:Math.max(now,readyAt)+interval};
+  if(timed){player.acceptedCastTimes={...(sameSession?player.acceptedCastTimes:{}),[slot]:attack.castAt};player.acceptedCastSession=session;}
   return true;
 }

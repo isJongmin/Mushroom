@@ -1,6 +1,7 @@
 import { ultimatePresentation, drawUltimateBackdrop } from './ultimate-visuals.js';
 import { abilityDefinition } from './jobs.js';
 import { drawAbilityEffect } from './skill-visuals.js';
+import {drawCrowdCast} from './scene-budget.js';
 
 const living = m => m.hp > 0 && m.s !== 'die';
 export const isProjectileAbility = (job, slot = 0) => !!abilityDefinition(job, slot)?.speed;
@@ -57,7 +58,7 @@ export function createSkillAttacks() {
         return {...e,at:now+e.delay,done:false,...(ack?{x:ack.x,y:ack.y}: {})};
       });
       casts.push({id,a:{...a},at:now,authoritative,plan});
-      if(casts.length>100){const ordinary=casts.findIndex(c=>(c.a.skill??0)!==3);casts.splice(ordinary<0?0:ordinary,1);}
+      if(casts.length>1024){let excess=casts.findIndex(c=>!c.authoritative&&(c.a.skill??0)!==3);if(excess<0)excess=casts.findIndex(c=>!c.authoritative);if(excess<0)excess=casts.findIndex(c=>(c.a.skill??0)!==3);casts.splice(excess<0?0:excess,1);}
     },
     update(now,hit) {
       for(const c of casts) for(const e of c.plan) if(!e.done && now>=e.at) {
@@ -73,13 +74,14 @@ export function createSkillAttacks() {
       while(acknowledgements.size>512) acknowledgements.delete(acknowledgements.keys().next().value);
       for(const c of casts) { const e=c.plan.find(e=>e.id===id); if(e){e.x=x;e.y=y;} }
     },
-    draw(ctx,camX,camY,k,now) {
+    draw(ctx,camX,camY,k,now,{compact=false,localUserId=null}={}) {
       ctx.save(); ctx.setTransform(1,0,0,1,0,0);
       for(const c of casts) {
         const sx=(c.a.x-camX)*k,sy=(c.a.y-camY)*k;
         const reach=Math.max(c.a.w,abilityDefinition(c.a.job,c.a.skill??0).radius||0)*k;
         if(ctx.canvas&&(sx+reach< -100||sx-reach>ctx.canvas.width+100||sy+100<0||sy-750*k>ctx.canvas.height+100))continue;
-        drawAbilityEffect(ctx,c.a.job,c.a.skill??0,sx,sy,k,now-c.at,c.a.dir==='left',{plan:c.plan,origin:c.a});
+        if(compact&&c.a.user_id!==localUserId)drawCrowdCast(ctx,c.a,now-c.at,sx,sy,k,abilityDefinition(c.a.job,c.a.skill??0));
+        else drawAbilityEffect(ctx,c.a.job,c.a.skill??0,sx,sy,k,now-c.at,c.a.dir==='left',{plan:c.plan,origin:c.a});
       }
       ctx.restore();
     },

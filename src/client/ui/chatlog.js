@@ -62,11 +62,15 @@ export function createChatLog(o) {
   let unread = 0; // 접힘/숨김 중 도착한 일반/내 메시지
   let newCount = 0; // 위로 스크롤한 채 도착한 일반/내 메시지
   const seenIds = new Set();
+  const pending = new Map();
+  let scrollFrame = 0;
   let historyLoaded = false;
 
   const visible = () => (mobile ? mobileOpen : desktopOpen);
   const atBottom = () => list.scrollHeight - list.scrollTop - list.clientHeight <= BOTTOM_SLACK;
-  const toBottom = () => { list.scrollTop = list.scrollHeight; };
+  const toBottom = () => {
+    if (!scrollFrame) scrollFrame = requestAnimationFrame(() => { scrollFrame = 0; list.scrollTop = list.scrollHeight; });
+  };
 
   function renderBadges() {
     const t = badgeText(unread);
@@ -127,9 +131,19 @@ export function createChatLog(o) {
   });
   on(newBtn, 'click', () => { newCount = 0; renderNew(); toBottom(); });
   on(list, 'scroll', () => { if (newCount && atBottom()) { newCount = 0; renderNew(); } });
+  on(list,'click',e=>{
+    const button=e.target.closest?.('[data-pending-action]');
+    const li=button?.closest('[data-pending-id]');
+    const entry=li&&pending.get(li.dataset.pendingId);
+    if(entry) entry[button.dataset.pendingAction]?.(li.dataset.pendingId);
+  });
 
   function trim() {
-    while (list.children.length > LOG_DOM_MAX) list.firstElementChild.remove();
+    while (list.children.length > LOG_DOM_MAX + pending.size) {
+      const first = [...list.children].find(li => !li.dataset.pendingId);
+      if (!first) break;
+      first.remove();
+    }
   }
 
   /** 새 항목을 맨 아래에 붙인다. countable = 일반/내 메시지(시스템 제외), force = 위치와 상관없이 맨 아래로 */
@@ -163,6 +177,40 @@ export function createChatLog(o) {
   const api = {
     el,
     toggle,
+    open() {
+      if (visible()) return;
+      if (mobile) mobileOpen = true;
+      else { desktopOpen = true; writeLogOpen(true); }
+      expanded();
+    },
+    closeMobile() {if(mobile){mobileOpen=false;applyMode();}},
+    setPending(item, nickname, {retry, discard} = {}) {
+      let entry = pending.get(item.id);
+      if (!entry) {
+        const status = h('small', {class:'chat-delivery'});
+        const retryBtn = h('button', {type:'button',class:'chat-retry','data-pending-action':'retry'}, '다시 보내기');
+        const discardBtn = h('button', {type:'button',class:'chat-retry','data-pending-action':'discard'}, '지우기');
+        const li = h('li', {class:'bk-msg bk-msg--self',testid:'chat-pending','data-pending-id':item.id},
+          h('b',{class:'bk-msg__nick'},nickname),item.text,status,retryBtn,discardBtn);
+        entry = {li,status,retryBtn,discardBtn,retry,discard};pending.set(item.id,entry);
+        append(li,{countable:false,force:true});
+      }
+      const failed=item.status==='failed';
+      entry.li.dataset.delivery=item.status;
+      setText(entry.status,failed?(item.uncertain?'전송 확인 안 됨 · 재전송 시 중복 가능':'전송 실패'):item.status==='sending'?'전송 중':'전송 대기');
+      entry.retryBtn.hidden=entry.discardBtn.hidden=!failed;
+    },
+    discardPending(id) {const entry=pending.get(id);if(entry){entry.li.remove();pending.delete(id);}},
+    confirmPending(id, msg) {
+      const entry=pending.get(id);
+      if (!entry) return api.addChat(msg,true);
+      pending.delete(id);
+      if (seenIds.has(msg.id)) {entry.li.remove();return false;}
+      seenIds.add(msg.id);
+      if (seenIds.size>2000) seenIds.delete(seenIds.values().next().value);
+      entry.li.replaceWith(chatItem(msg,true));trim();
+      return true;
+    },
     setMobile(m) {
       if (m === mobile && el.dataset.mode) return;
       mobile = m;
@@ -241,6 +289,8 @@ export function createChatLog(o) {
     },
     destroy() {
       ac.abort();
+      if(scrollFrame) cancelAnimationFrame(scrollFrame);
+      pending.clear();
       el.remove();
       toggle.remove();
     },

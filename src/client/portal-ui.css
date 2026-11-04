@@ -109,3 +109,19 @@ body.portal-edition:not([data-screen=room]){--text:#30473d;--text-strong:#253f34
 .portal-edition .bk-modal .gp-tile-top{color:#617252!important}
 
 .portal-edition .bk-room{display:flex!important;align-items:center}.portal-edition .bk-room__main{flex:1;min-width:0}.portal-edition .portal-room-scene{flex-shrink:0}
+
+/* Continuous chat: direct access, stable composer, explicit delivery state. */
+.portal-edition .bag-shortcut{display:flex;gap:6px;align-items:center}
+.portal-edition .bag-shortcut .mobile-chat-toggle{display:inline-flex!important;align-items:center;justify-content:center;min-width:54px}
+.portal-edition .scr-room .chat-send{display:block;min-height:44px;width:64px;font:600 12px system-ui}
+.portal-edition .chat-row .bk-input-wrap{min-width:0}
+.portal-edition .chat-row input{font-size:16px!important;min-height:44px}
+.portal-edition .chat-queue-status{position:absolute;bottom:calc(100% + 6px);left:4px;background:#17363bea;color:#e2e9d4;padding:5px 9px;border-radius:6px;font:11px/1.5 system-ui;pointer-events:none}
+.portal-edition .chat-queue-status[hidden]{display:none}
+.portal-edition .chat-delivery{display:inline-block;margin-left:8px;color:#c8d8bf;font:10px system-ui}
+.portal-edition [data-delivery=failed] .chat-delivery{color:#ffd3bb}
+.portal-edition .chat-retry{margin:4px 0 0 7px;padding:5px 8px;border:1px solid #91a687;border-radius:5px;background:#38513c;color:#fff1d1;font:11px system-ui;cursor:pointer}
+.portal-edition .chat-retry[hidden]{display:none}
+.portal-edition .bk-msg{overflow-wrap:anywhere}
+[data-layout=mobile] .portal-edition .scr-room.chat-open .room-log,.portal-edition [data-layout=mobile] .scr-room.chat-open .room-log{top:auto!important;bottom:78px;max-height:calc(100% - 180px);width:auto;left:10px;right:10px}
+[data-layout=mobile] .portal-edition .chat-retry,.portal-edition [data-layout=mobile] .chat-retry{min-height:44px}

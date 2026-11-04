@@ -2,6 +2,8 @@
 
 ## Reproduced defects
 
+The live two-client browser check also reproduced the direct non-host failure: `mobView.list` returns a Map iterator, while `buildStrikePlan` called `mobs.filter(...).sort(...)` as if it were an Array. The exception interrupted both effect creation and subsequent local cooldown setup. The planner now materializes the iterable, and a regression test uses the actual `createMobView().list` for all 16 job/slot combinations. This explains why an isolated host-only test missed the failure.
+
 1. Twenty simultaneous thief ultimates create 180 projectiles. The former 160-entry list silently removed the oldest 20, including their authoritative collision work. Supported room traffic now fits within a bounded 1024-entry simulation pool. Cast overflow prefers ordinary visual entries before an ultimate or authoritative entry.
 2. Attack cooldown validation used receiver arrival time with only 15 ms tolerance. A valid three-second sender cadence could be rejected when the second packet arrived 150 ms earlier relative to the first packet. Optional relative cast timestamps and a per-mount session ID permit bounded jitter (at most 250 ms), while receipt deadlines advance from the previous deadline rather than allowing cumulative speedup. Legacy packets retain strict checks; sequence, origin, weapon, damage and skill-unlock validation remain.
 3. Host impacts were limited to 40 individual messages per second. The adapters now batch up to 24 acknowledgements into one impact message after at most 40 ms under normal load. Packet rate stays capped at 40 batches/second; pending acknowledgements are bounded at 512. A test sends all 180 acknowledgements in eight messages with no drops. Flat impact messages remain readable.

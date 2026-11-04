@@ -11,7 +11,7 @@ export function buildStrikePlan(a, mobs = []) {
   const d = a.dir === 'left' ? -1 : 1, def = abilityDefinition(a.job, a.skill ?? 0);
   if (!def || (def.speed && !def.finisher)) return [];
   const frontBox = (w, h = 85) => ({ x1: a.x + (d < 0 ? -w : 0), x2: a.x + (d > 0 ? w : 0), y1: a.y - h, y2: a.y + 6 });
-  const nearby = mobs.filter(m => living(m) && (m.x-a.x)*d >= -20 && (m.x-a.x)*d <= a.w && Math.abs(m.y-a.y)<130)
+  const nearby = Array.from(mobs).filter(m => living(m) && (m.x-a.x)*d >= -20 && (m.x-a.x)*d <= a.w && Math.abs(m.y-a.y)<130)
     .sort((m,n)=>Math.abs(m.x-a.x)-Math.abs(n.x-a.x) || String(m.id).localeCompare(String(n.id)));
   const events=[];
   const add=(delay,x,y,box,hits=1,targets=def.targets,targetId=null)=>events.push({delay,x,y,box,damage:{...a,hits},targets,targetId});

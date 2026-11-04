@@ -2,6 +2,7 @@ import {adventureGoal} from './adventure-goals.js';
 import {mentorPoint} from './training-mentors.js';
 import {taxiPoint} from './town-taxi.js';
 import {explorationPoints} from './adventure-traits.js';
+import {questNpcPoint} from './quest-npc.js';
 export const CHAPTERS=Object.freeze({
  village:{number:'01',title:'작은 마을의 큰 소동',line:'평온한 버섯마을에도, 누군가의 첫 용기가 필요하다.'},
  quarry:{number:'02',title:'땅속에서 들려오는 노래',line:'불 꺼진 갱도 아래, 수정은 아직 빛나고 있다.'},
@@ -15,12 +16,15 @@ export function journeyObjective(state,area){
  const first=area+':'+(area==='village'?'hunt20':'explore3');
  if(!state.traits.quests[first])return {action:'mentor',title:area==='village'?'첫걸음, 스승의 부탁':'이곳의 스승을 찾아서',detail:'수련을 수락하고 여정을 시작하세요'};
  if(area!=='village'&&state.traits.quests[first]==='active')return {action:'explore',title:'지도에 없는 세 갈래 길',detail:`탐험 지점 ${state.traits.explored[area].length} / 3`};
+ if(base.action==='hunt'&&state.traits.quests[area+':boss-first']==='active'&&!state.traits.events[area].boss)return {action:'event',title:'이 마을을 지켜낼 시간',detail:'안내 NPC에게 보스 도전을 선택하세요 · 첫 처치 수련'};
+ if(base.action==='hunt'&&area!=='village'&&state.traits.quests[area+':defense-first']==='active'&&!state.traits.events[area].defense)return {action:'event',title:'함께 지켜내는 작은 약속',detail:'안내 NPC에게 방어 이벤트를 선택하세요'};
  return {...base,title:base.action==='hunt'?(area==='village'?'마을 밖으로, 첫 출정':'다음 여정을 위한 준비'):base.title,detail:base.action==='hunt'?base.title+' · '+base.detail:base.detail};
 }
 export function journeyTarget(goal,map,world,state,player){
  if(!goal||!player)return null;
  if(['mentor','traits'].includes(goal.action))return {...mentorPoint(world),label:'수련 스승'};
  if(goal.action==='taxi')return {...taxiPoint(map),label:'마을 택시'};
+ if(goal.action==='event')return {...questNpcPoint(world),label:'마을 안내 NPC'};
  if(goal.action==='explore'){
   const p=explorationPoints(map).find(p=>!state.traits.explored[map.id].includes(p.id));return p?{...p,label:p.name}:null;
  }

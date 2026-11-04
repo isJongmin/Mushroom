@@ -1,3 +1,5 @@
+import {journeySummary,journeyActionLabel,equipmentUpgrade} from '../game/journey-journal.js';
+import {createJourneyJournal} from '../ui/journey-journal.js';
 import {chapterOf,journeyObjective,journeyTarget,journeyDirection,drawJourneyBeacon} from '../game/journey.js';
 import {createLootFeedback} from '../game/loot-feedback.js';
 import {createGameAudio} from '../game/game-audio.js';
@@ -278,7 +280,10 @@ export function mount(root, app, opts = {}) {
   const chainHud=h('div',{class:'hunt-combo',testid:'hunt-combo',role:'status',hidden:true});
   const bagBtn=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'equipment-bag'},'가방');
   on(bagBtn,'click',()=>{firstUse.request('bag');input.clear();if(progressPanel)progressPanel.open();else chatLog.addSystem(progressError);});
-  const growthHud=h('div',{class:'bag-shortcut',testid:'progression-hud'},bagBtn);
+  const journalButton=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'journal-open'},'수첩');
+  const journal=createJourneyJournal({main:root,getState:()=>progress?.state,getArea:()=>currentArea,onGuide:()=>followJourney(),onFocus:()=>canvas.focus({preventScroll:true})});
+  on(journalButton,'click',()=>{input.clear();journal.open();});
+  const growthHud=h('div',{class:'bag-shortcut',testid:'progression-hud'},bagBtn,journalButton);
   function syncProgress(){
     if(!alive||!progress)return;
     const nextJob=jobDefinition(activeJob(progress.state)),changed=nextJob.id!==job.id;job=nextJob;
@@ -321,16 +326,24 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'minimap-head' }, miniName, miniToggle), miniBody);
   const goalTitle=h('strong'),goalDetail=h('small');
   const goalButton=h('button',{type:'button',class:'adventure-goal',testid:'adventure-goal',hidden:true},goalTitle,goalDetail);
-  let journeyPinned=false;
+  let journeyPinned=(progress?.state.kills.village||0)===0;
+  const contractCount=h('strong'),contractReward=h('p'),contractLevel=h('small');
+  const contractProgress=h('progress',{max:20,value:0,'aria-label':'사냥 의뢰 진행',testid:'journey-contract-progress'});
+  const contractPanel=h('div',{class:'journey-contract'},h('div',{class:'journey-contract-heading'},h('span',{},'사냥 의뢰'),contractCount),contractProgress,contractReward,contractLevel);
+  const goalCTA=h('button',{type:'button',testid:'journey-action'},'길 안내');
+  const journalCTA=h('button',{type:'button',class:'journey-secondary',testid:'journey-journal-open'},'수첩');
+  on(goalCTA,'click',()=>followJourney());on(journalCTA,'click',()=>{input.clear();journal.open();});
   const chapterLabel=h('small',{class:'journey-eyebrow'}),chapterTitle=h('h2'),chapterLine=h('p',{class:'journey-line'}),journeyHint=h('span',{class:'journey-hint'});
-  const journeyCard=h('aside',{class:'journey-card',testid:'journey-card',hidden:true,'aria-label':'현재 여정'},chapterLabel,chapterTitle,chapterLine,goalButton,journeyHint);
-  on(goalButton,'click',()=>{const goal=journeyObjective(progress?.state,currentArea);if(!goal)return;
+  const journeyCard=h('aside',{class:'journey-card',testid:'journey-card',hidden:true,'aria-label':'현재 여정'},chapterLabel,chapterTitle,chapterLine,goalButton,contractPanel,journeyHint,h('div',{class:'journey-actions'},goalCTA,journalCTA));
+  function followJourney(toggle=false){const goal=journeyObjective(progress?.state,currentArea);if(!goal)return;input.clear();
     if(goal.action==='bag'){progressPanel?.open('bag');return;}
-    if(goal.action==='traits'&&!traitEditLock()){openTraits();return;}
+    if(goal.action==='traits'){openTraits();return;}
     if(goal.action==='mentor'&&!mentorAccessReason()){openMentor();return;}
     if(goal.action==='taxi'){const p=taxiPoint(map);if(me&&!me.dead&&Math.abs(me.x-p.x)<=160&&Math.abs(me.y-p.y)<=85){openTaxi();return;}}
-    journeyPinned=!journeyPinned;adventurePaintKey='';
-  });
+    if(goal.action==='event'){const p=questNpcPoint(world);if(me&&!me.dead&&Math.abs(me.x-p.x)<=230&&Math.abs(me.y-p.y)<=100){npcQuest.click();return;}}
+    journeyPinned=toggle?!journeyPinned:true;adventurePaintKey='';
+  }
+  on(goalButton,'click',()=>followJourney(true));
   on(miniToggle, 'click', () => { const open = miniBody.hidden; miniBody.hidden = !open; miniToggle.setAttribute('aria-expanded', String(open)); miniToggle.setAttribute('aria-label', open ? '미니맵 접기' : '미니맵 펼치기'); setText(miniToggle, open ? '−' : '+');firstUse.request('map');positionCombo(); });
   on(portalBtn, 'click', () => enterPortal(performance.now()));
   const skillReadyAt = [0, 0, 0, 0];
@@ -428,23 +441,34 @@ export function mount(root, app, opts = {}) {
   hud.querySelector('.hud-r').append(menuToggle);
   stage.append(playerStatus,menu);
   const lootFeed=h('div',{class:'loot-feed',testid:'loot-feed',role:'status','aria-live':'polite','aria-atomic':'true'});stage.append(lootFeed);
+  const upgradeTitle=h('strong'),upgradeDetail=h('p'),upgradeButton=h('button',{type:'button',testid:'upgrade-review'},'비교 · 장착'),upgradeDismiss=h('button',{type:'button',class:'upgrade-dismiss','aria-label':'장비 안내 닫기'},'닫기');
+  const upgradeCard=h('aside',{class:'journey-upgrade',testid:'equipment-upgrade',hidden:true,'aria-label':'더 좋은 장비 획득'},upgradeTitle,upgradeDetail,upgradeButton,upgradeDismiss);stage.append(upgradeCard);
+  let upgradeUntil=0;
+  on(upgradeButton,'click',()=>{upgradeCard.hidden=true;input.clear();progressPanel?.open();});
+  on(upgradeDismiss,'click',()=>{upgradeCard.hidden=true;});
   let lootFeedKey='';
   function syncLootFeedback(now){const entries=lootFeedback.sample(now),key=entries.map(e=>e.key+':'+(e.amount||0)).join('|');if(key===lootFeedKey)return;lootFeedKey=key;lootFeed.replaceChildren();
-    for(const e of entries){const rare=e.tier>=2;lootFeed.append(h('div',{class:'loot-message'+(rare?' is-rare':''),style:{'--loot-color':['#d1d9d0','#a6d2ac','#a8d0ec','#d2b8ec','#f3d48b'][e.tier||0]}},h('small',{},e.kind==='celebration'?'LEVEL UP':e.kind==='gold'?'GOLD':rare?'RARE FIND':'ACQUIRED'),h('strong',{},e.title||(e.kind==='gold'?`+ ${e.amount.toLocaleString()} G`:itemName(e)))));}
+    for(const e of entries){const rare=e.tier>=2;lootFeed.append(h('div',{class:'loot-message'+(rare?' is-rare':''),style:{'--loot-color':['#d1d9d0','#a6d2ac','#a8d0ec','#d2b8ec','#f3d48b'][e.tier||0]}},h('small',{},e.kind==='celebration'?'LEVEL UP':e.kind==='milestone'?'MILESTONE':e.kind==='gold'?'GOLD':rare?'RARE FIND':'ACQUIRED'),h('strong',{},e.title||(e.kind==='gold'?`+ ${e.amount.toLocaleString()} G`:itemName(e)))));}
   }
   let lastHpKey='',lastPortrait='';
   let presentedLevel=adventureProgress(progress?.state).level;
   let adventurePaintAt=-Infinity,adventurePaintKey='',coopPaintKey='';
   function syncAdventureHud(now){
     if(now-adventurePaintAt<250)return;adventurePaintAt=now;
+    if(!upgradeCard.hidden&&now>=upgradeUntil)upgradeCard.hidden=true;
     const s=progress?.state,level=adventureProgress(s),key=[s?.revision,currentArea,connection,now<entryUntil,journeyPinned].join(':');
     if(key!==adventurePaintKey){adventurePaintKey=key;setText(playerName,`Lv.${level.level} ${myNick}`);
       setText(xpValue,level.capped?'MAX':`EXP ${Math.floor(level.ratio*100)}%`);xpValue.title=level.capped?'최고 레벨':`${level.current} / ${level.needed} EXP`;
       xpFill.style.width=level.ratio*100+'%';xpTrack.setAttribute('aria-valuenow',String(Math.floor(level.ratio*100)));xpTrack.setAttribute('aria-valuetext',level.capped?'최고 레벨':`${level.current} / ${level.needed}`);
       const goal=journeyObjective(s,currentArea);journeyCard.hidden=!goal||connection!=='connected'||now<entryUntil;goalButton.hidden=!goal;
       const chapter=chapterOf(currentArea);setText(chapterLabel,`CHAPTER ${chapter.number} · ${AREA_NAMES[currentArea]}`);setText(chapterTitle,chapter.title);setText(chapterLine,chapter.line);goalButton.setAttribute('aria-pressed',String(journeyPinned));
+      const summary=journeySummary(s,currentArea);
+      if(summary){setText(contractCount,`${summary.contract.current} / 20`);contractProgress.value=summary.contract.current;setText(contractReward,`완료 보상 · ${summary.contract.reward}`);setText(contractLevel,summary.levelHint);}
       if(goal){setText(goalTitle,goal.title);setText(goalDetail,goal.detail);goalButton.setAttribute('aria-label',goal.title+' · '+goal.detail);}positionCombo();
     }
+    const actionGoal=journeyObjective(s,currentArea);
+    const actionLabel=actionGoal?.action==='mentor'&&!mentorAccessReason()?'스승과 대화':actionGoal?.action==='taxi'&&me&&Math.abs(me.x-taxiPoint(map).x)<=160&&Math.abs(me.y-taxiPoint(map).y)<=85?'택시 타기':journeyActionLabel(actionGoal);
+    if(goalCTA.textContent!==actionLabel)setText(goalCTA,actionLabel);
     const target=journeyPinned?journeyTarget(journeyObjective(s,currentArea),map,world,s,me):null;setText(journeyHint,journeyPinned?journeyDirection(target,me):'눌러서 길잡이 표시');
     syncLootFeedback(now);
     if(menu.hidden||!me)return;
@@ -1168,12 +1192,14 @@ export function mount(root, app, opts = {}) {
   async function receiveLoot(p){
     if(!progress||!me||p.owner!==me.user_id||p.area!==currentArea)return;
     try {
+      const previousKills=progress.state.kills[currentArea]||0;
       const before=earnedPoints(progress.state,STAGES),awarded=await progress.run({type:'loot',...p});
       if(!alive)return;
       if(earnedPoints(progress.state,STAGES)>before)chatLog.addSystem('모험 특성 포인트 획득! 메뉴의 모험 특성에서 배분하세요.');
+      if(!awarded?.duplicate&&previousKills===0&&progress.state.kills[currentArea]>0)lootFeedback.push({kind:'milestone',title:'첫 승리 · 모험이 시작됐어요',tier:1},performance.now());
       if(!awarded?.duplicate&&liveGroundDrops().length)firstUse.request('drops');
       if(!awarded?.duplicate&&p.combo){chainUntil=performance.now()+5000;chainHud.hidden=false;setText(chainHud,`${p.combo} COMBO · 골드 +${comboBonus(p.combo)}%`);}
-      if(awarded?.contract){chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}
+      if(awarded?.contract){lootFeedback.push({kind:'milestone',title:'사냥 의뢰 완료 · 보상은 바닥에서 주워주세요',tier:2},performance.now());chainUntil=performance.now()+6500;chainHud.hidden=false;setText(chainHud,`의뢰 완료 · ${GRADES[Math.min(4,stageOf(currentArea).order)]} 무기 + 보너스 골드`);chatLog.addSystem('사냥 의뢰 완료! 보너스 골드와 현재 무기 종류의 장비가 바닥에 떨어졌어요.');}
       const oldMax=me.max;syncProgress();
       const level=adventureProgress(progress.state).level;
       if(!awarded?.duplicate&&level>presentedLevel){
@@ -1192,7 +1218,7 @@ export function mount(root, app, opts = {}) {
     pickupAt=now;const range=myStats().pickup;
     const d=liveGroundDrops().find(d=>(d.kind==='gold'||progress.state.items.length<200)&&now-(dropBorn.get(d.id)??now)>350&&d.area===currentArea&&Math.abs(d.x-me.x)<=range&&Math.abs(d.y-me.y)<60);
     if(!d)return;collecting=true;
-    try{const item=await progress.run({type:'collect',id:d.id});dropBorn.delete(d.id);if(alive){lootFeedback.push(item,performance.now());sound.play(item.tier>=2?'rare':'loot');if(item.tier>=2)chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
+    try{const item=await progress.run({type:'collect',id:d.id});dropBorn.delete(d.id);if(alive){const upgrade=equipmentUpgrade(progress.state,item);if(upgrade){setText(upgradeTitle,upgrade.title);setText(upgradeDetail,upgrade.detail);upgradeUntil=performance.now()+15000;upgradeCard.hidden=false;}lootFeedback.push(item,performance.now());sound.play(item.tier>=2?'rare':'loot');if(item.tier>=2)chatLog.addSystem(`${itemName(item)} 획득`);petLootAt=performance.now();syncProgress();}}
     catch(e){if(alive&&now-growthErrorAt>5000){growthErrorAt=now;chatLog.addSystem(e.message);}}finally{collecting=false;}
   }
   function sendLoot(now){
@@ -2240,6 +2266,7 @@ export function mount(root, app, opts = {}) {
     if (delModal) { const m = delModal; delModal = null; m.close({ restoreFocus: false }); }
     remoteCompanions.clear();companion.reset();companionPoses=[];traitRetryAt.clear();mentorPanel?.destroy();traitsPanel?.destroy();progressPanel?.destroy();progress?.close();lootContributors.clear();lootOutbox.clear();dropBorn.clear();
     gardenPanel.destroy(); garden.clear();
+    journal.destroy();
     chatOutbox?.destroy();
     chatLog.destroy();
     link = null;

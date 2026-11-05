@@ -118,7 +118,8 @@ export function createChatLog(o) {
     if (mobile) {
       mobileOpen = false;
       applyMode();
-      toggle.focus({ preventScroll: true });
+      if (o.onMobileFold) o.onMobileFold();
+      else toggle.focus({ preventScroll: true });
     } else {
       desktopOpen = !desktopOpen;
       writeLogOpen(desktopOpen);

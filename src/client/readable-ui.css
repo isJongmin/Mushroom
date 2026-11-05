@@ -128,3 +128,78 @@ body.portal-edition .bk-slot[aria-checked=true] .wardrobe-slot-label{color:#1f3b
 body.portal-edition .wardrobe-skin input:focus-visible{outline:3px solid #295d78;outline-offset:3px}
 @media(min-width:721px){body.portal-edition .card-create .create-prev{position:sticky;top:20px}}
 @media(max-width:720px){body.portal-edition .wardrobe-toolbar{gap:8px}body.portal-edition .wardrobe-search{font-size:12px!important}body.portal-edition .wardrobe-skin{padding:13px}body.portal-edition:not([data-screen=room]) .bk-slots .bk-slot{min-height:99px}body.portal-edition .wardrobe-slot-label{font-size:10px}}
+
+/* Keep the menu inside the scene on short windows and above touch controls. */
+body.portal-edition .scr-room .rpg-menu {
+  max-height: calc(100% - 88px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  z-index: 10;
+}
+body.portal-edition [data-layout=mobile] .scr-room .hud {
+  padding-top: max(10px, env(safe-area-inset-top));
+  padding-right: max(10px, env(safe-area-inset-right));
+}
+body.portal-edition [data-layout=mobile] .scr-room .rpg-menu {
+  top: max(66px, calc(env(safe-area-inset-top) + 54px));
+  right: max(12px, env(safe-area-inset-right));
+  max-height: calc(100% - max(66px, env(safe-area-inset-top) + 54px) - max(10px, env(safe-area-inset-bottom)));
+}
+body.portal-edition [data-layout=mobile] .mobile-move-pad,
+body.portal-edition [data-layout=mobile] .mobile-action-pad { position: absolute; bottom: 0; }
+body.portal-edition [data-layout=mobile] .mobile-move-pad { left: 0; }
+body.portal-edition [data-layout=mobile] .mobile-action-pad { right: 0; }
+
+body.portal-edition [data-layout=mobile] .scr-room {
+  --chat-bottom: max(12px, env(safe-area-inset-bottom));
+  --chat-log-bottom: calc(var(--chat-bottom) + 66px);
+}
+body.portal-edition [data-layout=mobile] .scr-room.chat-open .room-log {
+  top: auto !important;
+  bottom: var(--chat-log-bottom);
+  max-height: max(0px, calc(var(--room-height, 100dvh) - var(--chat-log-bottom) - 8px));
+  z-index: 10;
+}
+body.portal-edition [data-layout=mobile] .scr-room .chat-row,
+body.portal-edition [data-layout=mobile] .scr-room.chat-open .room-log {
+  left: max(10px, env(safe-area-inset-left));
+  right: max(10px, env(safe-area-inset-right));
+}
+body.portal-edition [data-layout=mobile] .scr-room .chat-send,
+body.portal-edition [data-layout=mobile] .scr-room .rpg-chat-close { flex-shrink: 0; }
+
+@media (max-width: 720px) and (orientation: portrait) {
+  body.portal-edition .card-create .create-grid {
+    grid-template-areas: 'nick' 'prev' 'parts' 'jobs' 'cta';
+  }
+  body.portal-edition .card-create .create-prev {
+    position: sticky;
+    top: max(4px, env(safe-area-inset-top));
+    z-index: 3;
+    display: grid;
+    grid-template: 'avatar caption' auto 'avatar controls' auto / auto minmax(0, 1fr);
+    gap: 3px 8px;
+    padding: 4px 8px;
+    border-radius: 12px;
+  }
+  .card-create .create-prev .bk-preview { --pv: 2; grid-area: avatar; }
+  .card-create .create-prev .atelier-preview-caption { grid-area: caption; }
+  .card-create .create-prev .bk-preview__ctrl { grid-area: controls; margin-top: 0; }
+  .card-create .create-prev .bk-preview__ctrl .bk-tabs { grid-auto-flow: column; gap: 0; }
+  .card-create .create-prev .bk-preview__ctrl .bk-btn { padding-inline: 5px; min-width: 0; }
+  .card-create .create-parts { min-width: 0; }
+  body.portal-edition .card-create .wardrobe-search,
+  body.portal-edition .card-create .bk-input { font-size: 16px !important; }
+}
+@media (max-width: 359px) {
+  body.portal-edition .card-create .bk-slots { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+}
+
+@media (max-width: 359px) {
+  body.portal-edition [data-layout=mobile] .scr-room .game-minimap { width: 126px; }
+}
+body.portal-edition [data-layout=mobile] .minimap-head button { min-width: 36px; min-height: 36px; }
+@media (orientation: landscape) and (max-height: 600px) {
+  body.portal-edition .card-create .create-prev { padding-block: 10px; border-radius: 12px; }
+  body.portal-edition .card-create .create-prev .bk-preview { --pv: 2; }
+}

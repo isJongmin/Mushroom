@@ -57,7 +57,7 @@ export function rollEquipment(area,rnd=Math.random){
  if(rnd()<.10)out.push({kind:'shield',tier:weighted(stageOf(area).drop,rnd)});
  return out;
 }
-export function starterState(job='warrior') {return {version:1,revision:0,gold:0,items:[{id:'starter-'+job,kind:WEAPONS[job]||'sword',tier:0}],activeWeapon:'starter-'+job,equipped:{[job]:'starter-'+job},shield:null,highest:{[job]:0},pets:{},equippedPets:[],pet:null,essence:0,pity:{},pending:[],seen:[],kills:{village:0,quarry:0,forest:0,frost:0},traits:cleanTraits(null,{},STAGES)};}
+export function starterState(job='warrior') {return {version:1,progressionVersion:2,revision:0,gold:0,items:[{id:'starter-'+job,kind:WEAPONS[job]||'sword',tier:0}],activeWeapon:'starter-'+job,equipped:{[job]:'starter-'+job},shield:null,highest:{[job]:0},pets:{},equippedPets:[],pet:null,essence:0,pity:{},pending:[],seen:[],kills:{village:0,quarry:0,forest:0,frost:0},traits:cleanTraits(null,{},STAGES)};}
 export function cleanState(raw,job='warrior') {
  if(!raw||raw.version!==1)return starterState(job);
  const s=starterState(job),nat=(n,max=1e9)=>Number.isSafeInteger(n)?Math.max(0,Math.min(max,n)):0;
@@ -74,6 +74,12 @@ export function cleanState(raw,job='warrior') {
  for(const area of Object.keys(STAGES)) {const p=raw.pity?.[area];s.pity[area]=[nat(p?.[0],19),nat(p?.[1],79),nat(p?.[2],199)];s.kills[area]=nat(raw.kills?.[area]);}
  s.seen=Array.isArray(raw.seen)?raw.seen.filter(i=>typeof i==='string'&&i.length<=160).slice(-10000):[];
  s.traits=cleanTraits(raw.traits,s.kills,STAGES);
+ if(raw.progressionVersion!==2){
+  const legacyTier=Math.max(0,...Object.values(s.highest));
+  if(legacyTier>=1)s.traits.events.village.boss=true;
+  if(legacyTier>=2)s.traits.events.quarry.boss=true;
+  if(legacyTier>=3)s.traits.events.forest.boss=true;
+ }
  s.pending=(Array.isArray(raw.pending)?raw.pending:[]).filter(d=>dropOK(d)&&Object.hasOwn(STAGES,d.area)&&Number.isFinite(d.x)&&Number.isFinite(d.y)&&Math.abs(d.x)<1e5&&Math.abs(d.y)<1e5).slice(0,200).map(d=>({...d,expiresAt:Number.isSafeInteger(d.expiresAt)&&d.expiresAt>0?d.expiresAt:0}));return s;
 }
 export function loadout(s) {
@@ -93,8 +99,15 @@ export function combatStats(raw) {
  const growth=adventureBonuses(l.adventureLevel);
  return {attack:Math.round(ATTACK[l.tier]*(1+bonus)*(1+.05*traits.attack)*growth.attack),multiplier:ATTACK[l.tier]/20*(1+bonus)*(1+.05*traits.attack)*growth.attack,defense:DEFENSE[l.tier]+(l.shield<0?0:[4,9,16,26,40][l.shield]),cooldownMultiplier:1-.02*traits.technique,maxHp:Math.round((100+hp+growth.hp)*(1+.05*traits.health)),pickup:l.companions.length?240:26};
 }
-export const skillUnlocked = (l,slot) => slot<=1 || cleanLoadout(l).highest>=slot-1;
-export const stageUnlocked = (s,job,area) => Math.max(0,...Object.values(s.highest))>=stageOf(area).recommended;
+export const skillUnlocked = (l,slot) => {
+ const level=cleanLoadout(l).adventureLevel;
+ return slot<=1 || slot===2&&level>=5 || slot===3&&level>=12;
+};
+export const stageUnlocked = (s,job,area) => {
+ const order=stageOf(area).order;if(order<=1)return true;
+ const previous=Object.keys(STAGES).find(id=>STAGES[id].order===order-1);
+ return !!previous&&s?.traits?.events?.[previous]?.boss===true;
+};
 // Include newly forged items until no pair remains; max grade is never consumed.
 export function fusionSummary(items) {
  const counts=new Map();let count=0;

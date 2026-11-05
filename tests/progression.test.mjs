@@ -15,13 +15,14 @@ s=doCmd(s,receipt).state;assert.equal(s.pending.length,2);assert.equal(s.kills.v
 s=doCmd(s,{type:'collect',id:'kill:0'}).state;s=doCmd(s,{type:'collect',id:'kill:1'}).state;
 const swapped=doCmd(s,{type:'equip',id:'kill:1'}).state;assert.equal(loadout(swapped).job,'archer');assert.equal(loadout(swapped).weapon,'bow');assert.throws(()=>doCmd(s,{type:'sell',id:'starter-warrior'}),/착용/);
 const original=structuredClone(s);assert.throws(()=>doCmd(s,{type:'fuse',a:'kill:0',b:'kill:0'}));assert.deepEqual(s,original);
-let fused=doCmd(s,{type:'fuse',a:'starter-warrior',b:'kill:0'});s=fused.state;assert.equal(s.items.length,2);assert.equal(s.equipped.warrior,fused.result.id);assert.equal(combatStats(loadout(s,'warrior')).attack,32);assert.equal(skillUnlocked(loadout(s,'warrior'),2),true);assert.equal(stageUnlocked(s,'warrior','quarry'),true);
+let fused=doCmd(s,{type:'fuse',a:'starter-warrior',b:'kill:0'});s=fused.state;assert.equal(s.items.length,2);assert.equal(s.equipped.warrior,fused.result.id);assert.equal(combatStats(loadout(s,'warrior')).attack,32);assert.equal(skillUnlocked(loadout(s,'warrior'),2),false);assert.equal(stageUnlocked(s,'warrior','quarry'),false);
+s.traits.events.village.boss=true;assert.equal(stageUnlocked(s,'warrior','quarry'),true);assert.equal(skillUnlocked({...loadout(s,'warrior'),adventureLevel:5},2),true);
 s=doCmd(s,{type:'sell',id:'kill:1'}).state;assert.equal(s.gold,SELL[2]);assert.throws(()=>doCmd(s,{type:'sell',id:'kill:1'}));
-s.items.push({id:'rare',kind:'sword',tier:2});s=cleanState(s);assert.equal(skillUnlocked(loadout(s,'warrior'),3),true);s=doCmd(s,{type:'sell',id:'rare'}).state;assert.equal(skillUnlocked(loadout(s,'warrior'),3),true);
+s.items.push({id:'rare',kind:'sword',tier:2});s=cleanState(s);assert.equal(skillUnlocked(loadout(s,'warrior'),3),false);assert.equal(skillUnlocked({...loadout(s,'warrior'),adventureLevel:12},3),true);s=doCmd(s,{type:'sell',id:'rare'}).state;assert.equal(skillUnlocked(loadout(s,'warrior'),3),false);
 for(const [area,st]of Object.entries(STAGES)){assert.ok(Math.abs(st.drop.reduce((a,b)=>a+b,0)-1)<1e-10);assert.equal(st.drop.length,GRADES.length);}
 assert.ok(Math.abs(PET_RATES.reduce((a,b)=>a+b,0)-1)<1e-10);assert.equal(PET_PRICES[10],1800);
 for(const area of Object.keys(STAGES)) {
- let p=starterState();p.gold=100000;p.highest.warrior=4;p.pity[area]=[19,79,199];
+ let p=starterState();p.gold=100000;p.highest.warrior=4;p.traits.events.village.boss=true;p.traits.events.quarry.boss=true;p.traits.events.forest.boss=true;p.pity[area]=[19,79,199];
  p=doCmd(p,{type:'draw',area,count:1}).state;assert.ok(p.pets[area+':4']);assert.deepEqual(p.pity[area],[0,0,0]);
  p.pity[area]=[0,79,0];const epic=doCmd(p,{type:'draw',area,count:1});assert.ok(epic.state.pets[area+':3']);assert.equal(epic.result[0].id,area+':3');
  p.pity[area]=[19,0,0];const rare=doCmd(p,{type:'draw',area,count:1});assert.equal(rare.result[0].id,area+':2');

@@ -15,7 +15,7 @@ const l=loadout(s),bonuses=ids.slice(0,3).map(id=>petBonuses(id,5)),atk=bonuses.
 assert.deepEqual(cleanLoadout(l).companions,l.companions);assert.deepEqual(cleanLoadout({pet:'frost:4',level:5}).companions,[{id:'frost:4',level:5}]);assert.deepEqual(cleanLoadout({companions:[],pet:'frost:4'}).companions,[]);
 const forged=cleanLoadout({companions:[{id:ids[0],level:99},{id:ids[0],level:4},{id:'__proto__:0',level:5},...ids.slice(1).map(id=>({id,level:5}))]});assert.equal(forged.companions.length,3);assert.equal(forged.companions[0].level,5);assert.equal(new Set(forged.companions.map(p=>p.id)).size,3);
 for(const job of ['warrior','archer','mage','thief'])for(let slot=0;slot<4;slot++){
- const wire=cleanGameEvent('atk',{...abilityStats(job,slot,l),user_id:'u',loadout:{...l,weapon:{warrior:'sword',archer:'bow',mage:'staff',thief:'claw'}[job]},seq:1,x:0,y:800});assert.deepEqual(wire.loadout.companions,l.companions);assert.ok(acceptJobAttack({x:0,y:800},wire,0));assert.equal(wire.dmax,abilityStats(job,slot,wire.loadout).dmax);
+ const wireLoadout={...l,adventureLevel:12,weapon:{warrior:'sword',archer:'bow',mage:'staff',thief:'claw'}[job]};const wire=cleanGameEvent('atk',{...abilityStats(job,slot,wireLoadout),user_id:'u',loadout:wireLoadout,seq:1,x:0,y:800});assert.deepEqual(wire.loadout.companions,l.companions);assert.ok(acceptJobAttack({x:0,y:800},wire,0));assert.equal(wire.dmax,abilityStats(job,slot,wire.loadout).dmax);
 }
 assert.deepEqual(cleanGameEvent('hp',{user_id:'u',hp:100,max:combatStats(l).maxHp,loadout:l}).loadout.companions,l.companions);
 // Sample actual follower poses across turns, loot convergence, jumps, edges, and map changes.

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import {createGarden,gardenZones,cleanGarden,gardenEligible} from '../src/client/game/garden.js';
-import {bossDanger,bossImpactAt,advanceBoss,bossSpec,installBoss,bossMaxHp,BOSS_KIND} from '../src/client/game/garden-boss.js';
+import {bossDanger,bossImpactAt,advanceBoss,bossSpec,installBoss,bossMaxHp,bossPatternOrder,BOSS_KIND} from '../src/client/game/garden-boss.js';
 import {createMobSim,createMobView} from '../src/client/game/mobs.js';
 import {cleanGameEvent,stampGameEvent} from '../src/client/backend/common.js';
 import {jobCeiling,EVENT_FACTORS,eventDamage} from '../src/client/game/event-balance.js';
@@ -12,6 +12,12 @@ g.tick(6000,{players:2,spawnBoss:max=>{spawned=max;return true;},targetX:100});a
 const b=state.boss,p={x:0,y:500},point={x:0,y:500};assert.equal(bossImpactAt(b),7800);assert.ok(bossDanger(b,p,point));assert.equal(bossDanger(b,{...p,y:400},point),false);
 let next=advanceBoss(b,10000,90);assert.equal(next.pattern,'spores');assert.ok(bossDanger(next,{x:90,y:500},point));assert.equal(bossDanger(next,{x:300,y:500},point),false);
 next=advanceBoss(next,14000,0);assert.equal(next.pattern,'ring');assert.equal(bossDanger(next,p,point),false);assert.ok(bossDanger(next,{x:400,y:500},point));next=advanceBoss(next,18000,0);assert.equal(next.pattern,'exposed');assert.equal(bossDanger(next,p,point),false);
+const quarry=createGarden();quarry.start('kragg',1000,['a'],'boss','quarry');quarry.tick(6000,{players:1,spawnBoss:()=>true,bossX:0,targetX:100});let kragg=quarry.snapshot().boss;
+assert.equal(kragg.area,'quarry');assert.equal(kragg.pattern,'crystal-rise');assert.deepEqual(bossPatternOrder('quarry'),['crystal-rise','crystal-beam','crystal-shatter','exposed']);
+assert.equal(bossDanger(kragg,{x:100,y:500},point),true);assert.equal(bossDanger(kragg,{x:180,y:500},point),false);
+kragg=advanceBoss(kragg,10000,0);assert.equal(kragg.pattern,'crystal-beam');assert.equal(bossDanger(kragg,{x:0,y:500},point),true);assert.equal(bossDanger(kragg,{x:190,y:500},point),false,'crystal cover blocks the beam');
+kragg=advanceBoss(kragg,14000,0);assert.equal(kragg.pattern,'crystal-shatter');assert.equal(bossDanger(kragg,{x:190,y:500},point),true);assert.equal(bossDanger(kragg,{x:0,y:500},point),false,'players must leave cover before it shatters');
+kragg=advanceBoss(kragg,18000,0);assert.equal(kragg.pattern,'exposed');assert.equal(bossDanger(kragg,{x:190,y:500},point),false);
 g.record('a',300,false,'thief',true);const replica=createGarden();replica.load(g.snapshot());assert.deepEqual(replica.snapshot(),g.snapshot());replica.tick(7000,{bossAlive:false});assert.equal(replica.snapshot().phase,'success');assert.ok(gardenEligible(replica.snapshot(),'a'));assert.equal(replica.snapshot().members[0].bossDamage,300);
 assert.equal(cleanGarden({...state,boss:{...b,seq:-1}}),null);
 const kinds=new Map([[BOSS_KIND,bossSpec({size:{w:30,h:30}})],['mushroom',{hp:5,size:{w:30,h:30},speed:0}],['slime',{hp:5,size:{w:30,h:30},speed:0}]]),world={width:3000,spawn:{x:1500},groundY:500};const zones=gardenZones([],world,'village');

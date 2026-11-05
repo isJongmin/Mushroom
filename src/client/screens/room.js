@@ -1129,7 +1129,7 @@ export function mount(root, app, opts = {}) {
   function startGarden(uid,mode='defense') {
     const p=players.get(uid),point=questNpcPoint(world);
     if(!sim||!p||p.dead||!sameArea(p,me)||Math.abs(p.x-point.x)>230||Math.abs(p.y-point.y)>100)return false;
-    const started=garden.start(`g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,Date.now(),[...players.values()].filter(p=>sameArea(p,me)).map(p=>p.user_id),mode);
+    const started=garden.start(`g-${Date.now().toString(36)}-${Math.random().toString(36).slice(2,9)}`,Date.now(),[...players.values()].filter(p=>sameArea(p,me)).map(p=>p.user_id),mode,currentArea);
     if(started){sim.removeGarden();lastMobsSent=-Infinity;}
     return started;
   }
@@ -1206,7 +1206,7 @@ export function mount(root, app, opts = {}) {
     if (!me || me.dead || connection !== 'connected' || now < portalReadyAt) return false;
     const portal = nearbyPortal(map, me);
     if (!portal) return false;
-    if(!progress||!stageUnlocked(progress.state,job.id,portal.to)){portalReadyAt=now+1600;chatLog.addSystem(`${AREA_NAMES[portal.to]} 진입에는 ${GRADES[stageOf(portal.to).recommended]} 이상 주무기 획득이 필요합니다. 장비를 합성해보세요.`);return false;}
+    if(!progress||!stageUnlocked(progress.state,job.id,portal.to)){portalReadyAt=now+1600;chatLog.addSystem(`${AREA_NAMES[portal.to]} 진입에는 이전 지역 보스 첫 처치가 필요합니다.`);return false;}
     return travelTo(portal.to,now,'portal',portal.entry);
   }
   function travelTo(destination,now,mode='taxi',entry=null){
@@ -1514,7 +1514,7 @@ export function mount(root, app, opts = {}) {
     if (me) {
       const near = connection === 'connected' && now >= portalReadyAt ? nearbyPortal(map, me) : null;
       portalBtn.hidden = !near;
-      if (near) setText(portalBtn, progress&&stageUnlocked(progress.state,job.id,near.to)?`${AREA_NAMES[near.to]} 이동 ↑`:`${AREA_NAMES[near.to]} · ${GRADES[stageOf(near.to).recommended]} 주무기 필요`);
+      if (near) setText(portalBtn, progress&&stageUnlocked(progress.state,job.id,near.to)?`${AREA_NAMES[near.to]} 이동 ↑`:`${AREA_NAMES[near.to]} · 이전 보스 처치 필요`);
       if (near && input.upHeld() && !document.body.classList.contains('has-modal')) enterPortal(now);
       // 내 캐릭터: 연결 중일 때만 입력을 받는다. 연결이 끊겨도 공중이면 중력으로 착지까지 진행한다.
       let inp = NO_INPUT;

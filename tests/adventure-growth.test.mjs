@@ -3,6 +3,7 @@ import {adventureProgress,levelCost,adventureBonuses,cleanAdventureLevel} from '
 import {adventureGoal,cooperativeRoster} from '../src/client/game/adventure-goals.js';
 import {starterState,cleanState,applyCommand,loadout,cleanLoadout,combatStats} from '../src/client/game/progression.js';
 import {cleanGameEvent} from '../src/client/backend/common.js';
+import {huntContract} from '../src/client/game/hunt-chain.js';
 
 let state=starterState();
 assert.equal(adventureProgress(state).level,1);
@@ -21,6 +22,7 @@ for(const n of [NaN,Infinity,'30',undefined,1.5])assert.equal(cleanAdventureLeve
 assert.equal(cleanAdventureLevel(999),30);
 assert.equal(adventureBonuses(30).hp,87);
 assert.ok(Math.abs(adventureBonuses(30).attack-1.29)<1e-9);
+assert.deepEqual([1,2,3,4].map(stage=>huntContract('village',stage,20).item.tier),[0,1,2,3],'contracts no longer rush every region and legendary gear in 80 kills');
 const veteran=starterState();veteran.kills={village:120,quarry:30,forest:5,frost:1};
 veteran.gold=1234;veteran.pets={'village:0':{level:3}};
 assert.equal(adventureProgress(cleanState(veteran)).total,2600,'existing kills migrate without resetting assets');
@@ -38,7 +40,7 @@ assert.equal(cleanLoadout({level:5}).adventureLevel,1,'pet level and player leve
 assert.equal(cleanGameEvent('hp',{user_id:'qa',hp:103,max:103,loadout:loadout(state)}).loadout.adventureLevel,2);
 assert.equal(cleanLoadout(loadout(state)).adventureLevel,2);
 const goal=adventureGoal(state,'village');assert.equal(goal.action,'hunt');assert.ok(goal.title.includes('12'));
-const next=starterState();next.highest.warrior=1;assert.equal(adventureGoal(next,'village').action,'taxi');
+const next=starterState();next.highest.warrior=4;assert.notEqual(adventureGoal(next,'village').action,'taxi','gear alone no longer unlocks a region');next.traits.events.village.boss=true;assert.equal(adventureGoal(next,'village').action,'taxi');
 next.items=Array.from({length:190},(_,n)=>({id:'gear'+n,kind:'sword',tier:0}));assert.equal(adventureGoal(next,'village').action,'bag');
 const training=starterState();training.kills.village=20;training.traits.quests['village:hunt20']='active';
 assert.equal(adventureGoal(training,'village').action,'mentor');

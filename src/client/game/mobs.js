@@ -16,12 +16,24 @@ const REPO_ROOT = new URL('../../../', import.meta.url);
 const SRC_RE = /^assets\/[a-z0-9_\-/]+\.(png|webp)$/i;
 const KIND_RE = /^[a-z0-9-]{1,32}$/;
 export const MOB_STATES = Object.freeze(['move', 'hit', 'die']);
+export const MOB_ACTIONS = Object.freeze(['idle','windup','charge','guard','burst']);
 export const MOB_LIMITS = Object.freeze({ total: 60, perZone: 20, zones: 32 });
 export const RESPAWN_MS = 10000; // 협동 사냥: 재생성 간격 +25% (빈도 약 20% 감소)
 export const DIE_MS = 650; // 처치 후 목록에 남는 시간 (die 애니메이션)
 export const HIT_MS = 300;
 const INTERP_MS = 220;
 const BUF_MAX = 6;
+const ROLE_BY_KIND=Object.freeze({
+ 'ore-beetle':'charger','wild-stump':'charger',
+ 'armored-mushroom':'guard','cave-sentinel':'guard',
+ slime:'burst','moss-slime':'burst','frost-slime':'burst',
+});
+export const monsterRole=kind=>ROLE_BY_KIND[kind]||'contact';
+export function monsterDangerBox(v,box){
+ if(v?.a!=='burst')return box;
+ return {x1:v.x-92,x2:v.x+92,y1:v.y-110,y2:v.y+18};
+}
+export const monsterTouchDamage=v=>Math.max(0,Math.round((v?.spec?.touchDamage||0)*(v?.a==='charge'?1.5:v?.a==='burst'?1.7:1)));
 
 const fin = (v) => typeof v === 'number' && Number.isFinite(v);
 const clampN = (v, lo, hi, d) => (fin(v) ? Math.min(hi, Math.max(lo, v)) : d);
@@ -232,7 +244,7 @@ export function createMobSim(o) {
     const m = {
       id: `${rid()}${(seq++).toString(36)}`, kind, z: z.i, x, y: z.y, base: z.y, dir: rnd() < 0.5 ? -1 : 1,
       hp: spec.hp, max: spec.hp, s: 'move', vy: 0, air: false, hitT: 0, dieT: 0, turnT: 2 + rnd() * 4, hopT: 0.4 + rnd(), pauseT: 0,
-      phase: rnd() * Math.PI * 2,
+      phase: rnd() * Math.PI * 2, action:'idle', roleT:0, roleCd:1+rnd()*2,
     };
     if (spec.behavior === 'fly') m.y = z.y - 64;
     mobs.set(m.id, m);
@@ -270,6 +282,7 @@ export function createMobSim(o) {
         id: v.id, kind: v.kind, z: z.i, x, y: z.boss || spec.behavior === 'fly' ? v.y : z.y, base: z.y,
         dir: v.dir < 0 ? -1 : 1, hp: Math.min(spec.hp, v.hp), max: z.boss ? (v.max||spec.hp) : spec.hp, s: 'move', vy: 0, air: false, hitT: 0, dieT: 0,
         turnT: 2 + rnd() * 4, hopT: 0.4 + rnd(), pauseT: 0, phase: rnd() * Math.PI * 2,
+        action:MOB_ACTIONS.includes(v.a)?v.a:'idle',roleT:Number.isFinite(v.r)?Math.max(0,Math.min(3,v.r/1000)):0,roleCd:1+rnd()*2,
       });
     }
     for (const z of zones.filter(z => !z.event)) {
@@ -290,9 +303,19 @@ export function createMobSim(o) {
       }
       if (m.hitT > 0) { m.hitT -= dt; m.s = m.hitT > 0 ? 'hit' : 'move'; }
       if (z.event && !z.boss) { m.dir = m.x < (z.x1+z.x2)/2 ? 1 : -1; m.pauseT=0; }
-      const moving = m.hitT <= 0 && !z.boss;
+      const role=monsterRole(m.kind),players=[...(o.getPlayers?.()||[])].filter(p=>!p.dead&&Number.isFinite(p.x)&&Number.isFinite(p.y));
+      const target=players.sort((a,b)=>Math.abs(a.x-m.x)-Math.abs(b.x-m.x))[0],dx=target?target.x-m.x:Infinity,dy=target?Math.abs(target.y-m.y):Infinity;
+      m.roleCd=Math.max(0,m.roleCd-dt);m.roleT=Math.max(0,m.roleT-dt);
+      if(m.action==='windup'&&m.roleT<=0){m.action=role==='charger'?'charge':'burst';m.roleT=role==='charger' ? .55 : .28;}
+      else if(['charge','burst'].includes(m.action)&&m.roleT<=0){m.action='idle';m.roleCd=role==='charger'?2.4:3.2;}
+      else if(role==='charger'&&m.action==='idle'&&m.roleCd<=0&&Math.abs(dx)<420&&dy<150){m.action='windup';m.roleT=.65;m.dir=dx<0?-1:1;}
+      else if(role==='burst'&&m.action==='idle'&&m.roleCd<=0&&Math.abs(dx)<145&&dy<130){m.action='windup';m.roleT=.75;m.dir=dx<0?-1:1;}
+      else if(role==='guard'&&m.action==='idle'&&Math.abs(dx)<220&&dy<150){m.action='guard';m.roleT=.7;m.dir=dx<0?-1:1;}
+      else if(m.action==='guard'&&(m.roleT<=0||Math.abs(dx)>=260||dy>=170)){m.action='idle';m.roleCd=.5;}
+      const moving = m.hitT <= 0 && !z.boss&&!['windup','guard','burst'].includes(m.action);
       m.phase += dt;
-      if (spec.behavior === 'fly') {
+      if(m.action==='charge')m.x+=m.dir*Math.max(360,spec.speed*4)*dt;
+      else if (spec.behavior === 'fly') {
         if (moving) m.x += m.dir * spec.speed * dt;
         m.y = z.y - 64 + Math.sin(m.phase * 2.2) * 16;
       } else if (moving) { // walk, hop (hop의 뜀 높이는 시트 프레임에 들어 있다: 아트 manifest note. y는 바닥 그대로)
@@ -344,7 +367,8 @@ export function createMobSim(o) {
     const applied = [];
     for (const d of dmgs) {
       if (best.hp <= 0) break;
-      const actual=Math.min(best.hp,modify(best,d));best.hp-=actual;
+      let value=modify(best,d);const attackerSide=ax<best.x?-1:1;if(best.action==='guard'&&attackerSide===best.dir)value=Math.max(1,Math.round(value*.3));
+      const actual=Math.min(best.hp,value);best.hp-=actual;
       applied.push(actual);
     }
     (best.dm || (best.dm = [])).push(...applied); // 다음 mobs 송신에 타별 피해를 싣는다 (비호스트 피해 숫자)
@@ -369,7 +393,7 @@ export function createMobSim(o) {
   function snapshot(withDamage = false) {
     const list = [];
     for (const m of mobs.values()) {
-      const o = { id: m.id, kind: m.kind, x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, hp: Math.round(m.hp), s: m.s, z: m.z, ...(zones[m.z]?.boss?{max:m.max}:{}) };
+      const o = { id: m.id, kind: m.kind, x: Math.round(m.x), y: Math.round(m.y), dir: m.dir, hp: Math.round(m.hp), s: m.s, z: m.z,...(m.action!=='idle'?{a:m.action,r:Math.round(m.roleT*1000)}:{}), ...(zones[m.z]?.boss?{max:m.max}:{}) };
       if (withDamage && m.dm && m.dm.length) { o.dm = m.dm.slice(-12); m.dm.length = 0; }
       list.push(o);
     }
@@ -412,7 +436,7 @@ export function createMobView({ kinds, onDamage, onDie }) {
       seen.add(m.id);
       let v = map.get(m.id);
       if (!v) {
-        v = { id: m.id, kind: m.kind, spec, x: m.x, y: m.y, dir: m.dir, hp: m.hp, max: m.max||spec.hp, s: m.s, z: m.z, buf: [], animAt: now, hpUntil: 0, hitAt: 0, goneAt: 0 };
+        v = { id: m.id, kind: m.kind, spec, x: m.x, y: m.y, dir: m.dir, hp: m.hp, max: m.max||spec.hp, s: m.s, a:MOB_ACTIONS.includes(m.a)?m.a:'idle',r:m.r||0,z: m.z, buf: [], animAt: now, hpUntil: 0, hitAt: 0, goneAt: 0 };
         map.set(m.id, v);
       }
       v.goneAt = 0;
@@ -423,6 +447,7 @@ export function createMobView({ kinds, onDamage, onDie }) {
       }
       v.hp = m.hp;
       v.z = m.z;
+      v.a=MOB_ACTIONS.includes(m.a)?m.a:'idle';v.r=Number.isFinite(m.r)?m.r:0;
       if (m.s !== v.s) { v.s = m.s; v.animAt = now; if (m.s === 'die') { v.hpUntil = now + 600; onDie?.(v); } }
       v.dir = m.dir;
       if (direct) { v.x = m.x; v.y = m.y; v.buf.length = 0; } else {
@@ -467,7 +492,7 @@ export function createMobView({ kinds, onDamage, onDie }) {
   function latest() {
     return [...map.values()].map((v) => {
       const l = v.buf[v.buf.length - 1];
-      return { id: v.id, kind: v.kind, x: l ? l.x : v.x, y: l ? l.y : v.y, dir: v.dir, hp: v.hp, s: v.s, z: v.z, ...(v.kind==='garden-king'?{max:v.max}:{}) };
+      return { id: v.id, kind: v.kind, x: l ? l.x : v.x, y: l ? l.y : v.y, dir: v.dir, hp: v.hp, s: v.s, z: v.z,...(v.a!=='idle'?{a:v.a,r:v.r}:{}), ...(v.kind==='garden-king'?{max:v.max}:{}) };
     });
   }
   return {
@@ -532,6 +557,15 @@ export function drawMob(ctx, v, img, x, y, k, now, density, alpha = 1) {
     ctx.globalAlpha = 0.35;
     ctx.fillStyle = '#ffffff';
     ctx.fillRect(-spec.size.w / 2 * k, -spec.size.h * k, spec.size.w * k, spec.size.h * k);
+  }
+  if(v.a==='windup'){
+    const pulse=.55+.35*Math.sin(now/70);ctx.globalAlpha=pulse;ctx.strokeStyle='#ffd36b';ctx.lineWidth=Math.max(2,3*k);ctx.beginPath();ctx.arc(0,-spec.size.h*k*.55,(spec.size.w*.65+8)*k,0,Math.PI*2);ctx.stroke();
+  }else if(v.a==='charge'){
+    ctx.globalAlpha=.65;ctx.fillStyle='#f28b5b';ctx.fillRect(-spec.size.w*k*.95,-spec.size.h*k*.48,spec.size.w*k*.65,7*k);
+  }else if(v.a==='guard'){
+    ctx.globalAlpha=.72;ctx.strokeStyle='#9ee8ef';ctx.lineWidth=Math.max(2,4*k);ctx.beginPath();ctx.arc(spec.size.w*k*.42,-spec.size.h*k*.48,spec.size.h*k*.38,-Math.PI/2,Math.PI/2);ctx.stroke();
+  }else if(v.a==='burst'){
+    const pulse=.45+.3*Math.sin(now/45);ctx.globalAlpha=pulse;ctx.strokeStyle='#ff705c';ctx.lineWidth=Math.max(3,6*k);ctx.beginPath();ctx.arc(0,-spec.size.h*k*.35,92*k,0,Math.PI*2);ctx.stroke();
   }
   ctx.restore();
 }

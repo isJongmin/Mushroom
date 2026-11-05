@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {readFileSync,existsSync} from 'node:fs';
+import {fileURLToPath} from 'node:url';
 import {createCanvas,Image} from '@napi-rs/canvas';
 import {expandWardrobe,WARDROBE_VARIANTS} from '../src/client/wardrobe-catalog.js';
 import {loadAvatarAssets} from '../src/client/assets.js';
@@ -18,7 +19,7 @@ memory.set('old',JSON.stringify({nickname:'오래된캐릭터',avatar:raw.preset
 assert(writeProfile('new',{nickname:'피부색검증',avatar:raw.presets[0].avatar,skinColor:'#C58A61',body:{head:200}}));assert.equal(readProfile('new').skinColor,'#c58a61');assert(!('body'in JSON.parse(memory.get('new'))));
 const peer=cleanPresenceState({user_id:'peer',avatar:raw.presets[0].avatar,skinColor:'#C58A61',body:{head:200}});assert.equal(peer.skinColor,'#c58a61');assert(!('body'in peer));
 globalThis.fetch=async()=>({ok:true,json:async()=>raw});const requests=[];const setSrc=Object.getOwnPropertyDescriptor(Image.prototype,'src').set;
-globalThis.Image=function(){const image=new Image();Object.defineProperty(image,'src',{set(value){requests.push(new URL(value).pathname);setSrc.call(image,readFileSync(new URL(value).pathname));}});return image;};
+globalThis.Image=function(){const image=new Image();Object.defineProperty(image,'src',{set(value){const path=fileURLToPath(value);requests.push(path);setSrc.call(image,readFileSync(path));}});return image;};
 globalThis.OffscreenCanvas=class{constructor(w,h){return createCanvas(w,h)}};
 const assets=await loadAvatarAssets();assert.equal(assets.source,'manifest');assert.equal(assets.parts.hair.length,35);
 let changed=0;

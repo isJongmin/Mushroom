@@ -1,15 +1,15 @@
 import {AREA_IDS,AREA_NAMES} from './areas.js';
-import {stageUnlocked,stageOf,GRADES} from './progression.js';
+import {stageUnlocked,stageOf,STAGES} from './progression.js';
 export const TAXI_DRIVER=Object.freeze({name:'기사 달콩',avatar:{hair:'espresso-crop',hat:'cap-black',top:'varsity-navy',bottom:'pants-navy',shoes:'hightop-black',skin:'medium',face:'wink'}});
 export const TAXI_MARKER_HEIGHT=108;
 // A dedicated western stop, clear of the mentor/pet/quest line and entry portal labels.
 export const taxiPoint=map=>({x:Math.max(245,Math.min(map.width-140,(map.spawn?.x??900)-800)),y:map.groundY});
-export function taxiDestinations(state,job,current){return AREA_IDS.map(id=>({id,name:AREA_NAMES[id],current:id===current,unlocked:!!state&&stageUnlocked(state,job,id),requirement:`${GRADES[stageOf(id).recommended]} 주무기 획득`}));}
+export function taxiDestinations(state,job,current){return AREA_IDS.map(id=>{const stage=stageOf(id),previous=Object.keys(STAGES).find(area=>STAGES[area].order===stage.order-1);return {id,name:AREA_NAMES[id],current:id===current,unlocked:!!state&&stageUnlocked(state,job,id),requirement:previous?`${STAGES[previous].name} 보스 첫 처치`:'처음부터 이동 가능'};});}
 export function taxiTravelReason({state,job,current,to,player,map,connected=true,now=0,readyAt=0}){
  if(!connected)return '연결을 기다려주세요.';if(!player||player.dead)return '살아 있는 상태에서 택시를 이용하세요.';
  if(now<readyAt)return '잠시 후 다시 이용하세요.';const p=taxiPoint(map);if(Math.abs(player.x-p.x)>160||Math.abs(player.y-p.y)>85)return '택시 가까이로 이동해주세요.';
  if(!AREA_IDS.includes(to))return '목적지를 선택하세요.';if(to===current)return '현재 있는 마을입니다.';
- if(!state||!stageUnlocked(state,job,to))return `${GRADES[stageOf(to).recommended]} 이상 주무기를 먼저 획득하세요.`;
+ if(!state||!stageUnlocked(state,job,to))return '이전 지역 보스를 먼저 처치하세요.';
  return '';
 }
 // A compact yellow sedan, drawn with the same crisp edges as the world art.

@@ -49,8 +49,16 @@ export function drawBossTelegraph(c,b,arena,camX,camY,k,now){
    c.fillRect(-210,-7,420,13);c.strokeRect(-210,-7,420,13);
    c.fillStyle='#ffe1a6';c.fillRect(-4,-20,8,18);c.fillRect(-4,-30,8,6);
    if(age>=0)for(let i=0;i<9;i++){const px=-200+i*50;block(c,px,-12-(i%3)*9,14,10,4,'#ae8557','#f4d18b','#795b43');}
- }else{
+ }else if(b.pattern==='ring'){
    for(const x of[-590,145]){c.fillRect(x,-7,445,13);c.strokeRect(x,-7,445,13);}c.strokeStyle='#a8dd8e';c.strokeRect(-140,-7,280,13);
+ }else if(b.pattern==='crystal-rise'){
+   const center=b.targetX-point.x;
+   for(const x of[-220,0,220]){c.fillRect(center+x-72,-7,144,13);c.strokeRect(center+x-72,-7,144,13);if(age>=0)block(c,center+x-24,-96,48,90,14,'#6d87ad','#c5e5f2','#4c638c');}
+ }else if(b.pattern==='crystal-beam'){
+   c.fillRect(-620,-7,1240,13);c.strokeRect(-620,-7,1240,13);
+   for(const x of[-190,190]){c.fillStyle='#7dd3aa70';c.fillRect(x-78,-9,156,17);c.strokeStyle='#c9f1cf';c.strokeRect(x-78,-9,156,17);block(c,x-24,-112,48,105,14,'#617da8','#c5e5f2','#455b84');}
+ }else if(b.pattern==='crystal-shatter'){
+   for(const x of[-190,190]){c.fillStyle=age>=0?'#dfefffad':'#8ba7d65c';c.fillRect(x-108,-7,216,13);c.strokeStyle='#e5f4ff';c.strokeRect(x-108,-7,216,13);if(age<0)block(c,x-24,-112,48,105,14,'#617da8','#c5e5f2','#455b84');}
  }
  c.restore();
 }

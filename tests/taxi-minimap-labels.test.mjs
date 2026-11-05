@@ -6,7 +6,7 @@ import {explorationPoints} from '../src/client/game/adventure-traits.js';
 import {starterState} from '../src/client/game/progression.js';
 const state=starterState(),map=areaMap('quarry'),player={...taxiPoint(map),dead:false},base={state,job:'warrior',current:'quarry',to:'village',player,map,now:2000};
 assert.equal(taxiTravelReason(base),'');assert.ok(taxiTravelReason({...base,to:'forest'}));
-state.highest.warrior=3;const before=JSON.stringify(state);assert.equal(taxiDestinations(state,'mage','quarry').filter(d=>d.unlocked).length,4,'global weapon milestone unlocks all jobs');
+state.traits.events.village.boss=true;state.traits.events.quarry.boss=true;state.traits.events.forest.boss=true;const before=JSON.stringify(state);assert.equal(taxiDestinations(state,'mage','quarry').filter(d=>d.unlocked).length,4,'boss milestones unlock travel for all jobs');
 assert.equal(taxiTravelReason({...base,to:'frost'}),'');assert.ok(taxiTravelReason({...base,to:'invalid'}));assert.ok(taxiTravelReason({...base,to:'quarry'}));assert.ok(taxiTravelReason({...base,connected:false}));assert.ok(taxiTravelReason({...base,player:{...player,dead:true}}));assert.ok(taxiTravelReason({...base,player:{...player,x:player.x+161}}));assert.ok(taxiTravelReason({...base,player:{...player,y:player.y-86}}));assert.ok(taxiTravelReason({...base,readyAt:3000}));assert.equal(JSON.stringify(state),before,'travel policy never spends currency or rewrites equipment');
 for(const area of ['quarry','forest','frost']){
  const m=areaMap(area),flags=explorationPoints(m),original=JSON.stringify(m.districts),signs=landmarkSignPlacements(m);

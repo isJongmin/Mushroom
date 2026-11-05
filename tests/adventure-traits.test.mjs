@@ -56,7 +56,7 @@ const refreshed=createProgressionStore('traits',{storage,locks});assert.deepEqua
 const highDamage=abilityStats('warrior',3,{tier:4,highest:4,pet:'frost:4',level:5,traits:{attack:10,health:0,technique:5}}).dmax;assert.ok(highDamage>1000);assert.deepEqual(cleanGameEvent('mobs',{host:'h',t:0,list:[{id:'mob1',kind:'garden-king',x:0,y:800,hp:1000,dm:[highDamage]}]}).list[0].dm,[highDamage]);
 
 // Redistribution during an existing cooldown preserves the cast-time deadline on the host.
-const caster={x:0,y:800},slow={tier:4,highest:4,traits:zero},fast={...slow,traits:{attack:0,health:0,technique:10}};
+const caster={x:0,y:800},slow={tier:4,highest:4,adventureLevel:12,traits:zero},fast={...slow,traits:{attack:0,health:0,technique:10}};
 assert.ok(acceptJobAttack(caster,{...abilityStats('mage',3,slow),seq:1,x:0,y:800,loadout:slow},0));
 assert.equal(acceptJobAttack(caster,{...abilityStats('mage',3,fast),seq:2,x:0,y:800,loadout:fast},12000),false);
 assert.ok(acceptJobAttack(caster,{...abilityStats('mage',3,fast),seq:2,x:0,y:800,loadout:fast},15000));

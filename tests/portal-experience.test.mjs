@@ -3,7 +3,7 @@ import {readAdventurer,recommendedRoom,roomMatches} from '../src/client/game/por
 import {starterState} from '../src/client/game/progression.js';
 import {mount} from '../src/client/screens/home.js';
 
-const save=starterState();save.kills.village=8;save.gold=230;save.highest.warrior=2;save.pets={'village:0':{level:1}};
+const save=starterState();save.kills.village=8;save.gold=230;save.traits.events.village.boss=true;save.traits.events.quarry.boss=true;save.pets={'village:0':{level:1}};
 const summary=readAdventurer('qa',{storage:{getItem:k=>{assert.equal(k,'qa:equipment-v1');return JSON.stringify(save);}}});
 assert.equal(summary.level,2);assert.equal(summary.gold,230);assert.equal(summary.regions,3);assert.equal(summary.petCount,1);
 assert.equal(readAdventurer('qa',{storage:{getItem(){throw Error('blocked');}}}).level,1);

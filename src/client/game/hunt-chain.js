@@ -6,5 +6,6 @@ export function createHuntChain({windowMs=20000}={}){
 }
 export function huntContract(area,stage,kills,weapon='sword'){
  if(kills<=0||kills%20!==0)return null;
- return {gold:150*3**(stage-1),item:{kind:weapon,tier:Math.min(4,stage)}};
+ // Contracts support progression without completing the next region's gear check by themselves.
+ return {gold:150*3**(stage-1),item:{kind:weapon,tier:Math.min(3,Math.max(0,stage-1))}};
 }

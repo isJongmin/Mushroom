@@ -1,4 +1,4 @@
-import {stageOf} from './progression.js';
+import {stageOf,STAGES} from './progression.js';
 import {cleanBoss,advanceBoss,bossMaxHp} from './garden-boss.js';
 // Host-owned, serializable cooperative encounter. No timers or browser dependencies.
 export const GARDEN_TITLE = 'sprout-guardian';
@@ -25,16 +25,17 @@ export function cleanGarden(s) {
   }
   const boss=s.boss?cleanBoss(s.boss):null;if(s.phase==='boss'&&!boss)return null;
   if(s.queued!=null&&!int(s.queued,0,10)||s.reinforceAt!=null&&!int(s.reinforceAt,0,9e15))return null;
-  return {queued:s.queued??0,reinforceAt:s.reinforceAt??0,mode:s.mode==='boss'?'boss':'defense',boss,id:s.id,rev:s.rev,phase:s.phase,wave:s.wave,hp:s.hp,kills:s.kills,spawned:s.spawned,started:s.started,deadline:s.deadline,ended:s.ended,members};
+  const area=Object.hasOwn(STAGES,s.area)?s.area:'village';
+  return {area,queued:s.queued??0,reinforceAt:s.reinforceAt??0,mode:s.mode==='boss'?'boss':'defense',boss,id:s.id,rev:s.rev,phase:s.phase,wave:s.wave,hp:s.hp,kills:s.kills,spawned:s.spawned,started:s.started,deadline:s.deadline,ended:s.ended,members};
 }
 export const gardenActive = s => !!s && ['ready','wave','rest','boss'].includes(s.phase);
 export const gardenEligible = (s,uid) => s?.phase==='success' && s.members.some(m=>m.uid===uid && m.damage>0);
 export function createGarden() {
   let state=null;
   const copy=()=>state?structuredClone(state):null;
-  function start(id,now,uids,mode='defense') {
+  function start(id,now,uids,mode='defense',area='village') {
     if (gardenActive(state) || state && now-state.ended<5000) return false;
-    state={queued:0,reinforceAt:0,mode:mode==='boss'?'boss':'defense',boss:null,id,rev:1,phase:'ready',wave:0,hp:100,kills:0,spawned:0,started:now,deadline:now+5000,ended:0,members:[...new Set(uids)].slice(0,20).map(uid=>({uid,damage:0,kills:0,bossDamage:0,job:'warrior'}))};
+    state={area:Object.hasOwn(STAGES,area)?area:'village',queued:0,reinforceAt:0,mode:mode==='boss'?'boss':'defense',boss:null,id,rev:1,phase:'ready',wave:0,hp:100,kills:0,spawned:0,started:now,deadline:now+5000,ended:0,members:[...new Set(uids)].slice(0,20).map(uid=>({uid,damage:0,kills:0,bossDamage:0,job:'warrior'}))};
     return true;
   }
   function record(uid,damage,killed,job='warrior',boss=false) {
@@ -58,7 +59,8 @@ export function createGarden() {
     }
     if(state.phase==='ready'&&state.mode==='boss'&&now>=state.deadline){
       const max=Math.min(50000,Math.round(bossMaxHp(players)*difficulty));if(!spawnBoss(max)){state.deadline=now+1000;return;}
-      state.phase='boss';state.wave=1;state.boss={pattern:'stomp',seq:1,at:now,targetX,max,homeX:bossX,originX:bossX};state.deadline=now+150000;state.rev++;return;
+      const first=state.area==='quarry'?'crystal-rise':'stomp';
+      state.phase='boss';state.wave=1;state.boss={area:state.area,pattern:first,seq:1,at:now,targetX,max,homeX:bossX,originX:bossX};state.deadline=now+150000;state.rev++;return;
     }
     if(state.phase==='wave') {
       if(now>=state.deadline){finish('failed');return;}

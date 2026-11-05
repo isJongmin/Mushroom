@@ -61,19 +61,43 @@ function harness(options={}){
 {
  const source=readFileSync(new URL('../src/client/screens/room.js',import.meta.url),'utf8');
  const start=source.indexOf('  const isTypingTarget ='),end=source.indexOf("  on(window, 'keyup'",start);
- const handlers=[];let sends=0,prevented=0;
- const input={tagName:'INPUT'},context=vm.createContext({window:{},document:{activeElement:input},chatInput:input,
-  alive:true,composingChat:false,compositionEndedAt:-Infinity,performance:{now:()=>1000},
-  on:(_el,_event,fn)=>handlers.push(fn),trySend:()=>sends++});
- vm.runInContext(source.slice(start,end),context);
- const enter=extra=>handlers[0]({key:'Enter',preventDefault:()=>prevented++,...extra});
- enter({isComposing:true});enter({keyCode:229});enter({repeat:true});
- context.composingChat=true;enter({});context.composingChat=false;
- context.compositionEndedAt=950;enter({});assert.equal(sends,0);
- context.compositionEndedAt=900;enter({});enter({});assert.equal(sends,2);assert.equal(prevented,2);
- const pointer=source.slice(source.indexOf("  on(sendBtn,'pointerdown'"),source.indexOf("  on(sendBtn, 'click'"));
- handlers.length=0;vm.runInContext(pointer,Object.assign(context,{sendBtn:{}}));
- for(const pointerType of ['mouse','touch','pen'])handlers[0]({pointerType,preventDefault:()=>prevented++});
- assert.equal(prevented,5,'all pointer types keep the composer focused before click');
+ const handlers = [];
+ let sends = 0;
+ const input = { tagName: 'INPUT', focus() {} };
+ const context = vm.createContext({
+   window: {}, document: { activeElement: input, body: { classList: { contains: () => false } } },
+   chatInput: input, chatRow: {}, menu: { hidden: true },
+   alive: true, composingChat: false, compositionEndedAt: -Infinity, performance: { now: () => 1000 },
+   on: (_el, _event, fn) => handlers.push(fn), trySend: () => sends++,
+ });
+ vm.runInContext(source.slice(start, end), context);
+ const submitStart = source.indexOf("  on(chatRow, 'submit'");
+ vm.runInContext(source.slice(submitStart, source.indexOf("  on(canvas, 'pointerdown'", submitStart)), context);
+ const submit = () => handlers[1]({ preventDefault() {} });
+ const enter = extra => {
+   let blocked = false;
+   handlers[0]({ key: 'Enter', preventDefault: () => { blocked = true; }, ...extra });
+   if (!blocked && !extra?.isComposing && extra?.keyCode !== 229) submit();
+ };
+ enter({ isComposing: true });
+ enter({ keyCode: 229 });
+ enter({ repeat: true });
+ context.composingChat = true;
+ enter({});
+ context.composingChat = false;
+ context.compositionEndedAt = 950;
+ enter({});
+ submit();
+ assert.equal(sends, 0);
+ context.compositionEndedAt = 900;
+ enter({});
+ submit();
+ assert.equal(sends, 2, 'regular Enter and the native mobile submit send once each');
+ const pointer = source.slice(source.indexOf("  on(sendBtn,'pointerdown'"), submitStart);
+ handlers.length = 0;
+ vm.runInContext(pointer, Object.assign(context, { sendBtn: {} }));
+ let prevented = 0;
+ for (const pointerType of ['mouse', 'touch', 'pen']) handlers[0]({ pointerType, preventDefault: () => prevented++ });
+ assert.equal(prevented, 3, 'all pointer types keep the composer focused before submit');
 }
 console.log('PASS chat FIFO, slow sends, pacing, realtime confirmation, bounded retry, failure preservation, reconnect, cleanup and IME/Enter handling');

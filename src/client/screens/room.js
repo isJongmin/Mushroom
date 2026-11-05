@@ -67,7 +67,7 @@ import { createJobProjectiles } from '../game/combat.js';
 //            게임 이벤트는 어댑터 send(event, payload) / handlers.onEvent(event, payload). ?debug = 호스트와 판정 상자 표시.
 import { h, setText, wait } from '../dom.js';
 import {
-  WORLD, HEAD, BUBBLE, PAL, MOBILE_MAX_WIDTH, MOBILE_CONTROLS_H, MOBILE_MIN_CANVAS_H, DESKTOP_RESERVED_H, NICK_RE,
+  WORLD, HEAD, BUBBLE, PAL, DESKTOP_RESERVED_H, NICK_RE,
   CHAT_MAX, MOVE_INTERVAL_MS, ROOM_CAPACITY, LEAVE_WAIT_MS, SYS_LEAVE_DELAY_MS, pixelScale,
 } from '../constants.js';
 import { ROOM_MESSAGES as M, LOBBY_MESSAGES as LM, AppError, toAppError } from '../errors.js';
@@ -405,6 +405,10 @@ export function mount(root, app, opts = {}) {
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
+    onMobileFold: () => {
+      if (col.classList.contains('chat-open') && !chatInput.disabled) chatInput.focus({ preventScroll: true });
+      else menuToggle.focus({ preventScroll: true });
+    },
   });
   const row2 = h('div', { class: 'hud-row2' }, chatLog.toggle, modeSlot2);
   // Tab 순서: 캔버스 → 나가기 → (모바일) 채팅 기록 토글 → 로그 → 채팅 입력 (9장)
@@ -426,34 +430,54 @@ export function mount(root, app, opts = {}) {
     h('div', { class: 'touch-group' }, crouchBtn, jumpBtn));
 
   const chatInput = h('input', {
-    type: 'text', class: 'bk-input bk-input--with-end', testid: 'chat-input', maxlength: String(CHAT_MAX), placeholder: '메시지를 입력하세요',
+    id: 'room-chat-input', type: 'text', class: 'bk-input bk-input--with-end', testid: 'chat-input', maxlength: String(CHAT_MAX), placeholder: '메시지를 입력하세요',
     autocomplete: 'off', 'aria-label': '채팅 메시지', enterkeyhint: 'send', autocapitalize:'off', spellcheck:'false',
   });
   const counter = h('span', { class: 'bk-counter', testid: 'chat-counter', hidden: true, 'aria-hidden': 'true' });
-  const sendBtn = h('button', { type: 'button', class: 'bk-btn bk-btn--primary chat-send', testid: 'chat-send', disabled: true }, '보내기');
+  const sendBtn = h('button', { type: 'submit', class: 'bk-btn bk-btn--primary chat-send', testid: 'chat-send', disabled: true }, '보내기');
   const chatHint = h('div', { class: 'bk-chip bk-chip--hint chat-float', testid: 'chat-hint', hidden: true }, M.COOLDOWN);
   const chatError = h('div', { class: 'bk-banner bk-banner--error chat-float', testid: 'chat-error', role: 'alert', hidden: true });
   const chatQueueStatus=h('span',{class:'chat-queue-status',testid:'chat-queue-status',role:'status','aria-live':'polite',hidden:true});
-  const chatRow = h('div', { class: 'chat-row' }, chatHint, chatError,chatQueueStatus,
+  const chatRow = h('form', { class: 'chat-row', 'aria-label': '채팅 보내기' }, chatHint, chatError,chatQueueStatus,
     h('div', { class: 'bk-input-wrap' }, chatInput, h('span', { class: 'bk-input-end' }, counter)),
     sendBtn);
 
   const moveDirections=h('div',{class:'mobile-move-directions'}),movePad=h('div',{class:'mobile-move-pad',testid:'mobile-move-pad'},moveDirections),actionPad=h('div',{class:'mobile-action-pad',testid:'mobile-action-pad'});
   const stickKnob=h('span',{class:'joystick-knob','aria-hidden':'true'}),stickPad=h('div',{class:'movement-joystick',testid:'movement-joystick',tabindex:'0','aria-label':'이동 조이스틱: 좌우로 드래그해 이동, 위로 밧줄, 아래로 엎드리기'},h('span',{class:'joystick-axis','aria-hidden':'true'}),stickKnob);movePad.prepend(stickPad);
   const combatDock=h('div',{class:'mobile-combat-dock',testid:'mobile-combat-dock'},movePad,actionPad);
-  const chatToggle=h('button',{type:'button',class:'bk-btn bk-btn--sm mobile-chat-toggle',testid:'mobile-chat-toggle','aria-expanded':'false'},'채팅');
+  const chatToggle=h('button',{type:'button',class:'bk-btn bk-btn--sm mobile-chat-toggle',testid:'mobile-chat-toggle','aria-expanded':'false','aria-controls':'room-chat-input'},'채팅');
   const col = h('main', { class: 'scr-game scr-room' }, stage,combatDock, touchRow, chatRow);
   const chatClose=h('button',{type:'button',class:'bk-btn rpg-chat-close',testid:'chat-close','aria-label':'채팅 닫기'},'닫기');chatRow.append(chatClose);
-  on(chatClose,'click',()=>{chatLog.closeMobile();col.classList.remove('chat-open');chatToggle.setAttribute('aria-expanded','false');chatInput.blur();canvas.focus({preventScroll:true});computeLayout();});
+  function openChat() {
+    closeGameMenu();
+    resetControls();
+    col.classList.add('chat-open');
+    chatToggle.setAttribute('aria-expanded', 'true');
+    chatLog.open();
+    if (layout.mobile) computeLayout();
+    if (!chatInput.disabled) chatInput.focus({ preventScroll: true });
+    else chatLog.el.querySelector('button')?.focus({ preventScroll: true });
+  }
+  function closeChat() {
+    col.classList.remove('chat-open');
+    chatToggle.setAttribute('aria-expanded', 'false');
+    chatLog.closeMobile();
+    if (layout.mobile) computeLayout();
+    canvas.focus({ preventScroll: true });
+  }
+  on(chatClose, 'click', closeChat);
   growthHud.append(chatToggle);
-  on(chatToggle,'click',()=>{const open=!col.classList.contains('chat-open');col.classList.toggle('chat-open',open);chatToggle.setAttribute('aria-expanded',String(open));if(open){closeGameMenu();chatLog.open();chatInput.focus({preventScroll:true});}else{chatLog.closeMobile();chatInput.blur();canvas.focus({preventScroll:true});}computeLayout();});
+  on(chatToggle, 'click', () => {
+    if (layout.mobile && col.classList.contains('chat-open')) closeChat();
+    else openChat();
+  });
   const portraitCanvas=h('canvas',{width:84,height:84,'aria-hidden':'true'});
   const hpFill=h('i'),hpValue=h('span',{class:'rpg-hp-value'}),hpTrack=h('div',{class:'rpg-hp-track',role:'progressbar','aria-label':'체력','aria-valuemin':'0'},hpFill);
   const playerName=h('strong',{},myNick),xpValue=h('small',{class:'rpg-xp-value',testid:'player-xp'}),xpFill=h('i');
   const xpTrack=h('div',{class:'rpg-xp-track',role:'progressbar','aria-label':'경험치','aria-valuemin':'0','aria-valuemax':'100'},xpFill);
   const playerStatus=h('section',{class:'rpg-player-status',testid:'player-status','aria-label':'캐릭터 상태'},h('div',{class:'rpg-emblem','aria-hidden':'true'},portraitCanvas),h('div',{class:'rpg-player-info'},playerName,hpTrack,h('div',{class:'rpg-status-values'},hpValue,xpValue),xpTrack));
   const menuToggle=h('button',{type:'button',class:'rpg-menu-toggle',testid:'game-menu-toggle','aria-label':'게임 메뉴 열기','aria-expanded':'false','aria-controls':'room-game-menu'},h('span',{'aria-hidden':'true'},'☰'),h('small',{},'메뉴'));
-  const menuHelp=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'controls-help'},'조작 안내');on(menuHelp,'click',()=>firstUse.request('controls',performance.now(),true));
+  const menuHelp=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'controls-help'},'조작 안내');on(menuHelp,'click',()=>{closeGameMenu(true);firstUse.request('controls',performance.now(),true);});
   const menu=h('nav',{id:'room-game-menu',class:'rpg-menu',testid:'game-menu',hidden:true,'aria-label':'게임 메뉴'},h('h2',{},'모험 메뉴'),h('div',{class:'rpg-room-info'},roomChip,countChip,jobChip),h('div',{class:'rpg-menu-actions'},traitsBtn,chatLog.toggle,leaveBtn,deleteBtn),menuHelp);
   const soundButton=h('button',{type:'button',class:'bk-btn bk-btn--sm',testid:'sound-toggle','aria-pressed':String(sound.enabled)},sound.enabled?'효과음 켜짐':'효과음 꺼짐');
   on(soundButton,'click',()=>{const enabled=sound.toggle();setText(soundButton,enabled?'효과음 켜짐':'효과음 꺼짐');soundButton.setAttribute('aria-pressed',String(enabled));if(enabled)sound.play('loot');});menu.append(soundButton);
@@ -464,8 +488,10 @@ export function mount(root, app, opts = {}) {
   const coopTitle=h('strong'),coopList=h('ul'),coopHint=h('p');
   const coopPanel=h('section',{class:'cooperative-roster',testid:'cooperative-roster','aria-label':'같은 지역 동료'},coopTitle,coopList,coopHint);menu.append(coopPanel);
   function closeGameMenu(focus=false){menu.hidden=true;menuToggle.setAttribute('aria-expanded','false');menuToggle.setAttribute('aria-label','게임 메뉴 열기');if(focus)menuToggle.focus();}
-  on(menuToggle,'click',()=>{const open=menu.hidden;menu.hidden=!open;menuToggle.setAttribute('aria-expanded',String(open));menuToggle.setAttribute('aria-label',open?'게임 메뉴 닫기':'게임 메뉴 열기');if(open)input.clear();});
-  on(menu,'click',e=>{if(e.target.closest('button'))closeGameMenu();});
+  on(menuToggle,'click',()=>{const open=menu.hidden;menu.hidden=!open;menuToggle.setAttribute('aria-expanded',String(open));menuToggle.setAttribute('aria-label',open?'게임 메뉴 닫기':'게임 메뉴 열기');if(open){if(col.classList.contains('chat-open'))closeChat();resetControls();menu.querySelector('button:not([hidden]):not(:disabled)')?.focus({preventScroll:true});}});
+  on(chatLog.toggle, 'click', () => closeGameMenu(!layout.mobile || chatLog.el.hidden));
+  on(traitsBtn, 'click', () => closeGameMenu());
+  on(deleteBtn, 'click', () => closeGameMenu());
   on(col,'pointerdown',e=>{if(!menu.hidden&&!menu.contains(e.target)&&!menuToggle.contains(e.target))closeGameMenu();});
   on(document,'keydown',e=>{if(e.key==='Escape'&&!menu.hidden&&!document.body.classList.contains('has-modal')){closeGameMenu(true);e.stopPropagation();}});
   hud.querySelector('.hud-r').append(menuToggle);
@@ -508,7 +534,7 @@ export function mount(root, app, opts = {}) {
     for(const p of roster)coopList.append(h('li',{},h('span',{},p.name),h('small',{},p.dead?'부활 대기':`${Math.ceil(p.hp)} / ${p.max} HP`),h('progress',{max:p.max,value:p.dead?0:p.hp,'aria-label':p.name+' 체력'})));
     setText(coopHint,roster.length?'같이 공격에 참여하면 각자 사냥 보상을 받습니다.':'동료가 같은 지역에 오면 여기에 표시됩니다.');
   }
-  function syncPlayerStatus(){if(!me)return;const avatarKey=JSON.stringify(me.avatar);if(avatarR&&lastPortrait!==avatarKey){const c=portraitCanvas.getContext('2d');c.clearRect(0,0,84,84);if(avatarR.draw(c,me.avatar,42,128,1.3,0,false))lastPortrait=avatarKey;}const key=me.hp+':'+me.max;if(key===lastHpKey)return;lastHpKey=key;const ratio=Math.max(0,Math.min(1,me.hp/me.max));hpFill.style.width=ratio*100+'%';setText(hpValue,`${Math.ceil(me.hp)} / ${me.max} HP`);hpTrack.setAttribute('aria-valuemax',String(me.max));hpTrack.setAttribute('aria-valuenow',String(Math.ceil(me.hp)));playerStatus.classList.toggle('is-low',ratio<.3);}
+  function syncPlayerStatus(){if(!me)return;const avatarKey=JSON.stringify(me.avatar)+'#'+(avatarSkinColor(me.avatar)||'');if(avatarR&&lastPortrait!==avatarKey){const c=portraitCanvas.getContext('2d');c.clearRect(0,0,84,84);if(avatarR.draw(c,me.avatar,42,128,1.3,0,false))lastPortrait=avatarKey;}const key=me.hp+':'+me.max;if(key===lastHpKey)return;lastHpKey=key;const ratio=Math.max(0,Math.min(1,me.hp/me.max));hpFill.style.width=ratio*100+'%';setText(hpValue,`${Math.ceil(me.hp)} / ${me.max} HP`);hpTrack.setAttribute('aria-valuemax',String(me.max));hpTrack.setAttribute('aria-valuenow',String(Math.ceil(me.hp)));playerStatus.classList.toggle('is-low',ratio<.3);}
   root.append(col);
   on(stage,'pointerdown',()=>sound.unlock());on(canvas,'keydown',()=>sound.unlock());
 
@@ -517,8 +543,10 @@ export function mount(root, app, opts = {}) {
     // innerWidth는 모바일에서 내용이 넘치면 커진다. 레이아웃 뷰포트(clientWidth)를 기준으로 한다.
     const vw = document.documentElement.clientWidth || window.innerWidth;
     const vv = window.visualViewport;
-    const vh = Math.floor(vv && vv.height ? Math.min(vv.height, window.innerHeight || vv.height) : window.innerHeight);
-    const mobile = touchLayout(vw,vh,window.matchMedia('(pointer: coarse)').matches);
+    const layoutHeight = document.documentElement.clientHeight || window.innerHeight;
+    const mobile = touchLayout(vw, layoutHeight, window.matchMedia('(pointer: coarse)').matches);
+    const vh = Math.floor(mobile && vv?.height ? Math.min(vv.height, layoutHeight) : layoutHeight);
+    col.style.setProperty('--room-height', `${vh}px`);
     col.style.height=mobile?`${vh}px`:'';
     let P;
     let cssW;
@@ -527,7 +555,7 @@ export function mount(root, app, opts = {}) {
     if (mobile) {
       P = 2;
       cssW = Math.floor(vw / P) * P;
-      cssH = Math.max(MOBILE_MIN_CANVAS_H, Math.floor(vh / P) * P);
+      cssH = Math.max(P, Math.floor(vh / P) * P);
     } else {
       P = pixelScale(vw, vh);
       cssW = Math.min(Math.floor(vw / P) * P, (DESKTOP_MAX_VIEW_W * P) / 2); // 1280 (P=2), 1920 (P=3)
@@ -535,8 +563,8 @@ export function mount(root, app, opts = {}) {
     }
     cssW = Math.max(P, cssW);
     let viewH = (cssH * 2) / P;
-    if (viewH < WORLD.minViewH) { viewH = WORLD.minViewH; cssH = (viewH * P) / 2; }
-    if(mobile)viewH=Math.max(180,viewH-combatReserve(vw,vh,col.classList.contains('chat-open')));
+    if (!mobile && viewH < WORLD.minViewH) { viewH = WORLD.minViewH; cssH = (viewH * P) / 2; }
+    if (mobile) viewH = Math.max(1, viewH - combatReserve(vw, layoutHeight, col.classList.contains('chat-open')));
     const viewW = (cssW * 2) / P;
     const dpr = sceneDpr(cssW,cssH,window.devicePixelRatio||1,renderPolicy);
     const k = (P / 2) * dpr;
@@ -554,7 +582,9 @@ export function mount(root, app, opts = {}) {
     if(canvas.height!==backingH)canvas.height=backingH;
     hint.classList.toggle('narrow', cssW < 900); // 캔버스 가로 900px 미만이면 조작 힌트 숨김
     if (modeChanged) {
+      resetControls();
       chatLog.setMobile(mobile);
+      if (col.classList.contains('chat-open')) chatLog.open();
       if(mobile){moveDirections.append(leftBtn,rightBtn);movePad.append(crouchBtn);actionPad.append(touchFloat);touchFloat.append(jumpBtn);}
       else{const groups=touchRow.querySelectorAll('.touch-group');groups[0].append(leftBtn,rightBtn);groups[1].append(crouchBtn,jumpBtn);stage.append(touchFloat);}
       if(modeChanged){miniBody.hidden=true;miniToggle.setAttribute('aria-expanded','false');miniToggle.setAttribute('aria-label','미니맵 펼치기');setText(miniToggle,'+');}
@@ -595,6 +625,7 @@ export function mount(root, app, opts = {}) {
   function setConnection(next) {
     const prev = connection;
     connection = next;
+    if (next !== 'connected') resetControls();
     root.dataset.connection = next;
     const full = next === 'connected' || next === 'disconnected' || next === 'failed';
     // 들어가는 중: 방 이름 + 나가기만 / 방 연결 끊김·치명적 오류: 나가기만
@@ -1993,34 +2024,28 @@ export function mount(root, app, opts = {}) {
 
   on(window, 'keydown', (e) => {
     if (!alive) return;
+    if (e.defaultPrevented || e.isComposing || e.keyCode === 229 || composingChat ||
+        document.body.classList.contains('has-modal') || !menu.hidden) return;
     const typing = document.activeElement === chatInput;
     if (e.key === 'Enter') {
-      if (typing) {
-        if (e.isComposing || e.keyCode === 229 || composingChat || performance.now()-compositionEndedAt<80) return; // 한글 확정 Enter는 전송하지 않는다
-        if(e.repeat)return;
+      if (typing && (e.repeat || performance.now() - compositionEndedAt < 80)) e.preventDefault();
+      else if (!e.repeat && !typing && isGameFocus() && connection === 'connected') {
         e.preventDefault();
-        trySend();
-      } else if (isGameFocus() && connection === 'connected') {
-        e.preventDefault();
-        if(layout.mobile&&!col.classList.contains('chat-open')){col.classList.add('chat-open');chatToggle.setAttribute('aria-expanded','true');computeLayout();}
-        chatLog.open();
-        chatInput.focus({preventScroll:true});
+        openChat();
       }
       return;
     }
     if (e.key === 'Escape') {
-      if (typing) {
+      if (typing || col.classList.contains('chat-open')) {
         e.preventDefault();
-        chatInput.blur();
-        if(layout.mobile){chatLog.closeMobile();col.classList.remove('chat-open');chatToggle.setAttribute('aria-expanded','false');computeLayout();}
-        canvas.focus({ preventScroll: true });
+        closeChat();
       }
       return;
     }
     const ae = document.activeElement;
     // 채팅 입력 중이면 이동 키를 모두 무시하고, 로그 목록에 포커스가 있으면 방향키는 목록 스크롤에 양보한다
     if (isTypingTarget(ae) || chatLog.el.contains(ae)) return;
-    if (document.body.classList.contains('has-modal')) return; // 확인 모달이 열려 있으면 게임 입력 없음
+    if (layout.mobile && col.classList.contains('chat-open')) return;
     const now = performance.now();
     if(e.code==='KeyE'&&!e.repeat&&!e.ctrlKey&&!e.metaKey&&!e.altKey){const tp=taxiPoint(map);if(me&&Math.abs(me.x-tp.x)<=160&&Math.abs(me.y-tp.y)<=85){e.preventDefault();openTaxi();return;}const near=nearbyPlayful(map,me);if(near){e.preventDefault();openPlayful(near.kind);}return;}
     // (사이클 9) 공격 Ctrl / J / X, 스킬 K / L / ; (숫자키 호환). Ctrl은 단독으로만(Ctrl+J 등 브라우저 단축키는 양보)
@@ -2055,19 +2080,36 @@ export function mount(root, app, opts = {}) {
   });
   on(window, 'keyup', (e) => { input.release(`key:${e.code}`); });
   on(reviveBtn, 'click', () => revive());
-  on(window, 'blur', () => input.clear());
+  on(window, 'blur', resetControls);
   // 탭 복귀(모바일 백그라운드 포함): 즉시 하트비트 + 채널 상태 점검, 백오프 대기 중이면 바로 시도
   on(document, 'visibilitychange', () => {
-    if (document.visibilityState !== 'visible') { input.clear(); return; }
+    if (document.visibilityState !== 'visible') { resetControls(); return; }
     lastFrame = 0; // 숨김 동안의 큰 dt를 버린다
     rl?.check();
   });
-  on(chatInput, 'focus', () => input.clear());
+  on(chatInput, 'focus', () => {
+    resetControls();
+    col.classList.add('chat-open');
+    chatToggle.setAttribute('aria-expanded', 'true');
+  });
+  on(chatInput, 'blur', () => {
+    composingChat = false;
+    updateSendBtn();
+    if (!layout.mobile) {
+      col.classList.remove('chat-open');
+      chatToggle.setAttribute('aria-expanded', 'false');
+    }
+  });
   on(chatInput, 'input', updateCounter);
   on(chatInput,'compositionstart',()=>{composingChat=true;updateSendBtn();});
   on(chatInput,'compositionend',()=>{composingChat=false;compositionEndedAt=performance.now();updateCounter();});
   on(sendBtn,'pointerdown',e=>e.preventDefault()); // 터치도 입력창 blur/키보드 재열림 방지
-  on(sendBtn, 'click', () => { trySend();chatInput.focus({preventScroll:true}); });
+  on(chatRow, 'submit', e => {
+    e.preventDefault();
+    if (composingChat || performance.now() - compositionEndedAt < 80) return;
+    trySend();
+    if (!chatInput.disabled) chatInput.focus({ preventScroll: true });
+  });
   on(canvas, 'pointerdown', () => canvas.focus({ preventScroll: true }));
   // 포커스 테두리는 Tab 키로 캔버스에 들어왔을 때만 (자동/마우스 포커스는 표시 안 함)
   let tabNav = false;
@@ -2083,12 +2125,15 @@ export function mount(root, app, opts = {}) {
     [attackBtn, 'attack', 'touch:attack', null], // (사이클 9)
   ];
   const heldControls=touchButtons.map(([btn,what,id,group])=>bindPointerAction(btn,{on,hold:true,enabled:()=>connection==='connected'&&!btn.disabled&&!document.body.classList.contains('has-modal'),activate:()=>{if(typeof what==='number')firstUse.request('controls');const now=performance.now(),fresh=typeof what==='number'?input.press(id,what):input.pressAction(id,what,now);if(fresh&&group)input.tap(group,now,id);},release:()=>input.release(id)}));
-  on(window,'blur',()=>{heldControls.forEach(c=>c.reset());skillButtons.forEach(s=>s.pointer.reset());});
-  on(document,'visibilitychange',()=>{if(document.hidden){heldControls.forEach(c=>c.reset());skillButtons.forEach(s=>s.pointer.reset());}});
 
   on(stickPad,'pointerdown',()=>{if(connection==='connected'&&me&&!me.dead)firstUse.request('controls');});
   const joystick=bindJoystick(stickPad,stickKnob,{input,on,enabled:()=>!!me&&connection==='connected'&&!me.dead&&!document.body.classList.contains('has-modal')});
-  on(window,'blur',()=>joystick.reset());on(document,'visibilitychange',()=>{if(document.hidden)joystick.reset();});
+  function resetControls() {
+    input.clear();
+    joystick.reset();
+    heldControls.forEach(control => control.reset());
+    skillButtons.forEach(({pointer}) => pointer.reset());
+  }
 
   on(bannerBtn, 'click', async () => {
     const action = bannerAction;
@@ -2151,7 +2196,7 @@ export function mount(root, app, opts = {}) {
         h('div', { class: 'bk-modal__foot' }, cancelBtn, okBtn),
       ],
       initialFocus: () => cancelBtn,
-      returnTo: deleteBtn,
+      returnTo: menuToggle,
       fallbackFocus: () => canvas,
       onCancel: () => close(),
       canEscape: () => !busy,
@@ -2217,6 +2262,8 @@ export function mount(root, app, opts = {}) {
   };
   on(window, 'resize', onResize);
   if (window.visualViewport) on(window.visualViewport, 'resize', onResize);
+  const deviceOrientation = window.matchMedia('(orientation: landscape)');
+  if (deviceOrientation.addEventListener) on(deviceOrientation, 'change', resetControls);
 
   // --- 테스트 훅 상태 공급 -----------------------------------------------------
   const snap = (p) => ({

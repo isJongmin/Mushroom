@@ -79,7 +79,7 @@ import { PHYS, normalizePlatforms, normalizeRopes, createBody, stepBody, surface
 import {
   COMBAT, attackBox, hurtBox, overlaps, randInt, projectileCollision, createDamageNumbers, createSlashes, createTombstones, drawGhost, drawHpBar, HPBAR, blinkAlpha,
 } from '../game/combat.js';
-import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob } from '../game/mobs.js';
+import { loadMobManifest, loadSprite, normalizeZones, createMobSim, createMobView, createMobSprites, drawMob, monsterDangerBox, monsterTouchDamage } from '../game/mobs.js';
 import { createDrops, PICK_RANGE, TOUCH_RANGE } from '../game/drops.js';
 import {
   BUFF_IDS, BUFF_LABEL, hitGap, HEAL, HEAL_AMOUNT, attackStats, clampAttack, rollHits, createBuffs, drawBuffOrb,
@@ -1559,9 +1559,9 @@ export function mount(root, app, opts = {}) {
       if (mobView && !me.dead && now >= me.invulnUntil && connection === 'connected') {
         const hb = hurtBox(me.x, me.y, b.prone);
         for (const v of mobView.list) {
-          if (v.s === 'die' || !v.spec.touchDamage || !overlaps(hb, mobView.box(v))) continue;
+          if (v.s === 'die' || !v.spec.touchDamage || !overlaps(hb, monsterDangerBox(v,mobView.box(v)))) continue;
           cstats.touchHits++;
-          takeDamage([v.spec.touchDamage], me.x < v.x ? -1 : 1, `mob:${v.kind}`, now);
+          takeDamage([monsterTouchDamage(v)], me.x < v.x ? -1 : 1, `mob:${v.kind}`, now);
           break;
         }
       }

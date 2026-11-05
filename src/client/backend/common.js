@@ -157,6 +157,7 @@ const KIND_RE = /^[a-z0-9-]{1,32}$/;
 const BUFF_SET = new Set(['heal']); // (사이클 10) game/buffs.js DROP_KINDS (버프 5종 + heal)
 const DM_OK = (v) => Array.isArray(v) && v.length > 0 && v.length <= 12 && v.every((n) => Number.isInteger(n) && n >= 0 && n <= 10000);
 const MOB_S = new Set(['move', 'hit', 'die']);
+const MOB_A = new Set(['idle','windup','charge','guard','burst']);
 const numIn = (v, lo, hi) => isNum(v) && v >= lo && v <= hi;
 const COORD = 1e5;
 const MOBS_MAX = 80;
@@ -221,6 +222,7 @@ function cleanGameEventPayload(event, p) {
         if (!m || typeof m !== 'object' || typeof m.id !== 'string' || !SID_RE.test(m.id) || typeof m.kind !== 'string' || !KIND_RE.test(m.kind)) continue;
         if (!numIn(m.x, -COORD, COORD) || !numIn(m.y, -COORD, COORD) || !numIn(m.hp, 0, 1e6)) continue;
         const o = { id: m.id, kind: m.kind, x: m.x, y: m.y, dir: m.dir < 0 ? -1 : 1, hp: m.hp, s: MOB_S.has(m.s) ? m.s : 'move', z: Number.isInteger(m.z) && m.z >= 0 && m.z < 64 ? m.z : -1 };
+        if(MOB_A.has(m.a)&&m.a!=='idle'){o.a=m.a;o.r=numIn(m.r,0,3000)?m.r:0;}
         if(m.kind==='garden-king'&&Number.isInteger(m.max)&&m.max>=1&&m.max<=50000)o.max=m.max;
         if (DM_OK(m.dm)) o.dm = m.dm;
         list.push(o);

@@ -1,6 +1,6 @@
 import {npcRoster} from '../game/npc-roster.js';
 import {regionOf} from '../game/regions.js';
-const PATTERN_SHORT={stomp:'내려찍기',spores:'포자 낙하',ring:'포자 고리',exposed:'약점 노출'};
+import {bossPatternText} from '../game/garden-boss.js';
 import { h,setText } from '../dom.js';
 import { gardenActive,GARDEN_LABEL,BOSS_LABEL } from '../game/garden.js';
 export const eventPanelVisible=(s,{menuOpen=false,observed=false}={})=>menuOpen||(observed&&gardenActive(s));
@@ -28,12 +28,16 @@ export function createGardenPanel({onStart,onBoss,onEquip,onReplay,onFocus,onTra
       const region=regionOf(area);setText(bossStart,region.boss+' 도전');
       const active=gardenActive(s),left=s?Math.max(0,Math.ceil((s.deadline-now)/1000)):0;
       const key=[area,s?.id,s?.rev,left,connected,near,alive,host,bossHp].join(':');if(key===lastKey)return;lastKey=key;
-      hp.hidden=!active;hp.value=s?.phase==='boss'?bossHp/s.boss.max*100:s?.hp??100;hp.setAttribute('aria-label',s?.mode==='boss'?'버섯왕 체력':'버섯밭 내구도');
+      hp.hidden = !active;
+      hp.value = s?.phase === 'boss' ? (s.boss?.max > 0 ? bossHp / s.boss.max * 100 : 0) : s?.hp ?? 100;
+      hp.setAttribute('aria-label', s?.mode === 'boss' ? `${region.boss} 체력` : '방어 내구도');
       status.textContent=active?(s?.mode==='boss'?'BOSS':`${s.wave}/3 WAVE`):'QUEST';
       setText(label,active?(s?.mode==='boss'?region.boss:region.event):npcRoster(area).quest.name+' · 도전 선택');
       detail.hidden=!active;traits.hidden=active;
       el.classList.toggle('is-active',active);
-      setText(detail,s?.phase==='boss'?`${PATTERN_SHORT[s.boss.pattern]} · ${left}초`:active?(s.phase==='wave'?`적 ${alive}${s.queued?' + 증원 '+s.queued:''} · ${left}초`:`${s.phase==='ready'?'준비':'휴식'} · ${left}초`):'');
+      const pattern = s?.boss?.pattern;
+      const bossAction = Object.hasOwn(bossPatternText, pattern) ? bossPatternText[pattern].split(' · ', 1)[0] : '보스 전투 중';
+      setText(detail,s?.phase==='boss'?`${bossAction} · ${left}초`:active?(s.phase==='wave'?`적 ${alive}${s.queued?' + 증원 '+s.queued:''} · ${left}초`:`${s.phase==='ready'?'준비':'휴식'} · ${left}초`):'');
       start.hidden=bossStart.hidden=active;
       start.disabled=!connected || !host || !near || !!s&&now<s.ended+5000;
       bossStart.disabled=start.disabled;

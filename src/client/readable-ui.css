@@ -203,3 +203,27 @@ body.portal-edition [data-layout=mobile] .minimap-head button { min-width: 36px;
   body.portal-edition .card-create .create-prev { padding-block: 10px; border-radius: 12px; }
   body.portal-edition .card-create .create-prev .bk-preview { --pv: 2; }
 }
+
+/* Keep the reward banner readable on its light surface. */
+body.portal-edition .scr-room .garden-result .garden-reward {
+  color: var(--read-ink) !important;
+}
+
+/* Reserve the shortcut row before placing the event panel. */
+body.portal-edition [data-layout=mobile] .scr-room {
+  --room-shortcuts-top: 116px;
+  --room-shortcuts-height: 44px;
+}
+@media (max-width: 700px), (orientation: landscape) and (max-height: 600px) {
+  body.portal-edition [data-layout=mobile] .scr-room { --room-shortcuts-top: 94px; }
+}
+body.portal-edition [data-layout=mobile] .scr-room .bag-shortcut {
+  top: var(--room-shortcuts-top) !important;
+}
+body.portal-edition [data-layout=mobile] .scr-room .bag-shortcut .bk-btn {
+  height: var(--room-shortcuts-height);
+  min-height: var(--room-shortcuts-height) !important;
+}
+body.portal-edition [data-layout=mobile] .scr-room .garden-panel {
+  top: calc(var(--room-shortcuts-top) + var(--room-shortcuts-height) + 8px);
+}

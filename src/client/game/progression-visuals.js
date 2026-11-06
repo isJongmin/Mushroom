@@ -71,7 +71,42 @@ export function drawPet(c,id,x,y,k=1,now=0,level=0,motion={}) {
 }
 export function drawEquipmentDrop(c,d,camX,camY,k,now,age=Infinity) {
  const hop=Number.isFinite(age)?Math.sin(Math.min(1,Math.max(0,age/650))*Math.PI)*28:0;
- if(d.kind==='gold'){const x=(d.x-camX)*k,y=(d.y-camY-12-hop+Math.sin(now/240+d.x)*3)*k;c.save();c.fillStyle='#80502b';c.fillRect(x-9*k,y-8*k,18*k,13*k);c.fillStyle='#e9ba54';c.fillRect(x-8*k,y-10*k,16*k,12*k);c.fillStyle='#fff0a2';c.fillRect(x-5*k,y-8*k,4*k,7*k);c.fillStyle='#b8833e';c.fillRect(x+3*k,y-7*k,2*k,6*k);c.restore();return;}
+ if (d.kind === 'gold') {
+  const x = (d.x - camX) * k;
+  const y = (d.y - camY - 12 - hop + Math.sin(now / 240 + d.x) * 3) * k;
+  const size = d.amount >= 500 ? 1.65 : d.amount >= 120 ? 1.32 : 1;
+  c.save();
+  c.translate(x, y);
+  c.scale(k * size, k * size);
+  if (d.amount >= 120) {
+   // A single tied pouch carries the entire payout.
+   c.fillStyle = '#704728';
+   c.fillRect(-8, -5, 16, 13);
+   c.fillRect(-6, -11, 12, 5);
+   c.fillRect(-10, 0, 20, 6);
+   c.fillStyle = '#d09a43';
+   c.fillRect(-7, -4, 14, 10);
+   c.fillRect(-5, -10, 10, 3);
+   c.fillStyle = '#fae197';
+   c.fillRect(-6, -7, 12, 2);
+   c.fillRect(-4, -2, 3, 6);
+   if (d.amount >= 500) {
+    c.fillStyle = '#fff0a2';
+    c.fillRect(2, 0, 4, 4);
+   }
+  } else {
+   c.fillStyle = '#80502b';
+   c.fillRect(-9, -8, 18, 13);
+   c.fillStyle = '#e9ba54';
+   c.fillRect(-8, -10, 16, 12);
+   c.fillStyle = '#fff0a2';
+   c.fillRect(-5, -8, 4, 7);
+   c.fillStyle = '#b8833e';
+   c.fillRect(3, -7, 2, 6);
+  }
+  c.restore();
+  return;
+ }
  const x=(d.x-camX)*k,y=(d.y-camY-15-hop+Math.sin(now/300+d.x)*3)*k,color=GRADE_COLORS[d.tier];
  c.save();if(d.tier>=2){const beam=c.createLinearGradient(x,y-110*k,x,y+16*k);beam.addColorStop(0,color+'00');beam.addColorStop(1,color+'55');c.fillStyle=beam;c.fillRect(x-10*k,y-110*k,20*k,126*k);c.strokeStyle=color+'aa';c.lineWidth=k;c.beginPath();c.moveTo(x,y-90*k);c.lineTo(x,y+16*k);c.stroke();}c.fillStyle=color+'28';c.fillRect(x-20*k,y-30*k,40*k,49*k);c.fillStyle=color;c.fillRect(x-18*k,y+17*k,36*k,2*k);drawItem(c,d.kind,x,y,.65*k,color);c.restore();
 }

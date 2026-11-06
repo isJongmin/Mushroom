@@ -401,7 +401,8 @@ export function mount(root, app, opts = {}) {
   let entryUntil=Infinity;
   function announceArea(){setText(entryTitle,AREA_NAMES[currentArea]);areaEntry.hidden=false;areaEntry.style.animation='none';if(connection==='connected'){void areaEntry.offsetWidth;areaEntry.style.animation='';entryUntil=performance.now()+2800;}else entryUntil=Infinity;}
 
-  const stage = h('div', { class: 'game-stage' }, canvas, hud, firstUse.el, areaEntry, bossCard,journeyCard,taxiButton, ...playfulButtons.map(b=>b.el), banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,growthHud,chainHud, gardenPanel.el, gardenPanel.result);
+  const eventHud = h('div', { class: 'room-event-hud' }, growthHud, bossCard, gardenPanel.el);
+  const stage = h('div', { class: 'game-stage' }, canvas, hud, firstUse.el, areaEntry, eventHud,journeyCard,taxiButton, ...playfulButtons.map(b=>b.el), banner, loadingDots, reviveBox, touchFloat, portalBtn, minimap,npcQuest,petNpc,mentorNpc,chainHud, gardenPanel.result);
 
   const chatLog = createChatLog({
     onLayout: () => stage.classList.toggle('log-open', chatLog ? chatLog.desktopExpanded() : false),
@@ -503,7 +504,24 @@ export function mount(root, app, opts = {}) {
   on(upgradeButton,'click',()=>{upgradeCard.hidden=true;input.clear();progressPanel?.open();});
   on(upgradeDismiss,'click',()=>{upgradeCard.hidden=true;});
   let lootFeedKey='';
-  function syncLootFeedback(now){const entries=lootFeedback.sample(now),key=entries.map(e=>e.key+':'+(e.amount||0)).join('|');if(key===lootFeedKey)return;lootFeedKey=key;lootFeed.replaceChildren();
+  function syncLootFeedback(now) {
+    const entries = lootFeedback.sample(now);
+    const key = [layout.mobile, ...entries.map(e => e.key + ':' + (e.amount || 0))].join('|');
+    if (key === lootFeedKey) return;
+    lootFeedKey = key;
+    lootFeed.replaceChildren();
+
+    if (layout.mobile) {
+      const latest = entries.findLast(e => e.kind !== 'gold');
+      const gold = entries.reduce((total, e) => total + (e.kind === 'gold' ? e.amount : 0), 0);
+      if (latest || gold) {
+        lootFeed.append(h('div', {class:'loot-message loot-message--compact' + (latest?.tier >= 2 ? ' is-rare' : '')},
+          latest && h('strong', {class:'loot-compact-name'}, latest.title || itemName(latest)),
+          gold > 0 && h('span', {class:'loot-compact-gold'}, `+ ${gold.toLocaleString()} G`)));
+      }
+      return;
+    }
+
     for(const e of entries){const rare=e.tier>=2;lootFeed.append(h('div',{class:'loot-message'+(rare?' is-rare':''),style:{'--loot-color':['#d1d9d0','#a6d2ac','#a8d0ec','#d2b8ec','#f3d48b'][e.tier||0]}},h('small',{},e.kind==='celebration'?'LEVEL UP':e.kind==='milestone'?'MILESTONE':e.kind==='gold'?'GOLD':rare?'RARE FIND':'ACQUIRED'),h('strong',{},e.title||(e.kind==='gold'?`+ ${e.amount.toLocaleString()} G`:itemName(e)))));}
   }
   let lastHpKey='',lastPortrait='';
@@ -1799,7 +1817,12 @@ export function mount(root, app, opts = {}) {
     if (debugPlatforms && platforms.length) drawPlatformDebug(ctx, platforms, camX, cy, k);
     if (debug && ropes.length) drawRopeDebug(ctx, ropes, camX, cy, k); // (사이클 10) 로프 선 (그림은 아트 ground 레이어)
 
-    if(journeyPinned&&connection==='connected'&&now>=entryUntil&&!me.dead&&!document.body.classList.contains('has-modal'))drawJourneyBeacon(ctx,journeyTarget(journeyObjective(progress?.state,currentArea),map,world,progress?.state,me),me,camX,cy,k,now,prefersReducedMotion());
+    if (journeyPinned && connection === 'connected' && now >= entryUntil && !me.dead && !document.body.classList.contains('has-modal')) {
+      const target = journeyTarget(journeyObjective(progress?.state,currentArea),map,world,progress?.state,me);
+      // Once the target can be interacted with, its action marker takes over from the guide.
+      const hasActionMarker = target && markerPoints.some(m => !m.el.hidden && m.p.x === target.x && m.p.y === target.y);
+      if (!hasActionMarker) drawJourneyBeacon(ctx,target,me,camX,cy,k,now,prefersReducedMotion());
+    }
     for(const m of markerPoints)if(!m.el.hidden)drawNpcAction(ctx,m.x*dpr,m.y*dpr,dpr);
 
     const order = [];

@@ -209,21 +209,76 @@ body.portal-edition .scr-room .garden-result .garden-reward {
   color: var(--read-ink) !important;
 }
 
-/* Reserve the shortcut row before placing the event panel. */
+/* Mobile shortcuts and event panels share one vertical flow. */
+.room-event-hud { display: contents; }
 body.portal-edition [data-layout=mobile] .scr-room {
   --room-shortcuts-top: 116px;
-  --room-shortcuts-height: 44px;
 }
 @media (max-width: 700px), (orientation: landscape) and (max-height: 600px) {
   body.portal-edition [data-layout=mobile] .scr-room { --room-shortcuts-top: 94px; }
 }
-body.portal-edition [data-layout=mobile] .scr-room .bag-shortcut {
-  top: var(--room-shortcuts-top) !important;
+body.portal-edition [data-layout=mobile] .room-event-hud {
+  position: absolute;
+  top: var(--room-shortcuts-top);
+  left: 0;
+  right: 0;
+  z-index: 6;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 8px;
+  padding-left: max(12px, env(safe-area-inset-left));
+  padding-right: max(12px, env(safe-area-inset-right));
+  pointer-events: none;
 }
-body.portal-edition [data-layout=mobile] .scr-room .bag-shortcut .bk-btn {
-  height: var(--room-shortcuts-height);
-  min-height: var(--room-shortcuts-height) !important;
+body.portal-edition [data-layout=mobile] .room-event-hud :is(.bag-shortcut, .garden-panel, .boss-arrival) {
+  position: static;
+  transform: none;
+  box-sizing: border-box;
 }
-body.portal-edition [data-layout=mobile] .scr-room .garden-panel {
-  top: calc(var(--room-shortcuts-top) + var(--room-shortcuts-height) + 8px);
+body.portal-edition [data-layout=mobile] .room-event-hud .garden-panel {
+  width: min(210px, calc(100% - 156px));
+  pointer-events: auto;
+}
+body.portal-edition [data-layout=mobile] .room-event-hud .boss-arrival {
+  width: min(320px, 100%);
+  padding: 6px 10px;
+}
+body.portal-edition [data-layout=mobile] .room-event-hud .boss-arrival canvas {
+  width: 44px;
+  height: 50px;
+  flex: none;
+}
+body.portal-edition [data-layout=mobile] .room-event-hud .boss-arrival strong { font-size: 15px; margin: 2px 0; }
+body.portal-edition [data-layout=mobile] .room-event-hud .boss-arrival span { font-size: 10px; }
+body.portal-edition [data-layout=mobile] .room-event-hud .boss-arrival p { display: none; }
+body.portal-edition [data-layout=mobile] .room-event-hud .bag-shortcut .bk-btn { min-height: 44px !important; }
+
+body.portal-edition [data-layout=mobile] .loot-feed {
+  left: 12px;
+  bottom: 190px;
+  max-width: min(230px, calc(100% - 24px));
+}
+@media (orientation: landscape) {
+  body.portal-edition [data-layout=mobile] .loot-feed { bottom: 140px; }
+}
+body.portal-edition [data-layout=mobile] .loot-message--compact {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 7px;
+  --loot-color: var(--read-gold);
+  font: 600 10px/1.3 system-ui;
+}
+body.portal-edition [data-layout=mobile] .loot-compact-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font: inherit;
+}
+body.portal-edition [data-layout=mobile] .loot-compact-gold {
+  flex: none;
+  color: var(--read-gold);
+  font-variant-numeric: tabular-nums;
 }

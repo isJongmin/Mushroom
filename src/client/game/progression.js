@@ -22,6 +22,8 @@ export const STAGES = Object.freeze({
  forest:{order:3,name:'이끼마을',recommended:2,drop:[0,.10,.70,.18,.02],mobs:{'moss-slime':[1100,48],'forest-stump':[1500,57],'moss-guardian':[2100,68],'thorn-mantis':[2800,79],'ancient-treant':[3800,92]},petNames:['이끼방울','잎새토끼','반딧불정령','고대숲사슴','세계수정령']},
  frost:{order:4,name:'서리마을',recommended:3,drop:[0,0,.1,.7,.2],mobs:{'frost-slime':[4200,88],'ice-crab':[5400,103],'ice-golem':[7000,119],'frost-beetle':[9000,135],'glacier-sentinel':[12000,155]},petNames:['눈송이방울','설원토끼','빙정여우','오로라사슴','빙하드래곤']},
 });
+const MAX_LOOT_GOLD = 20000;
+const MAX_GROUND_GOLD = MAX_LOOT_GOLD + Math.max(...Object.values(STAGES).map(({order}) => huntContract(null, order, 20).gold));
 export const MAX_EQUIPPED_PETS=3;
 // Keep the first-pet alias for legacy saves/clients; all new writes keep both fields aligned.
 export function equippedPetIds(s){
@@ -50,7 +52,7 @@ export function petSpec(id) {
  return Object.hasOwn(STAGES,area)&&String(tier)===t&&tierOK(tier)?{id,area,tier,name:STAGES[area].petNames[tier]}:null;
 }
 export const itemName = i => i.kind==='gold'?`${i.amount.toLocaleString()} G`:`${GRADES[i.tier]} ${ITEM_NAMES[i.kind]}`;
-export const dropOK=d=>itemOK(d)||!!d&&d.kind==='gold'&&typeof d.id==='string'&&d.id.length>0&&d.id.length<=160&&Number.isSafeInteger(d.amount)&&d.amount>0&&d.amount<=20000;
+export const dropOK=d=>itemOK(d)||!!d&&d.kind==='gold'&&typeof d.id==='string'&&d.id.length>0&&d.id.length<=160&&Number.isSafeInteger(d.amount)&&d.amount>0&&d.amount<=MAX_GROUND_GOLD;
 export function weighted(rates,rnd=Math.random){let n=rnd();for(let i=0;i<rates.length;i++){n-=rates[i];if(n<0)return i;}return rates.length-1;}
 export function rollEquipment(area,rnd=Math.random){
  const out=[];if(rnd()<.65)out.push({kind:['sword','bow','staff','claw'][Math.min(3,Math.floor(rnd()*4))],tier:weighted(stageOf(area).drop,rnd)});
@@ -145,19 +147,18 @@ export function applyCommand(original,command,{job='warrior',rnd=Math.random,now
   if(typeof c.receipt!=='string'||c.receipt.length>150||!Object.hasOwn(STAGES,c.area))fail('잘못된 드롭 정보입니다.');
   if(s.seen.includes(c.receipt))return {state:s,result:{duplicate:true}};
   if(!Array.isArray(c.items)||c.items.length>8||c.items.some(i=>!itemOK({...i,id:'check'})))fail('잘못된 장비입니다.');
-  let gold=c.gold??0;if(!Number.isSafeInteger(gold)||gold<0||gold>20000)fail('잘못된 골드 보상입니다.');
+  let gold=c.gold??0;if(!Number.isSafeInteger(gold)||gold<0||gold>MAX_LOOT_GOLD)fail('잘못된 골드 보상입니다.');
   if(c.kind!=null&&!Object.hasOwn(STAGES[c.area].mobs,c.kind)&&!['garden-king','garden-runner','garden-guard'].includes(c.kind))fail('잘못된 몬스터입니다.');
   const counts=!c.receipt.startsWith('event-')&&(!c.kind||Object.hasOwn(STAGES[c.area].mobs,c.kind)),kills=s.kills[c.area]+(counts?1:0),contract=counts?huntContract(c.area,stageOf(c.area).order,kills,activeWeapon(s)?.kind||'sword'):null,items=[...c.items];
   if(contract){gold+=contract.gold;items.push(contract.item);result={contract:true};}
   const createdAt=Number.isSafeInteger(c.createdAt)&&c.createdAt>0?Math.min(c.createdAt,now):now,expiresAt=createdAt+GROUND_DROP_TTL_MS,expired=expiresAt<=now;
   s.pending=s.pending.filter(d=>groundDropAlive(d,now));
-  const piles=gold?Math.min(8,Math.max(1,Math.ceil(gold/120))):0;
-  if(!expired&&s.pending.length+items.length+piles>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
+  if(!expired&&s.pending.length+items.length+(gold>0?1:0)>200)fail('바닥 장비가 너무 많습니다. 먼저 장비를 주워주세요.');
   if(!Number.isFinite(c.x)||!Number.isFinite(c.y)||Math.abs(c.x)>1e5||Math.abs(c.y)>1e5)fail('잘못된 드롭 위치입니다.');
   if(counts&&c.kind){const records=s.traits.species[c.area][c.kind],max=c.area==='village'?10:20;if(records.length<max&&!records.includes(c.receipt))records.push(c.receipt);}
   s.seen.push(c.receipt);s.seen=s.seen.slice(-10000);s.kills[c.area]=kills;
   if(!expired)items.forEach((i,n)=>s.pending.push({expiresAt,id:c.receipt+':'+n,kind:i.kind,tier:i.tier,area:c.area,x:c.x+(n-(items.length-1)/2)*38,y:c.y}));
-  for(let n=0;!expired&&n<piles;n++)s.pending.push({expiresAt,id:c.receipt+':gold:'+n,kind:'gold',amount:Math.floor(gold/piles)+(n<gold%piles?1:0),area:c.area,x:c.x+(n-(piles-1)/2)*32,y:c.y});
+  if (!expired && gold > 0) s.pending.push({expiresAt,id:c.receipt+':gold:0',kind:'gold',amount:gold,area:c.area,x:c.x,y:c.y});
  }
  else if(c.type==='collect') {
   const d=s.pending.find(i=>i.id===c.id);if(!d)fail('이미 주웠거나 사라진 아이템입니다.');if(!groundDropAlive(d,now))fail('시간이 지나 사라진 아이템입니다.');if(d.kind!=='gold'&&s.items.length>=200)fail('가방이 가득 찼습니다. 장비를 판매하거나 합성해주세요.');
